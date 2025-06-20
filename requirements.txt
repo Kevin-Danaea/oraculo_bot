@@ -6,4 +6,5 @@ pydantic
 pydantic-settings
 python-dotenv
 requests
-google-genai 
+google-genai
+praw 

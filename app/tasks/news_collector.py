@@ -2,21 +2,22 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.core.logging_config import get_logger
 from app.db.session import SessionLocal
 from app.db import models
-from app.services import cryptopanic_service, sentiment_service
+from app.services import reddit_service, sentiment_service
 
 logger = get_logger(__name__)
 
 def run_collection_job():
     """
-    Tarea que recolecta noticias de CryptoPanic. Se ejecuta cada hora.
+    Tarea que recolecta noticias desde Reddit. Se ejecuta cada hora.
     """
-    logger.info("Iniciando job de recolección de noticias...")
+    logger.info("Iniciando job de recolección de noticias desde Reddit...")
     db = SessionLocal()
     try:
-        cryptopanic_service.fetch_and_store_posts(db)
+        # El servicio de Reddit ahora maneja directamente la BD (como lo hacía CryptoPanic)
+        reddit_service.fetch_and_store_posts(db)
     finally:
         db.close()
-    logger.info("Job de recolección de noticias finalizado.")
+    logger.info("Job de recolección de noticias desde Reddit finalizado.")
 
 def run_sentiment_analysis_job():
     """
@@ -44,7 +45,7 @@ def run_sentiment_analysis_job():
 
 # --- Configuración del Scheduler ---
 scheduler = BackgroundScheduler()
-# Tarea 1: Recolectar noticias cada hora
-scheduler.add_job(run_collection_job, 'interval', hours=1, id='cryptopanic_collector')
+# Tarea 1: Recolectar noticias cada hora desde Reddit
+scheduler.add_job(run_collection_job, 'interval', hours=1, id='reddit_collector')
 # Tarea 2: Analizar sentimiento cada 4 horas
 scheduler.add_job(run_sentiment_analysis_job, 'interval', hours=4, id='sentiment_analyzer') 

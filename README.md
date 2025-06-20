@@ -4,11 +4,12 @@ Un bot inteligente para la recolección y análisis de noticias de criptomonedas
 
 ## 📋 Descripción del Proyecto
 
-El **Oráculo Cripto Bot** es una aplicación web construida con FastAPI que automatiza la recolección de noticias relacionadas con criptomonedas desde la API de CryptoPanic. El sistema está diseñado para funcionar como un oráculo de información, proporcionando datos actualizados sobre el ecosistema cripto de manera continua y automática.
+El **Oráculo Cripto Bot** es una aplicación web construida con FastAPI que automatiza la recolección de noticias relacionadas con criptomonedas desde Reddit (r/CryptoCurrency). El sistema está diseñado para funcionar como un oráculo de información, proporcionando datos actualizados sobre el ecosistema cripto de manera continua y automática.
 
 ### 🎯 Funcionalidades Actuales
 
-- **Recolección Automática de Noticias**: Obtiene noticias de CryptoPanic cada hora de forma automática
+- **Recolección Automática de Noticias**: Obtiene noticias de Reddit (r/CryptoCurrency) cada hora de forma automática
+- **Filtrado Inteligente**: Solo recolecta noticias de dominios confiables (CoinDesk, CoinTelegraph, Bloomberg, etc.)
 - **Prevención de Duplicados**: Evita almacenar noticias duplicadas usando la URL como identificador único
 - **API REST**: Expone endpoints para consultar el estado del sistema y disparar recolecciones manuales
 - **Base de Datos SQLite**: Almacena las noticias de forma persistente
@@ -28,7 +29,8 @@ oraculo_bot/
 │   │   ├── models.py     # Modelos SQLAlchemy (tabla Noticia)
 │   │   └── session.py    # Configuración de la sesión de base de datos
 │   ├── services/         # Lógica de negocio
-│   │   └── cryptopanic_service.py  # Servicio para interactuar con CryptoPanic API
+│   │   ├── reddit_service.py      # Servicio para interactuar con Reddit API
+│   │   └── cryptopanic_service.py # Servicio legacy (mantenido por compatibilidad)
 │   ├── tasks/            # Tareas programadas
 │   │   └── news_collector.py       # Scheduler para recolección automática
 │   └── main.py           # Punto de entrada de la aplicación FastAPI
@@ -39,7 +41,7 @@ oraculo_bot/
 #### 🔧 Componentes Principales
 
 1. **FastAPI Application** (`main.py`): Servidor web que expone la API REST
-2. **CryptoPanic Service**: Maneja la comunicación con la API externa de CryptoPanic
+2. **Reddit Service**: Maneja la comunicación con la API de Reddit para obtener noticias de r/CryptoCurrency
 3. **Database Layer**: Gestiona el almacenamiento persistente usando SQLAlchemy + SQLite
 4. **Background Scheduler**: Ejecuta la recolección de noticias cada hora usando APScheduler
 5. **Configuration Management**: Centraliza la configuración usando Pydantic Settings
@@ -48,7 +50,7 @@ oraculo_bot/
 
 La tabla `noticias` almacena:
 - `id`: Identificador único
-- `source`: Fuente de la noticia (actualmente "CryptoPanic")
+- `source`: Fuente de la noticia (actualmente "Reddit (dominio)")
 - `headline`: Título de la noticia
 - `url`: URL única de la noticia (evita duplicados)
 - `published_at`: Fecha de publicación
@@ -61,7 +63,7 @@ La tabla `noticias` almacena:
 
 - Python 3.8 o superior
 - pip (gestor de paquetes de Python)
-- Cuenta en [CryptoPanic](https://cryptopanic.com/) para obtener API Key
+- Cuenta de Reddit para obtener credenciales de API
 
 ### 🔧 Instalación Local
 
@@ -93,10 +95,12 @@ La tabla `noticias` almacena:
    ```env
    PROJECT_NAME=Oráculo Cripto Bot
    DATABASE_URL=sqlite:///./oraculo.db
-   CRYPTOPANIC_API_KEY=tu_api_key_aqui
+   REDDIT_CLIENT_ID=tu_client_id_aqui
+   REDDIT_CLIENT_SECRET=tu_client_secret_aqui
+   REDDIT_USER_AGENT=OraculoBot by tu_usuario_de_reddit
    ```
 
-   > **Nota**: Obtén tu API Key gratuita registrándote en [CryptoPanic](https://cryptopanic.com/developers/api/)
+   > **Nota**: Obtén tus credenciales de Reddit creando una aplicación en [Reddit Apps](https://www.reddit.com/prefs/apps)
 
 ## 🎮 Ejecución del Proyecto
 
@@ -117,7 +121,7 @@ La aplicación estará disponible en:
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | GET | `/` | Verificar estado del sistema |
-| POST | `/tasks/trigger-collection` | Disparar recolección manual de noticias |
+| POST | `/tasks/trigger-collection` | Disparar recolección manual de noticias desde Reddit |
 
 ### 🔍 Ejemplo de Uso
 
@@ -126,7 +130,7 @@ La aplicación estará disponible en:
    curl http://localhost:8000/
    ```
 
-2. **Disparar recolección manual de noticias**:
+2. **Disparar recolección manual de noticias desde Reddit**:
    ```bash
    curl -X POST http://localhost:8000/tasks/trigger-collection
    ```
@@ -138,6 +142,7 @@ La aplicación estará disponible en:
 - **[SQLite](https://www.sqlite.org/)**: Base de datos ligera y embedida
 - **[APScheduler](https://apscheduler.readthedocs.io/)**: Scheduler de tareas en background
 - **[Pydantic](https://pydantic-docs.helpmanual.io/)**: Validación de datos y settings
+- **[PRAW](https://praw.readthedocs.io/)**: Python Reddit API Wrapper
 - **[Requests](https://requests.readthedocs.io/)**: Cliente HTTP para Python
 - **[Uvicorn](https://www.uvicorn.org/)**: Servidor ASGI de alto rendimiento
 
