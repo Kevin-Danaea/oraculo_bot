@@ -1,0 +1,1 @@
+# Aquí se agregarán los endpoints adicionales de la API en el futuro 
