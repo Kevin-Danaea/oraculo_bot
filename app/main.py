@@ -2,9 +2,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.core.logging_config import setup_logging, get_logger
 from app.db import session, models
 from app.tasks.news_collector import scheduler, run_collection_job
 from app.services import cryptopanic_service
+
+# Configurar logging
+setup_logging()
+logger = get_logger(__name__)
 
 # Crear las tablas en la base de datos al iniciar (si no existen)
 models.Base.metadata.create_all(bind=session.engine)
@@ -13,28 +18,28 @@ models.Base.metadata.create_all(bind=session.engine)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("🚀 Iniciando la aplicación y el scheduler...")
+    logger.info("🚀 Iniciando la aplicación y el scheduler...")
     try:
         scheduler.start()
-        print("✅ Scheduler iniciado correctamente")
+        logger.info("✅ Scheduler iniciado correctamente")
     except Exception as e:
-        print(f"❌ Error al iniciar el scheduler: {e}")
+        logger.error(f"❌ Error al iniciar el scheduler: {e}")
     
     yield
     
     # Shutdown
-    print("🛑 Cerrando la aplicación...")
+    logger.info("🛑 Cerrando la aplicación...")
     try:
         if scheduler.running:
-            print("🔄 Deteniendo el scheduler...")
+            logger.info("🔄 Deteniendo el scheduler...")
             scheduler.shutdown(wait=True)
-            print("✅ Scheduler detenido correctamente")
+            logger.info("✅ Scheduler detenido correctamente")
         else:
-            print("ℹ️ El scheduler ya estaba detenido")
+            logger.info("ℹ️ El scheduler ya estaba detenido")
     except Exception as e:
-        print(f"❌ Error al detener el scheduler: {e}")
+        logger.error(f"❌ Error al detener el scheduler: {e}")
     finally:
-        print("👋 Aplicación cerrada")
+        logger.info("👋 Aplicación cerrada")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -62,7 +67,7 @@ def trigger_collection(db: Session = Depends(get_db)):
     Endpoint para disparar manualmente la recolección de noticias.
     Útil para pruebas y debugging.
     """
-    print("🚀 Disparando la recolección de noticias manualmente...")
+    logger.info("🚀 Disparando la recolección de noticias manualmente...")
     result = cryptopanic_service.fetch_and_store_posts(db)
     
     if result["success"]:
