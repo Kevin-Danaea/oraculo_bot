@@ -87,7 +87,7 @@ def check_grid_bot_health():
                 logger.info("🔄 Iniciando Grid Bot...")
                 run_grid_bot_thread()
         else:
-            logger.debug("✅ Grid Bot ejecutándose correctamente")
+            logger.info("✅ Grid Bot ejecutándose correctamente")
             
     except Exception as e:
         logger.error(f"❌ Error verificando salud del Grid Bot: {e}")
