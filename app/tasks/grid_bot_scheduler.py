@@ -21,7 +21,7 @@ def get_grid_bot_config():
         'pair': 'ETH/USDT',
         'total_capital': 56.88,
         'grid_levels': 4,
-        'price_range_percent': 20.0,
+        'price_range_percent': 10.0,
     }
 
 def run_grid_bot():
