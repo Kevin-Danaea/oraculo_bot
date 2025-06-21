@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Configuración para Grid Bot
     BINANCE_API_KEY: str = ""
     BINANCE_API_SECRET: str = ""
+    
+    # Configuración para notificaciones de Telegram
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
 
     class Config:
         case_sensitive = True
