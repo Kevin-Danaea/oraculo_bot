@@ -211,6 +211,131 @@ def load_bot_state() -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         return [], None
 
 
+def clear_bot_state() -> None:
+    """
+    Elimina el archivo de estado del bot
+    """
+    try:
+        if os.path.exists(STATE_FILE):
+            os.remove(STATE_FILE)
+            logger.info("🗑️ Archivo de estado eliminado")
+        else:
+            logger.debug("📁 No hay archivo de estado que eliminar")
+    except Exception as e:
+        logger.error(f"❌ Error eliminando estado: {e}")
+
+
+def config_has_significant_changes(saved_config: Dict[str, Any], new_config: Dict[str, Any]) -> bool:
+    """
+    Detecta si hay cambios significativos en la configuración que requieren reiniciar
+    
+    Args:
+        saved_config: Configuración guardada previamente
+        new_config: Nueva configuración
+        
+    Returns:
+        True si hay cambios significativos, False si no
+    """
+    if not saved_config:
+        return False
+        
+    # Campos críticos que requieren reinicio completo
+    critical_fields = [
+        'pair',
+        'total_capital', 
+        'grid_levels',
+        'price_range_percent'
+    ]
+    
+    changes_detected = []
+    
+    for field in critical_fields:
+        old_value = saved_config.get(field)
+        new_value = new_config.get(field)
+        
+        if old_value != new_value:
+            changes_detected.append(f"{field}: {old_value} → {new_value}")
+    
+    if changes_detected:
+        logger.info(f"🔄 Cambios detectados en configuración:")
+        for change in changes_detected:
+            logger.info(f"   • {change}")
+        return True
+    
+    return False
+
+
+def cancel_all_active_orders(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]]) -> int:
+    """
+    Cancela todas las órdenes activas en el exchange
+    
+    Args:
+        exchange: Instancia del exchange
+        active_orders: Lista de órdenes activas
+        
+    Returns:
+        Número de órdenes canceladas exitosamente
+    """
+    if not active_orders:
+        logger.info("📭 No hay órdenes activas que cancelar")
+        return 0
+    
+    cancelled_count = 0
+    logger.info(f"🚫 Iniciando cancelación de {len(active_orders)} órdenes activas...")
+    
+    for order_info in active_orders:
+        try:
+            # Verificar si la orden sigue activa antes de cancelar
+            order_status = exchange.fetch_order(order_info['id'], order_info['pair'])
+            
+            if order_status['status'] in ['open', 'partial']:
+                # Cancelar la orden
+                exchange.cancel_order(order_info['id'], order_info['pair'])
+                cancelled_count += 1
+                logger.info(f"✅ Orden cancelada: {order_info['type']} {order_info['quantity']:.6f} a ${order_info['price']}")
+            else:
+                logger.info(f"ℹ️ Orden ya ejecutada/cancelada: {order_info['id']}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error cancelando orden {order_info['id']}: {e}")
+            # Continuar con las demás órdenes aunque una falle
+    
+    logger.info(f"🎯 Cancelación completada: {cancelled_count}/{len(active_orders)} órdenes canceladas")
+    return cancelled_count
+
+
+def reset_bot_for_new_config(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]]) -> None:
+    """
+    Resetea completamente el bot para nueva configuración
+    
+    Args:
+        exchange: Instancia del exchange
+        active_orders: Lista de órdenes activas a cancelar
+    """
+    try:
+        logger.info("🔄 ========== REINICIANDO BOT CON NUEVA CONFIGURACIÓN ==========")
+        
+        # 1. Cancelar todas las órdenes activas
+        cancelled_orders = cancel_all_active_orders(exchange, active_orders)
+        
+        # 2. Limpiar estado guardado
+        clear_bot_state()
+        
+        # 3. Enviar notificación
+        message = f"🔄 <b>GRID BOT REINICIADO</b>\n\n"
+        message += f"🚫 <b>Órdenes canceladas:</b> {cancelled_orders}\n"
+        message += f"🗑️ <b>Estado limpiado:</b> ✅\n"
+        message += f"🆕 <b>Iniciando con nueva configuración...</b>"
+        
+        send_telegram_message(message)
+        
+        logger.info("✅ Reset completado - Bot listo para nueva configuración")
+        
+    except Exception as e:
+        logger.error(f"❌ Error durante el reset del bot: {e}")
+        raise
+
+
 # ============================================================================
 # CÁLCULOS DE GRILLA Y PRECIOS
 # ============================================================================
@@ -607,6 +732,38 @@ def monitor_grid_orders(exchange: ccxt.Exchange, active_orders: List[Dict[str, A
         logger.info("💾 Estado final guardado")
 
 
+def force_reset_bot(config: Dict[str, Any]) -> None:
+    """
+    Función para forzar un reset completo del bot manualmente
+    
+    Args:
+        config: Nueva configuración a usar
+    """
+    try:
+        logger.info("🔧 ========== RESET MANUAL DEL BOT ==========")
+        
+        # Validar nueva configuración (para asegurar que es válida)
+        validate_config(config)
+        
+        # Cargar estado actual
+        saved_orders, _ = load_bot_state()
+        
+        if saved_orders:
+            # Conectar y cancelar órdenes
+            exchange = get_exchange_connection()
+            reset_bot_for_new_config(exchange, saved_orders)
+        else:
+            # Solo limpiar estado
+            clear_bot_state()
+            logger.info("🗑️ Estado limpiado (no había órdenes activas)")
+        
+        logger.info("✅ Reset manual completado")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en reset manual: {e}")
+        raise
+
+
 # ============================================================================
 # FUNCIÓN PRINCIPAL (PUNTO DE ENTRADA)
 # ============================================================================
@@ -627,17 +784,24 @@ def run_grid_trading_bot(config: Dict[str, Any]) -> None:
         # Intentar cargar estado previo
         saved_orders, saved_config = load_bot_state()
         
-        # Si hay estado previo y la configuración coincide, continuar
-        if saved_orders and saved_config and saved_config['pair'] == validated_config['pair']:
+        # Conectar con exchange (necesario para cancelar órdenes si es requerido)
+        exchange = get_exchange_connection()
+        
+        # Verificar si hay cambios significativos en la configuración
+        if saved_orders and saved_config:
+            if config_has_significant_changes(saved_config, validated_config):
+                logger.info("🔄 Detectados cambios significativos - Reiniciando bot...")
+                reset_bot_for_new_config(exchange, saved_orders)
+                # Después del reset, inicializar desde cero
+                saved_orders, saved_config = [], None
+        
+        # Si hay estado previo válido y sin cambios significativos, continuar
+        if saved_orders and saved_config:
             logger.info(f"📂 Continuando con {len(saved_orders)} órdenes previas")
             active_orders = saved_orders
-            exchange = get_exchange_connection()
         else:
             # Inicializar desde cero
             logger.info("🆕 Iniciando configuración nueva")
-            
-            # Conectar con exchange
-            exchange = get_exchange_connection()
             
             # Obtener precio actual
             current_price = exchange.fetch_ticker(validated_config['pair'])['last']
