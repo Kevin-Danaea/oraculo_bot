@@ -6,6 +6,7 @@ from app.db import session, models
 from app.tasks.news_collector import scheduler as news_scheduler
 from app.tasks.grid_bot_scheduler import start_grid_bot_scheduler, stop_grid_bot_scheduler
 from app.api.endpoints import router
+from app.services.telegram_service import send_system_startup_notification
 
 # Configurar logging
 setup_logging()
@@ -29,6 +30,10 @@ async def lifespan(app: FastAPI):
         if settings.SERVICE_MODE in ["all", "grid"]:
             start_grid_bot_scheduler()
             logger.info("✅ Grid Bot Scheduler iniciado correctamente")
+        
+        # Enviar notificación de sistema iniciado
+        send_system_startup_notification(settings.SERVICE_MODE)
+        logger.info("📱 Notificación de inicio enviada por Telegram")
             
     except Exception as e:
         logger.error(f"❌ Error al iniciar schedulers: {e}")
