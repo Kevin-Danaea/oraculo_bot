@@ -14,8 +14,8 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}🚀 Iniciando deployment de Oráculo Bot Microservicios${NC}"
 
 # Variables (modificar según tu setup)
-PROJECT_PATH="/home/tu_usuario/oraculo_bot"
-SERVICE_USER="www-data"
+PROJECT_PATH="/var/www/oraculo_bot"
+SERVICE_USER="root"
 
 # Función para mostrar mensajes
 log() {
@@ -57,16 +57,16 @@ systemctl daemon-reload
 log "✅ Habilitando servicios..."
 
 # Habilitar solo el servicio de noticias por defecto
-systemctl enable oraculo-news.service
+# systemctl enable oraculo-news.service
 
 # Descomentar las siguientes líneas según los servicios que necesites:
-# systemctl enable oraculo-grid.service
+systemctl enable oraculo-grid.service
 # systemctl enable oraculo-api.service
 
 # 6. Mostrar estado de servicios
 log "📊 Estado actual de los servicios:"
-systemctl status oraculo-news.service --no-pager -l || true
-# systemctl status oraculo-grid.service --no-pager -l || true
+# systemctl status oraculo-news.service --no-pager -l || true
+systemctl status oraculo-grid.service --no-pager -l || true
 # systemctl status oraculo-api.service --no-pager -l || true
 
 echo
