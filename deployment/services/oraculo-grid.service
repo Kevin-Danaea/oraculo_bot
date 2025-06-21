@@ -1,0 +1,29 @@
+[Unit]
+Description=Oráculo Bot - Servicio de Grid Trading
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/your/oraculo_bot
+ExecStart=/path/to/your/oraculo_bot/venv/bin/python run_grid_service.py
+Restart=always
+RestartSec=10
+
+# Variables de entorno
+Environment="SERVICE_MODE=grid"
+EnvironmentFile=-/path/to/your/oraculo_bot/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=oraculo-grid
+
+# Límites de recursos
+LimitNOFILE=65536
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target 

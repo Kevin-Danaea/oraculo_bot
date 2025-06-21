@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     
     # API Key para Google Gemini
     GOOGLE_API_KEY: str = ""
+    
+    # Configuración de Microservicios
+    SERVICE_MODE: str = "all"  # "all", "news", "grid", "api"
+    
+    # Configuración para Grid Bot
+    BINANCE_API_KEY: str = ""
+    BINANCE_API_SECRET: str = ""
 
     class Config:
         case_sensitive = True
