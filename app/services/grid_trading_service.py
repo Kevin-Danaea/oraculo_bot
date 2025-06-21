@@ -1,73 +1,241 @@
 import ccxt
 import time
-from typing import Dict, List, Optional, Any
+import json
+import os
+from typing import Dict, List, Optional, Any, Tuple
+from decimal import Decimal, ROUND_DOWN
+from datetime import datetime, timedelta
 from app.core.logging_config import get_logger
 from app.core.config import settings
 from app.services.telegram_service import send_telegram_message, send_grid_trade_notification, send_grid_hourly_summary
 
 logger = get_logger(__name__)
 
-# Variables globales para mantener el estado
-_exchange: Optional[ccxt.Exchange] = None
-_active_orders: List[Dict[str, Any]] = []
-_order_pairs: Dict[str, str] = {}  # Para trackear pares compra-venta
+# ============================================================================
+# CONSTANTES Y CONFIGURACIÓN
+# ============================================================================
 
+PROFIT_PERCENTAGE = 0.01  # 1% de ganancia por trade
+MONITORING_INTERVAL = 30  # segundos entre chequeos
+STATUS_REPORT_CYCLES = 120  # enviar resumen cada 120 ciclos (1 hora)
+ORDER_RETRY_ATTEMPTS = 3
+RECONNECTION_DELAY = 5  # segundos
+MAX_RECONNECTION_ATTEMPTS = 5
 
-def get_binance_exchange():
+# Archivo para persistir estado del bot
+STATE_FILE = "logs/grid_bot_state.json"
+
+# ============================================================================
+# UTILIDADES DE VALIDACIÓN Y CONFIGURACIÓN
+# ============================================================================
+
+def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Crea y retorna una instancia de Binance exchange usando las credenciales configuradas.
+    Valida y normaliza la configuración del grid bot
+    
+    Args:
+        config: Configuración cruda del bot
+        
+    Returns:
+        Configuración validada y normalizada
+        
+    Raises:
+        ValueError: Si la configuración es inválida
     """
     try:
-        # Cargar las claves API desde settings
+        # Validar campos requeridos
+        required_fields = ['pair', 'total_capital', 'grid_levels', 'price_range_percent']
+        for field in required_fields:
+            if field not in config:
+                raise ValueError(f"Campo requerido faltante: {field}")
+        
+        # Validar tipos y rangos
+        pair = str(config['pair']).upper()
+        total_capital = float(config['total_capital'])
+        grid_levels = int(config['grid_levels'])
+        price_range_percent = float(config['price_range_percent'])
+        
+        if total_capital <= 0:
+            raise ValueError("El capital total debe ser mayor a 0")
+        if grid_levels < 2:
+            raise ValueError("Debe haber al menos 2 niveles de grilla")
+        if grid_levels > 20:
+            raise ValueError("Máximo 20 niveles de grilla permitidos")
+        if price_range_percent <= 0 or price_range_percent > 50:
+            raise ValueError("El rango de precio debe estar entre 0.1% y 50%")
+        
+        validated_config = {
+            'pair': pair,
+            'total_capital': total_capital,
+            'grid_levels': grid_levels,
+            'price_range_percent': price_range_percent,
+            'profit_percentage': PROFIT_PERCENTAGE * 100,  # Para logging
+            'max_orders_per_side': grid_levels // 2 + 1,
+            'min_order_size': total_capital * 0.001  # 0.1% del capital mínimo por orden
+        }
+        
+        logger.info(f"✅ Configuración validada: {validated_config}")
+        return validated_config
+        
+    except Exception as e:
+        logger.error(f"❌ Error validando configuración: {e}")
+        raise ValueError(f"Configuración inválida: {e}")
+
+
+def get_exchange_connection() -> ccxt.Exchange:
+    """
+    Crea y valida conexión con Binance
+    
+    Returns:
+        Instancia configurada del exchange
+        
+    Raises:
+        ConnectionError: Si no se puede conectar
+    """
+    try:
+        # Validar credenciales
         api_key = settings.BINANCE_API_KEY
         api_secret = settings.BINANCE_API_SECRET
         
         if not api_key or not api_secret:
-            raise ValueError("❌ Las claves API de Binance no están configuradas")
+            raise ConnectionError("Las claves API de Binance no están configuradas")
         
-        # Configurar el exchange (Binance)
+        # Configurar exchange
         exchange = ccxt.binance({
             'apiKey': api_key,
             'secret': api_secret,
-            'sandbox': False,  # Cambiar a True para usar el testnet
+            'sandbox': False,
             'enableRateLimit': True,
+            'timeout': 30000,  # 30 segundos timeout
+            'rateLimit': 1200,  # ms entre requests
         })
         
-        # Verificar la conexión
+        # Verificar conexión y permisos
         balance = exchange.fetch_balance()
-        logger.info("✅ Conexión con Binance establecida correctamente")
-        logger.info(f"💵 Balance USDT: {balance.get('USDT', {}).get('free', 0)}")
+        usdt_balance = balance.get('USDT', {}).get('free', 0)
+        
+        logger.info(f"✅ Conexión con Binance establecida")
+        logger.info(f"💵 Balance USDT disponible: ${usdt_balance:.2f}")
         
         return exchange
         
     except Exception as e:
-        logger.error(f"❌ Error al conectar con Binance: {e}")
-        raise
+        logger.error(f"❌ Error conectando con Binance: {e}")
+        raise ConnectionError(f"No se pudo conectar con Binance: {e}")
 
 
-def calculate_grid_levels(current_price: float, config: Dict[str, Any]) -> Dict[str, Any]:
+def reconnect_exchange(max_attempts: int = MAX_RECONNECTION_ATTEMPTS) -> Optional[ccxt.Exchange]:
     """
-    Calcula los niveles de precio para la grilla de trading
+    Intenta reconectar con el exchange con reintentos
     
     Args:
-        current_price: Precio actual del asset
-        config: Configuración del bot con grid_levels y price_range_percent
+        max_attempts: Número máximo de intentos
         
     Returns:
-        Dict con las listas de precios de compra y venta
+        Exchange reconectado o None si falla
+    """
+    for attempt in range(max_attempts):
+        try:
+            logger.info(f"🔄 Intento de reconexión {attempt + 1}/{max_attempts}")
+            exchange = get_exchange_connection()
+            logger.info("✅ Reconexión exitosa")
+            return exchange
+        except Exception as e:
+            logger.error(f"❌ Intento {attempt + 1} falló: {e}")
+            if attempt < max_attempts - 1:
+                time.sleep(RECONNECTION_DELAY * (attempt + 1))  # Backoff exponencial
+    
+    logger.error("❌ No se pudo reconectar después de múltiples intentos")
+    return None
+
+
+# ============================================================================
+# GESTIÓN DE ESTADO Y PERSISTENCIA
+# ============================================================================
+
+def save_bot_state(active_orders: List[Dict[str, Any]], config: Dict[str, Any]) -> None:
+    """
+    Guarda el estado actual del bot en archivo
+    
+    Args:
+        active_orders: Lista de órdenes activas
+        config: Configuración del bot
+    """
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        
+        state = {
+            'timestamp': datetime.now().isoformat(),
+            'config': config,
+            'active_orders': active_orders,
+            'total_orders': len(active_orders)
+        }
+        
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+            
+        logger.debug(f"💾 Estado guardado: {len(active_orders)} órdenes activas")
+        
+    except Exception as e:
+        logger.error(f"❌ Error guardando estado: {e}")
+
+
+def load_bot_state() -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    Carga el estado previo del bot si existe
+    
+    Returns:
+        Tuple de (órdenes_activas, configuración) o ([], None) si no existe
+    """
+    try:
+        if not os.path.exists(STATE_FILE):
+            return [], None
+            
+        with open(STATE_FILE, 'r') as f:
+            state = json.load(f)
+            
+        # Verificar que no sea muy antiguo (más de 2 días)
+        timestamp = datetime.fromisoformat(state['timestamp'])
+        if datetime.now() - timestamp > timedelta(days=2):
+            logger.warning("⚠️ Estado guardado muy antiguo, iniciando desde cero")
+            return [], None
+            
+        orders = state.get('active_orders', [])
+        config = state.get('config')
+        
+        logger.info(f"📂 Estado cargado: {len(orders)} órdenes activas")
+        return orders, config
+        
+    except Exception as e:
+        logger.error(f"❌ Error cargando estado: {e}")
+        return [], None
+
+
+# ============================================================================
+# CÁLCULOS DE GRILLA Y PRECIOS
+# ============================================================================
+
+def calculate_grid_prices(current_price: float, config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calcula los precios de compra y venta para la grilla
+    
+    Args:
+        current_price: Precio actual del activo
+        config: Configuración validada del bot
+        
+    Returns:
+        Dict con listas de precios de compra y venta
     """
     try:
         grid_levels = config['grid_levels']
         price_range_percent = config['price_range_percent']
         
-        # Calcular el rango de precios
+        # Calcular rango de precios
         price_range = current_price * (price_range_percent / 100)
         min_price = current_price - (price_range / 2)
         max_price = current_price + (price_range / 2)
         
-        logger.info(f"📊 Rango de precios: ${min_price:.2f} - ${max_price:.2f}")
-        
-        # Dividir el número de niveles: mitad para compras, mitad para ventas
+        # Dividir niveles entre compras y ventas
         buy_levels = grid_levels // 2
         sell_levels = grid_levels - buy_levels
         
@@ -79,7 +247,7 @@ def calculate_grid_levels(current_price: float, config: Dict[str, Any]) -> Dict[
                 buy_price = current_price - price_step * (i + 1)
                 buy_prices.append(round(buy_price, 2))
         
-        # Calcular precios de venta (por encima del precio actual)
+        # Calcular precios de venta iniciales (solo si tenemos balance del activo)
         sell_prices = []
         if sell_levels > 0:
             price_step = (max_price - current_price) / sell_levels
@@ -87,114 +255,169 @@ def calculate_grid_levels(current_price: float, config: Dict[str, Any]) -> Dict[
                 sell_price = current_price + price_step * (i + 1)
                 sell_prices.append(round(sell_price, 2))
         
-        logger.info(f"🟢 Precios de compra: {buy_prices}")
-        logger.info(f"🔴 Precios de venta: {sell_prices}")
+        logger.info(f"📊 Rango: ${min_price:.2f} - ${max_price:.2f}")
+        logger.info(f"🟢 Precios compra: {buy_prices}")
+        logger.info(f"🔴 Precios venta iniciales: {sell_prices}")
         
         return {
             'buy_prices': buy_prices,
             'sell_prices': sell_prices,
-            'current_price': current_price,
-            'range': {'min': min_price, 'max': max_price}
+            'price_range': {'min': min_price, 'max': max_price, 'current': current_price}
         }
         
     except Exception as e:
-        logger.error(f"❌ Error calculando niveles de grilla: {e}")
+        logger.error(f"❌ Error calculando precios de grilla: {e}")
         raise
 
 
-def create_grid_orders(config: Dict[str, str], exchange: ccxt.Exchange):
+def calculate_order_quantity(capital_per_order: float, price: float, min_qty: float = 0.001) -> float:
     """
-    Calcula y coloca las órdenes iniciales en el mercado
+    Calcula la cantidad para una orden considerando restricciones del exchange
     
     Args:
-        config: Diccionario con la configuración del bot
-        exchange: Instancia del exchange de Binance
+        capital_per_order: Capital asignado a esta orden
+        price: Precio de la orden
+        min_qty: Cantidad mínima permitida
+        
+    Returns:
+        Cantidad calculada y redondeada
     """
-    global _active_orders
-    
     try:
-        logger.info("📋 Calculando y creando órdenes de la grilla...")
+        quantity = capital_per_order / price
         
-        pair = config['pair']
-        total_capital = config['total_capital']
-        current_price = exchange.fetch_ticker(pair)['last']
+        # Redondear hacia abajo a 6 decimales para evitar errores de precisión
+        quantity = float(Decimal(str(quantity)).quantize(Decimal('0.000001'), rounding=ROUND_DOWN))
         
-        logger.info(f"💹 Precio actual de {pair}: ${current_price}")
-        
-        # Calcular niveles de grilla
-        grid_data = calculate_grid_levels(current_price, config)
-        buy_prices = grid_data['buy_prices']
-        
-        # Calcular capital por orden de compra
-        if len(buy_prices) > 0:
-            capital_per_order = total_capital / len(buy_prices)
-            logger.info(f"💰 Capital por orden: ${capital_per_order:.2f}")
+        # Verificar cantidad mínima
+        if quantity < min_qty:
+            logger.warning(f"⚠️ Cantidad {quantity} menor que mínimo {min_qty}")
+            return min_qty
             
-            # Crear órdenes de compra
-            for price in buy_prices:
-                quantity = capital_per_order / price
-                
-                try:
-                    # Crear orden de compra limitada
-                    order = exchange.create_limit_buy_order(pair, quantity, price)
-                    
-                    order_info = {
-                        'id': order['id'],
-                        'type': 'buy',
-                        'quantity': quantity,
-                        'price': price,
-                        'pair': pair,
-                        'status': 'open',
-                        'timestamp': order['timestamp']
-                    }
-                    
-                    _active_orders.append(order_info)
-                    logger.info(f"✅ Orden de compra creada: {quantity:.6f} {pair.split('/')[0]} a ${price}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error creando orden de compra a ${price}: {e}")
-            
-            # Enviar notificación de inicio
-            message = f"🚀 <b>GRID BOT INICIADO</b>\n\n"
-            message += f"📊 <b>Par:</b> {pair}\n"
-            message += f"💰 <b>Capital:</b> ${total_capital}\n"
-            message += f"🎯 <b>Niveles:</b> {config['grid_levels']}\n"
-            message += f"📈 <b>Rango:</b> {config['price_range_percent']}%\n"
-            message += f"💹 <b>Precio actual:</b> ${current_price:.2f}\n"
-            message += f"🟢 <b>Órdenes de compra:</b> {len(buy_prices)}"
-            
-            send_telegram_message(message)
-        
-        else:
-            logger.warning("⚠️ No se crearon órdenes de compra")
+        return quantity
         
     except Exception as e:
-        logger.error(f"❌ Error al crear órdenes de grilla: {e}")
+        logger.error(f"❌ Error calculando cantidad: {e}")
         raise
 
 
-def create_sell_order_after_buy(buy_order: Dict[str, Any], exchange: ccxt.Exchange):
+# ============================================================================
+# GESTIÓN DE ÓRDENES
+# ============================================================================
+
+def create_order_with_retry(exchange: ccxt.Exchange, order_type: str, pair: str, 
+                          quantity: float, price: float, retries: int = ORDER_RETRY_ATTEMPTS) -> Optional[Dict]:
     """
-    Crea una orden de venta después de que se ejecute una compra
+    Crea una orden con reintentos en caso de fallo
     
     Args:
-        buy_order: Información de la orden de compra ejecutada
         exchange: Instancia del exchange
+        order_type: 'buy' o 'sell'
+        pair: Par de trading
+        quantity: Cantidad
+        price: Precio
+        retries: Número de reintentos
+        
+    Returns:
+        Información de la orden creada o None si falla
     """
-    global _active_orders, _order_pairs
+    for attempt in range(retries):
+        try:
+            if order_type == 'buy':
+                order = exchange.create_limit_buy_order(pair, quantity, price)
+            else:
+                order = exchange.create_limit_sell_order(pair, quantity, price)
+                
+            logger.info(f"✅ Orden {order_type} creada: {quantity:.6f} a ${price}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"❌ Intento {attempt + 1} falló para orden {order_type}: {e}")
+            if attempt < retries - 1:
+                time.sleep(1)  # Esperar antes del siguiente intento
     
+    logger.error(f"❌ No se pudo crear orden {order_type} después de {retries} intentos")
+    return None
+
+
+def create_initial_buy_orders(exchange: ccxt.Exchange, config: Dict[str, Any], 
+                            grid_prices: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Crea las órdenes de compra iniciales
+    
+    Args:
+        exchange: Instancia del exchange
+        config: Configuración del bot
+        grid_prices: Precios calculados de la grilla
+        
+    Returns:
+        Lista de órdenes creadas exitosamente
+    """
+    active_orders = []
+    buy_prices = grid_prices['buy_prices']
+    
+    if not buy_prices:
+        logger.warning("⚠️ No hay precios de compra para crear órdenes")
+        return active_orders
+    
+    try:
+        pair = config['pair']
+        total_capital = config['total_capital']
+        capital_per_order = total_capital / len(buy_prices)
+        
+        logger.info(f"💰 Capital por orden: ${capital_per_order:.2f}")
+        
+        successful_orders = 0
+        for price in buy_prices:
+            quantity = calculate_order_quantity(capital_per_order, price)
+            
+            order = create_order_with_retry(exchange, 'buy', pair, quantity, price)
+            if order:
+                order_info = {
+                    'id': order['id'],
+                    'type': 'buy',
+                    'quantity': quantity,
+                    'price': price,
+                    'pair': pair,
+                    'status': 'open',
+                    'timestamp': order['timestamp'],
+                    'created_at': datetime.now().isoformat()
+                }
+                active_orders.append(order_info)
+                successful_orders += 1
+            
+        logger.info(f"✅ Órdenes de compra creadas: {successful_orders}/{len(buy_prices)}")
+        
+        return active_orders
+        
+    except Exception as e:
+        logger.error(f"❌ Error creando órdenes iniciales: {e}")
+        return active_orders
+
+
+def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Crea orden de venta después de ejecutarse una compra
+    
+    Args:
+        exchange: Instancia del exchange
+        buy_order: Información de la orden de compra ejecutada
+        
+    Returns:
+        Información de la orden de venta creada o None
+    """
     try:
         pair = buy_order['pair']
         quantity = buy_order['quantity']
         buy_price = buy_order['price']
         
-        # Calcular precio de venta con 1% de ganancia
-        sell_price = buy_price * 1.01
+        # Calcular precio de venta con ganancia
+        sell_price = buy_price * (1 + PROFIT_PERCENTAGE)
         sell_price = round(sell_price, 2)
         
-        # Crear orden de venta
-        order = exchange.create_limit_sell_order(pair, quantity, sell_price)
-        
+        order = create_order_with_retry(exchange, 'sell', pair, quantity, sell_price)
+        if not order:
+            return None
+            
         sell_order_info = {
             'id': order['id'],
             'type': 'sell',
@@ -203,147 +426,251 @@ def create_sell_order_after_buy(buy_order: Dict[str, Any], exchange: ccxt.Exchan
             'pair': pair,
             'status': 'open',
             'timestamp': order['timestamp'],
-            'buy_price': buy_price  # Para calcular ganancia
+            'buy_price': buy_price,
+            'buy_order_id': buy_order['id'],
+            'created_at': datetime.now().isoformat()
         }
         
-        _active_orders.append(sell_order_info)
-        _order_pairs[order['id']] = buy_order['id']  # Relacionar venta con compra
+        # Calcular ganancia esperada
+        profit = (sell_price - buy_price) * quantity
+        logger.info(f"💰 Orden venta creada: {quantity:.6f} a ${sell_price} (ganancia esperada: ${profit:.2f})")
         
-        logger.info(f"✅ Orden de venta creada: {quantity:.6f} {pair.split('/')[0]} a ${sell_price} (ganancia: 1%)")
-        
-        # Enviar notificación de venta programada
-        send_grid_trade_notification(sell_order_info, {'pair': pair})
+        return sell_order_info
         
     except Exception as e:
         logger.error(f"❌ Error creando orden de venta: {e}")
+        return None
 
 
-def monitor_and_replace_orders(config: Dict[str, str], exchange: ccxt.Exchange):
+def create_replacement_buy_order(exchange: ccxt.Exchange, sell_order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
-    El bucle principal que correrá 24/7 para monitorear órdenes ejecutadas y colocar las nuevas
+    Crea nueva orden de compra después de ejecutarse una venta
     
     Args:
-        config: Diccionario con la configuración del bot
-        exchange: Instancia del exchange de Binance
+        exchange: Instancia del exchange
+        sell_order: Información de la orden de venta ejecutada
+        
+    Returns:
+        Información de la nueva orden de compra o None
     """
-    global _active_orders
+    try:
+        pair = sell_order['pair']
+        quantity = sell_order['quantity']
+        original_buy_price = sell_order.get('buy_price', sell_order['price'] / (1 + PROFIT_PERCENTAGE))
+        
+        order = create_order_with_retry(exchange, 'buy', pair, quantity, original_buy_price)
+        if not order:
+            return None
+            
+        new_buy_order = {
+            'id': order['id'],
+            'type': 'buy',
+            'quantity': quantity,
+            'price': original_buy_price,
+            'pair': pair,
+            'status': 'open',
+            'timestamp': order['timestamp'],
+            'created_at': datetime.now().isoformat(),
+            'replacement_for': sell_order['buy_order_id']
+        }
+        
+        logger.info(f"🔄 Orden de compra reemplazada: {quantity:.6f} a ${original_buy_price}")
+        return new_buy_order
+        
+    except Exception as e:
+        logger.error(f"❌ Error creando orden de compra de reemplazo: {e}")
+        return None
+
+
+# ============================================================================
+# MONITOREO Y LÓGICA PRINCIPAL
+# ============================================================================
+
+def check_and_process_filled_orders(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]], 
+                                   config: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Verifica órdenes ejecutadas y procesa las acciones correspondientes
     
-    logger.info("🔄 Iniciando monitoreo de órdenes...")
-    status_counter = 0  # Para enviar resumen cada hora
-    trades_in_last_hour = 0  # Contador de trades en la última hora
+    Args:
+        exchange: Instancia del exchange
+        active_orders: Lista de órdenes activas
+        config: Configuración del bot
+        
+    Returns:
+        Tuple de (órdenes_activas_actualizadas, trades_ejecutados)
+    """
+    updated_orders = []
+    trades_executed = 0
+    
+    for order_info in active_orders:
+        try:
+            # Verificar estado de la orden
+            order_status = exchange.fetch_order(order_info['id'], order_info['pair'])
+            
+            if order_status['status'] == 'closed':
+                trades_executed += 1
+                logger.info(f"✅ Trade ejecutado: {order_info['type']} {order_info['quantity']:.6f} a ${order_info['price']}")
+                
+                # Enviar notificación
+                send_grid_trade_notification(order_info, config)
+                
+                if order_info['type'] == 'buy':
+                    # Crear orden de venta correspondiente
+                    sell_order = create_sell_order_after_buy(exchange, order_info)
+                    if sell_order:
+                        updated_orders.append(sell_order)
+                        
+                elif order_info['type'] == 'sell':
+                    # Crear nueva orden de compra
+                    new_buy_order = create_replacement_buy_order(exchange, order_info)
+                    if new_buy_order:
+                        updated_orders.append(new_buy_order)
+            else:
+                # Orden sigue activa
+                updated_orders.append(order_info)
+                
+        except Exception as e:
+            logger.error(f"❌ Error verificando orden {order_info['id']}: {e}")
+            # Mantener la orden en la lista para reintentarlo después
+            updated_orders.append(order_info)
+    
+    return updated_orders, trades_executed
+
+
+def monitor_grid_orders(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]], 
+                      config: Dict[str, Any]) -> None:
+    """
+    Bucle principal de monitoreo de órdenes
+    
+    Args:
+        exchange: Instancia del exchange
+        active_orders: Lista inicial de órdenes activas
+        config: Configuración del bot
+    """
+    logger.info("🔄 Iniciando monitoreo continuo de órdenes...")
+    
+    cycle_count = 0
+    trades_in_period = 0
+    last_state_save = time.time()
     
     try:
         while True:
-            logger.info("👀 Monitoreando órdenes activas...")
+            cycle_count += 1
             
-            # Verificar estado de cada orden activa
-            orders_to_remove = []
-            
-            for i, order_info in enumerate(_active_orders):
-                try:
-                    # Obtener estado actual de la orden
-                    order_status = exchange.fetch_order(order_info['id'], order_info['pair'])
+            try:
+                # Verificar y procesar órdenes
+                active_orders, new_trades = check_and_process_filled_orders(
+                    exchange, active_orders, config
+                )
+                trades_in_period += new_trades
+                
+                # Guardar estado cada 10 minutos
+                if time.time() - last_state_save > 600:  # 10 minutos
+                    save_bot_state(active_orders, config)
+                    last_state_save = time.time()
+                
+                # Enviar resumen periódico
+                if cycle_count >= STATUS_REPORT_CYCLES:
+                    if trades_in_period > 0:
+                        send_grid_hourly_summary(active_orders, config, trades_in_period)
+                        logger.info(f"📊 Resumen enviado - Trades: {trades_in_period}, Órdenes activas: {len(active_orders)}")
                     
-                    if order_status['status'] == 'closed':
-                        logger.info(f"✅ Orden ejecutada: {order_info['type']} {order_info['quantity']:.6f} a ${order_info['price']}")
-                        
-                        # Incrementar contador de trades
-                        trades_in_last_hour += 1
-                        
-                        # Enviar notificación de trade ejecutado (info importante)
-                        send_grid_trade_notification(order_info, config)
-                        
-                        if order_info['type'] == 'buy':
-                            # Si se ejecutó una compra, crear orden de venta
-                            create_sell_order_after_buy(order_info, exchange)
-                        
-                        elif order_info['type'] == 'sell':
-                            # Si se ejecutó una venta, crear nueva orden de compra al mismo precio original
-                            buy_price = order_info.get('buy_price', order_info['price'] / 1.01)
-                            quantity = order_info['quantity']
-                            
-                            try:
-                                new_buy_order = exchange.create_limit_buy_order(
-                                    order_info['pair'], 
-                                    quantity, 
-                                    buy_price
-                                )
-                                
-                                new_order_info = {
-                                    'id': new_buy_order['id'],
-                                    'type': 'buy',
-                                    'quantity': quantity,
-                                    'price': buy_price,
-                                    'pair': order_info['pair'],
-                                    'status': 'open',
-                                    'timestamp': new_buy_order['timestamp']
-                                }
-                                
-                                _active_orders.append(new_order_info)
-                                logger.info(f"✅ Nueva orden de compra creada: {quantity:.6f} a ${buy_price}")
-                                
-                            except Exception as e:
-                                logger.error(f"❌ Error creando nueva orden de compra: {e}")
-                        
-                        # Marcar para eliminar de la lista de activas
-                        orders_to_remove.append(i)
+                    cycle_count = 0
+                    trades_in_period = 0
                 
-                except Exception as e:
-                    logger.error(f"❌ Error verificando orden {order_info['id']}: {e}")
-            
-            # Eliminar órdenes ejecutadas de la lista de activas
-            for i in reversed(orders_to_remove):
-                _active_orders.pop(i)
-            
-            # Enviar resumen cada hora (120 ciclos = 1 hora)
-            status_counter += 1
-            if status_counter >= 120:
-                # Solo enviar resumen si hubo actividad
-                if trades_in_last_hour > 0:
-                    send_grid_hourly_summary(_active_orders, config, trades_in_last_hour)
-                    logger.info(f"📊 Resumen horario enviado - Trades ejecutados: {trades_in_last_hour}")
+                logger.debug(f"👀 Monitoreo ciclo {cycle_count} - Órdenes activas: {len(active_orders)}")
                 
-                # Resetear contadores
-                status_counter = 0
-                trades_in_last_hour = 0
+            except ccxt.NetworkError as e:
+                logger.error(f"🌐 Error de red: {e}")
+                reconnected_exchange = reconnect_exchange()
+                if not reconnected_exchange:
+                    logger.error("❌ No se pudo reconectar, deteniendo bot")
+                    break
+                exchange = reconnected_exchange
+                    
+            except Exception as e:
+                logger.error(f"❌ Error en ciclo de monitoreo: {e}")
+                time.sleep(MONITORING_INTERVAL * 2)  # Esperar más tiempo en caso de error
+                continue
             
-            # Esperar 30 segundos antes del siguiente chequeo
-            time.sleep(30)
+            # Esperar antes del siguiente ciclo
+            time.sleep(MONITORING_INTERVAL)
             
     except KeyboardInterrupt:
-        logger.info("⏹️ Deteniendo monitoreo por solicitud del usuario...")
+        logger.info("⏹️ Monitoreo detenido por usuario")
     except Exception as e:
-        logger.error(f"❌ Error en el monitoreo de órdenes: {e}")
-        # Enviar notificación de error
-        send_telegram_message(f"❌ <b>ERROR EN GRID BOT</b>\n\n{str(e)}")
-        raise
+        logger.error(f"❌ Error crítico en monitoreo: {e}")
+        send_telegram_message(f"🚨 <b>ERROR CRÍTICO EN GRID BOT</b>\n\n{str(e)}")
+    finally:
+        # Guardar estado final
+        save_bot_state(active_orders, config)
+        logger.info("💾 Estado final guardado")
 
 
-def run_grid_trading_bot(config: Dict[str, Any]):
+# ============================================================================
+# FUNCIÓN PRINCIPAL (PUNTO DE ENTRADA)
+# ============================================================================
+
+def run_grid_trading_bot(config: Dict[str, Any]) -> None:
     """
     Función principal que orquesta todo el proceso del Grid Trading Bot
     
     Args:
-        config: Diccionario con la configuración del bot
+        config: Configuración del bot desde el scheduler
     """
     try:
-        logger.info(f"🤖 Iniciando Grid Trading Bot para {config.get('pair', 'N/A')}")
-        logger.info(f"💰 Capital total: ${config.get('total_capital', 0)}")
-        logger.info(f"📊 Niveles de grilla: {config.get('grid_levels', 0)}")
+        logger.info("🤖 ========== INICIANDO GRID TRADING BOT ==========")
         
-        # Inicializar conexión con el exchange
-        exchange = get_binance_exchange()
+        # Validar configuración
+        validated_config = validate_config(config)
         
-        # Paso 1: Crear órdenes iniciales de la grilla
-        create_grid_orders(config, exchange)
+        # Intentar cargar estado previo
+        saved_orders, saved_config = load_bot_state()
         
-        # Paso 2: Iniciar el monitoreo continuo
-        monitor_and_replace_orders(config, exchange)
+        # Si hay estado previo y la configuración coincide, continuar
+        if saved_orders and saved_config and saved_config['pair'] == validated_config['pair']:
+            logger.info(f"📂 Continuando con {len(saved_orders)} órdenes previas")
+            active_orders = saved_orders
+            exchange = get_exchange_connection()
+        else:
+            # Inicializar desde cero
+            logger.info("🆕 Iniciando configuración nueva")
+            
+            # Conectar con exchange
+            exchange = get_exchange_connection()
+            
+            # Obtener precio actual
+            current_price = exchange.fetch_ticker(validated_config['pair'])['last']
+            logger.info(f"💹 Precio actual de {validated_config['pair']}: ${current_price}")
+            
+            # Calcular precios de grilla
+            grid_prices = calculate_grid_prices(current_price, validated_config)
+            
+            # Crear órdenes iniciales
+            active_orders = create_initial_buy_orders(exchange, validated_config, grid_prices)
+            
+            if not active_orders:
+                raise Exception("No se pudieron crear órdenes iniciales")
+            
+            # Enviar notificación de inicio
+            startup_message = f"🚀 <b>GRID BOT INICIADO</b>\n\n"
+            startup_message += f"📊 <b>Par:</b> {validated_config['pair']}\n"
+            startup_message += f"💰 <b>Capital:</b> ${validated_config['total_capital']}\n"
+            startup_message += f"🎯 <b>Niveles:</b> {validated_config['grid_levels']}\n"
+            startup_message += f"📈 <b>Rango:</b> {validated_config['price_range_percent']}%\n"
+            startup_message += f"💹 <b>Precio actual:</b> ${current_price:.2f}\n"
+            startup_message += f"🟢 <b>Órdenes creadas:</b> {len(active_orders)}\n"
+            startup_message += f"💵 <b>Ganancia objetivo:</b> {validated_config['profit_percentage']}%"
+            
+            send_telegram_message(startup_message)
+        
+        # Iniciar monitoreo continuo
+        monitor_grid_orders(exchange, active_orders, validated_config)
         
     except Exception as e:
-        logger.error(f"❌ Error fatal en Grid Trading Bot: {e}")
-        # Enviar notificación de error crítico
+        error_msg = f"❌ Error fatal en Grid Trading Bot: {e}"
+        logger.error(error_msg)
         send_telegram_message(f"🚨 <b>ERROR CRÍTICO EN GRID BOT</b>\n\n{str(e)}")
         raise
     finally:
-        logger.info("🛑 Grid Trading Bot detenido") 
+        logger.info("🛑 ========== GRID TRADING BOT DETENIDO ==========") 
