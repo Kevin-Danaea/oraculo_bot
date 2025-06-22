@@ -23,11 +23,6 @@ class Settings(BaseSettings):
     # API Key para Google Gemini
     GOOGLE_API_KEY: str = ""
     
-    # Configuración de Microservicios (LEGACY)
-    # NOTA: SERVICE_MODE será removido gradualmente en favor de servicios específicos
-    # Los nuevos servicios modularizados no dependen de esta variable
-    SERVICE_MODE: str = "all"  # "all", "news", "grid", "api"
-    
     # Configuración para Grid Bot
     BINANCE_API_KEY: str = ""
     BINANCE_API_SECRET: str = ""

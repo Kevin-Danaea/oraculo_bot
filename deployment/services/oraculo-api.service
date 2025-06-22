@@ -1,29 +1,17 @@
 [Unit]
 Description=Oráculo Bot - Servicio API
 After=network.target
-Wants=network.target
 
 [Service]
-Type=simple
-User=www-data
+User=root
 Group=www-data
-WorkingDirectory=/path/to/your/oraculo_bot
-ExecStart=/path/to/your/oraculo_bot/venv/bin/python run_api_service.py
-Restart=always
-RestartSec=10
+WorkingDirectory=/var/www/oraculo_bot
 
 # Variables de entorno
-Environment="SERVICE_MODE=api"
-EnvironmentFile=-/path/to/your/oraculo_bot/.env
+EnvironmentFile=/var/www/oraculo_bot/.env
 
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=oraculo-api
+ExecStart=/var/www/oraculo_bot/venv/bin/python run_api_service.py
 
-# Límites de recursos
-LimitNOFILE=65536
-MemoryMax=256M
 
 [Install]
 WantedBy=multi-user.target 

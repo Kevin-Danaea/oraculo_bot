@@ -1,5 +1,5 @@
 [Unit]
-Description=Oráculo Bot - Servicio de Grid Trading
+Description=Oráculo Bot - Servicio de Noticias
 After=network.target
 
 [Service]
@@ -8,7 +8,6 @@ Group=www-data
 WorkingDirectory=/var/www/oraculo_bot
 
 # Variables de entorno
-Environment="SERVICE_MODE=grid"
 EnvironmentFile=/var/www/oraculo_bot/.env
 
 ExecStart=/var/www/oraculo_bot/venv/bin/python run_news_service.py

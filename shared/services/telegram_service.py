@@ -119,51 +119,6 @@ def send_grid_trade_notification(order_info: dict, config: dict):
         return False
 
 
-def send_system_startup_notification(service_mode: str):
-    """
-    Envía notificación cuando se inicializa el sistema (LEGACY)
-    Mantenida para compatibilidad hacia atrás
-    
-    Args:
-        service_mode: Modo del servicio ("all", "news", "grid", "api")
-    """
-    try:
-        # Mapear nombres más amigables
-        mode_names = {
-            "all": "TODOS LOS SERVICIOS",
-            "news": "SERVICIO DE NOTICIAS",
-            "grid": "SERVICIO GRID TRADING",
-            "api": "SERVICIO API"
-        }
-        
-        mode_display = mode_names.get(service_mode, service_mode.upper())
-        
-        message = f"🚀 <b>ORÁCULO BOT INICIADO</b>\n\n"
-        message += f"🔧 <b>Modo:</b> {mode_display}\n"
-        
-        # Agregar información específica según el modo
-        if service_mode in ["all", "news"]:
-            message += "📰 Recopilador de noticias: ✅\n"
-        
-        if service_mode in ["all", "grid"]:
-            message += "🤖 Grid Trading Bot: ✅\n"
-        
-        if service_mode in ["all", "api"]:
-            message += "🌐 API REST: ✅\n"
-        
-        # Timestamp
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        message += f"\n⏰ <i>{timestamp}</i>"
-        message += f"\n\n🟢 <i>Sistema operativo y listo para funcionar</i>"
-        
-        return send_telegram_message(message)
-        
-    except Exception as e:
-        logger.error(f"❌ Error enviando notificación de inicio: {e}")
-        return False
-
-
 def send_grid_hourly_summary(active_orders: list, config: dict, trades_count: int):
     """
     Envía resumen horario del grid bot con información de actividad
