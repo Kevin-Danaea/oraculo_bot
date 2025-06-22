@@ -47,6 +47,36 @@ def send_telegram_message(message: str):
         return False
 
 
+def send_service_startup_notification(service_name: str, features = None):
+    """
+    Envía notificación cuando se inicializa un servicio específico
+    Nueva función más flexible que reemplaza send_system_startup_notification
+    
+    Args:
+        service_name: Nombre del servicio (ej: "Servicio de Noticias", "Grid Trading Bot")
+        features: Lista de características activas (opcional)
+    """
+    try:
+        message = f"🚀 <b>{service_name.upper()} INICIADO</b>\n\n"
+        
+        if features is not None:
+            for feature in features:
+                message += f"✅ {feature}\n"
+            message += "\n"
+        
+        # Timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message += f"⏰ <i>{timestamp}</i>"
+        message += f"\n\n🟢 <i>Servicio operativo y listo para funcionar</i>"
+        
+        return send_telegram_message(message)
+        
+    except Exception as e:
+        logger.error(f"❌ Error enviando notificación de inicio: {e}")
+        return False
+
+
 def send_grid_trade_notification(order_info: dict, config: dict):
     """
     Envía notificación específica para trades del grid bot
@@ -91,7 +121,8 @@ def send_grid_trade_notification(order_info: dict, config: dict):
 
 def send_system_startup_notification(service_mode: str):
     """
-    Envía notificación cuando se inicializa el sistema
+    Envía notificación cuando se inicializa el sistema (LEGACY)
+    Mantenida para compatibilidad hacia atrás
     
     Args:
         service_mode: Modo del servicio ("all", "news", "grid", "api")
