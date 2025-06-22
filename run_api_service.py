@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Punto de entrada específico para solo la API (sin schedulers)
+Punto de entrada específico para el API Gateway
+Centraliza todos los endpoints de los microservicios de Oráculo Bot.
 """
 import os
 import sys
@@ -8,21 +9,16 @@ import sys
 # Agregar el directorio raíz al path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.core.config import settings
-
-# Configurar el modo del servicio
-os.environ["SERVICE_MODE"] = "api"
-
 if __name__ == "__main__":
     import uvicorn
     
-    print("🌐 Iniciando Servicio de API...")
-    print(f"🔧 Modo: {os.environ.get('SERVICE_MODE', 'api')}")
+    print("🌐 Iniciando API Gateway...")
+    print("🚀 Centralizando endpoints de microservicios")
     
     uvicorn.run(
-        "app.main:app",
+        "services.api.main:app",
         host="0.0.0.0",
-        port=8002,  # Puerto diferente para la API
+        port=8002,  # Puerto específico para API Gateway
         reload=False,
         log_level="info"
     ) 

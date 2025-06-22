@@ -44,7 +44,7 @@ def run_sentiment_analysis_job():
 
         logger.info(f"Analizando {len(noticias_sin_analizar)} noticias...")
         for noticia in noticias_sin_analizar:
-            score = sentiment_service.analyze_sentiment(str(noticia.headline))
+            score = sentiment_service.analyze_sentiment_text(str(noticia.headline))
             setattr(noticia, 'sentiment_score', score)
         
         db.commit()
