@@ -2,9 +2,15 @@
 Configuración compartida entre todos los microservicios.
 Centraliza todas las variables de entorno y configuraciones.
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        extra='ignore'  # Ignorar campos extra del .env
+    )
+    
     PROJECT_NAME: str = "Oráculo Cripto Bot"
     API_V1_STR: str = "/api/v1"
     DATABASE_URL: str = "sqlite:///./oraculo.db"
@@ -29,10 +35,6 @@ class Settings(BaseSettings):
     # Configuración para notificaciones de Telegram
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
-
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
 
 # Instancia global compartida
 settings = Settings() 
