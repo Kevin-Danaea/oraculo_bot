@@ -1,91 +1,91 @@
-# �� Oráculo Cripto Bot - Arquitectura de Microservicios
+# 🔮 Oráculo Cripto Bot - Arquitectura de Pure Workers + API Gateway
 
-Un sistema inteligente de microservicios para trading automatizado y análisis de noticias de criptomonedas que funciona como un oráculo completo del mercado crypto.
+Un sistema inteligente de **microservicios pure workers** para trading automatizado y análisis de noticias crypto con **API Gateway centralizado** y **health checks HTTP** en tiempo real.
 
 ## 📋 Descripción del Proyecto
 
-El **Oráculo Cripto Bot** es un ecosistema de microservicios construido con FastAPI que combina **trading automatizado** y **análisis de sentimientos** de noticias cripto. El sistema está diseñado como una arquitectura moderna de microservicios que proporciona datos actualizados y ejecuta estrategias de trading de manera continua y automática.
+El **Oráculo Cripto Bot** es un ecosistema de **pure workers** con **API Gateway centralizado** que combina **trading automatizado** y **análisis de sentimientos** de noticias cripto. La arquitectura está diseñada como **microservicios modernos** donde cada worker es independiente y el gateway agrega su estado mediante **health checks HTTP**.
 
-### 🎯 Funcionalidades Principales
+### 🎯 Arquitectura: Pure Workers + Gateway Centralizado
 
-#### 📰 Servicio de Noticias
-- **Recolección Automática**: Obtiene noticias de Reddit (r/CryptoCurrency) cada hora
-- **Análisis de Sentimientos**: Procesa noticias con Google Gemini AI cada 4 horas
-- **Filtrado Inteligente**: Solo recolecta de dominios confiables (CoinDesk, CoinTelegraph, etc.)
-- **Prevención de Duplicados**: Evita almacenar noticias duplicadas usando URL como identificador único
+#### 📰 News Worker (Puerto 8000)
+- **Recolección Automática**: Reddit (r/CryptoCurrency) cada hora
+- **Análisis de Sentimientos**: Google Gemini AI cada 4 horas  
+- **Background Jobs**: Schedulers independientes
+- **Minimal API**: Solo `/health` para monitoreo
 
-#### 🤖 Servicio de Grid Trading
-- **Grid Trading Bot**: Ejecuta estrategias de grid trading en Binance
-- **Trading Automatizado**: Operaciones continuas 24/7 con parámetros configurables
-- **Gestión de Riesgos**: Stop loss y take profit automáticos
-- **Múltiples Estrategias**: Soporte para diferentes algoritmos de trading
+#### 🤖 Grid Worker (Puerto 8001)
+- **Grid Trading Bot**: Estrategias automatizadas en Binance
+- **Trading 24/7**: Operaciones continuas con gestión de riesgos
+- **Background Jobs**: Schedulers de trading independientes
+- **Minimal API**: Solo `/health` para monitoreo
 
-#### 🌐 API Gateway
-- **Endpoints Unificados**: Centraliza acceso a todos los microservicios
-- **Load Balancing**: Distribución inteligente de requests
-- **Monitoring**: Estado y salud de todos los servicios
-- **Documentación Automática**: Swagger UI integrado
+#### 🌐 API Gateway (Puerto 8002)
+- **Único Punto HTTP**: Entrada pública centralizada
+- **Health Checks Agregados**: Estado de todos los workers vía HTTP
+- **Monitoreo Centralizado**: `/api/v1/health` agrega todo el sistema
+- **Communication Hub**: Comunica con workers via `localhost:8000` y `localhost:8001`
 
-### 🏗️ Arquitectura de Microservicios
+### 🏗️ Arquitectura Final Optimizada
 
 ```
 oraculo_bot/
-├── services/                    # 🔥 MICROSERVICIOS INDEPENDIENTES
-│   ├── api/                     # API Gateway (Puerto 8002)
-│   │   ├── main.py              # Entry point del gateway
-│   │   └── routers/             # Routers modulares por servicio
-│   │       ├── news_router.py   # Endpoints de noticias
-│   │       ├── grid_router.py   # Endpoints de trading
-│   │       └── status_router.py # Endpoints de estado del sistema
-│   ├── news/                    # Servicio de Noticias (Puerto 8000)
-│   │   ├── main.py              # Entry point del servicio
-│   │   ├── schedulers/          # Tareas programadas automáticas
-│   │   │   └── news_scheduler.py # Reddit + Sentiment analysis jobs
-│   │   ├── services/            # Lógica de negocio
-│   │   │   ├── reddit_service.py    # Integración con Reddit API
-│   │   │   └── sentiment_service.py # Análisis con Google Gemini
-│   │   └── api/                 # Endpoints específicos del servicio
-│   └── grid/                    # Servicio de Trading (Puerto 8001)
-│       ├── main.py              # Entry point del servicio
-│       ├── core/                # Motor de trading
-│   │   └── trading_engine.py # Engine principal de trading
-│   │   └── schedulers/          # Tareas de trading automáticas
-│   │       └── grid_scheduler.py # Jobs de grid trading
-│   │   └── strategies/          # Estrategias de trading modulares
-│   ├── shared/                      # 🧩 CÓDIGO COMPARTIDO
-│   │   ├── config/                  # Configuración centralizada
-│   │   │   └── settings.py          # Settings unificados para todos los servicios
-│   │   ├── database/                # Capa de datos compartida
-│   │   │   ├── models.py            # Modelos SQLAlchemy (Noticia, Trading, etc.)
-│   │   │   └── session.py           # Configuración de sesión de base de datos
-│   │   └── services/                # Servicios compartidos
-│   │       ├── logging_config.py    # Logging centralizado
-│   │       └── telegram_service.py  # Notificaciones Telegram
-│   ├── run_api_service.py           # 🚀 Entry point API Gateway
-│   ├── run_news_service.py          # 🚀 Entry point News Service  
-│   └── run_grid_service.py          # 🚀 Entry point Grid Trading Service
-│   └── requirements.txt             # Dependencias unificadas
-└── oraculo.db                   # Base de datos SQLite compartida
+├── services/                    # 🔥 MICROSERVICIOS PURE WORKERS
+│   ├── api/                     # 🌐 API Gateway (Puerto 8002) - PÚBLICO
+│   │   ├── main.py              # Entry point único HTTP
+│   │   └── routers/
+│   │       └── status_router.py # Health checks agregados HTTP
+│   ├── news/                    # 📰 News Worker (Puerto 8000) - WORKER PURO
+│   │   ├── main.py              # Minimal FastAPI + Background jobs
+│   │   ├── schedulers/          # Reddit + Sentiment analysis jobs
+│   │   └── services/            # Reddit API + Google Gemini AI
+│   └── grid/                    # 🤖 Grid Worker (Puerto 8001) - WORKER PURO
+│       ├── main.py              # Minimal FastAPI + Trading jobs
+│       ├── schedulers/          # Grid trading background jobs
+│       ├── core/                # Trading engine
+│       └── strategies/          # Trading algorithms
+├── shared/                      # 🧩 CÓDIGO COMPARTIDO
+│   ├── config/                  # Configuración centralizada
+│   ├── database/                # SQLite compartido (sentimientos)
+│   └── services/                # Logging + Telegram compartidos
+├── run_api_service.py           # 🚀 Entry point API Gateway
+├── run_news_service.py          # 🚀 Entry point News Worker
+├── run_grid_service.py          # 🚀 Entry point Grid Worker
+└── requirements.txt             # Dependencias (incluye aiohttp)
 ```
 
-#### 🔧 Componentes Principales
+### 🔗 Comunicación Entre Microservicios
 
-1. **API Gateway** (`services/api/`): Centraliza todos los endpoints y maneja el routing
-2. **News Service** (`services/news/`): Recolección de Reddit y análisis de sentimientos
-3. **Grid Service** (`services/grid/`): Motor de trading automatizado y estrategias
-4. **Shared Layer** (`shared/`): Código común, configuración y base de datos
-5. **Entry Points**: Scripts independientes para cada microservicio
+```mermaid
+graph LR
+    A[👤 Usuario/Nginx] -->|HTTP| B[🌐 API Gateway :8002]
+    B -->|Health Check HTTP| C[📰 News Worker :8000]
+    B -->|Health Check HTTP| D[🤖 Grid Worker :8001]
+    C -->|SQLite| E[(🗄️ DB Compartida)]
+    D -->|SQLite| E
+    C -->|Background| F[📡 Reddit API]
+    C -->|Background| G[🧠 Google Gemini]
+    D -->|Background| H[💹 Binance API]
+```
 
-#### 📊 Modelo de Datos
+#### 🔧 Flujo de Health Checks
 
-**Tabla `noticias`**:
-- `id`: Identificador único
-- `source`: Fuente de la noticia
-- `headline`: Título de la noticia
-- `url`: URL única (previene duplicados)
-- `published_at`: Fecha de publicación
-- `sentiment_score`: Puntuación de sentimiento (-1.0 a 1.0)
-- `entities`: Entidades extraídas (futuras funcionalidades)
+1. **API Gateway** (Puerto 8002) hace HTTP requests a:
+   - `http://localhost:8000/health` (News Worker)
+   - `http://localhost:8001/health` (Grid Worker)
+
+2. **Endpoint Agregado** `/api/v1/health` retorna estado completo:
+   ```json
+   {
+     "system_status": "healthy",
+     "summary": "3/3 servicios saludables",
+     "services": [
+       {"service": "api_gateway", "status": "healthy", "url": "localhost:8002"},
+       {"service": "news", "status": "healthy", "url": "localhost:8000"},
+       {"service": "grid", "status": "healthy", "url": "localhost:8001"}
+     ]
+   }
+   ```
 
 ## 🚀 Instalación y Configuración
 
@@ -93,10 +93,10 @@ oraculo_bot/
 
 - Python 3.8 o superior
 - pip (gestor de paquetes de Python)
-- Cuenta de Reddit para API credentials
-- Google API Key para análisis de sentimientos
-- Cuenta de Binance para trading (opcional)
-- Bot de Telegram para notificaciones (opcional)
+- **Cuenta de Reddit** para API credentials
+- **Google API Key** para análisis de sentimientos con Gemini
+- **Cuenta de Binance** para trading (opcional)
+- **Bot de Telegram** para notificaciones (opcional)
 
 ### 🔧 Instalación Local
 
@@ -149,87 +149,77 @@ oraculo_bot/
 
 ## 🎮 Ejecución del Proyecto
 
-### 🔥 Ejecutar Microservicios Individuales
+### 🔥 Ejecutar Pure Workers + API Gateway
 
 ```bash
-# Servicio de Noticias (Puerto 8000)
+# 📰 News Worker (Puerto 8000) - Background jobs
 python run_news_service.py
 
-# Servicio de Grid Trading (Puerto 8001)  
+# 🤖 Grid Trading Worker (Puerto 8001) - Background jobs  
 python run_grid_service.py
 
-# API Gateway (Puerto 8002)
+# 🌐 API Gateway (Puerto 8002) - HTTP público
 python run_api_service.py
 ```
 
-### 🌐 URLs de los Servicios
+### 🌐 URLs del Sistema
 
-- **API Gateway**: http://localhost:8002
+- **🌐 API Gateway**: http://localhost:8002 (ÚNICO PUNTO PÚBLICO)
   - **Documentación**: http://localhost:8002/docs
-  - **Base URL API**: http://localhost:8002/api/v1/
-- **News Service**: http://localhost:8000
-- **Grid Service**: http://localhost:8001
+  - **Health Check Sistema**: http://localhost:8002/api/v1/health
+  - **Lista Workers**: http://localhost:8002/api/v1/services
+- **📰 News Worker**: http://localhost:8000/health (INTERNO)
+- **🤖 Grid Worker**: http://localhost:8001/health (INTERNO)
 
-### 📡 Endpoints del API Gateway
+### 📡 Endpoints del API Gateway Centralizado
 
-#### 📰 Endpoints de Noticias (`/api/v1/news/`)
+#### 🌐 Sistema (`/api/v1/`)
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/news/` | Estado del servicio de noticias |
-| POST | `/news/trigger-collection` | Disparar recolección manual desde Reddit |
-| POST | `/news/trigger-sentiment` | Disparar análisis de sentimientos manual |
-| GET | `/news/status` | Estado detallado con jobs activos |
+| GET | `/` | Información general del sistema y arquitectura |
+| GET | `/api/v1/health` | **Health check agregado** de todos los workers |
+| GET | `/api/v1/services` | Lista de workers y sus puertos |
+| GET | `/api/v1/` | Estado general y información arquitectónica |
 
-#### 🤖 Endpoints de Trading (`/api/v1/grid/`)
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/grid/` | Estado del servicio de grid trading |
-| GET | `/grid/status` | Estado detallado del trading bot |
-| POST | `/grid/start` | Iniciar estrategia de grid trading |
-| POST | `/grid/stop` | Detener estrategia de grid trading |
-| GET | `/grid/config` | Configuración actual del bot |
+#### 🔍 Ejemplos de Monitoreo
 
-#### 🌐 Endpoints del Sistema (`/api/v1/`)
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/` | Estado general del sistema |
-| GET | `/health` | Health check de todos los servicios |
-| GET | `/scheduler` | Estado de todos los schedulers |
-
-### 🔍 Ejemplos de Uso
-
-1. **Verificar estado del sistema**:
-   ```bash
-   curl http://localhost:8002/api/v1/
-   ```
-
-2. **Disparar recolección de noticias**:
-   ```bash
-   curl -X POST http://localhost:8002/api/v1/news/trigger-collection
-   ```
-
-3. **Verificar estado del trading bot**:
-   ```bash
-   curl http://localhost:8002/api/v1/grid/status
-   ```
-
-4. **Health check completo**:
+1. **Health check completo del sistema**:
    ```bash
    curl http://localhost:8002/api/v1/health
+   ```
+   
+   **Respuesta**: Estado agregado de todos los workers con comunicación HTTP real
+
+2. **Lista de workers disponibles**:
+   ```bash
+   curl http://localhost:8002/api/v1/services
+   ```
+
+3. **Información del sistema**:
+   ```bash
+   curl http://localhost:8002/
+   ```
+
+4. **Health check individual de worker** (interno):
+   ```bash
+   curl http://localhost:8000/health  # News Worker
+   curl http://localhost:8001/health  # Grid Worker
    ```
 
 ## 🐳 Deployment en VPS
 
-### 🛠️ Configuración con Systemd
+### 🛠️ Configuración con Systemd (Pure Workers)
 
-El proyecto incluye archivos de servicio para systemd en `deployment/services/`:
+El proyecto mantiene compatibilidad con systemd services en `deployment/services/`:
 
 ```bash
 # Copiar archivos de servicio
 sudo cp deployment/services/*.service /etc/systemd/system/
 
-# Habilitar servicios
-sudo systemctl enable oraculo-news oraculo-grid oraculo-api
+# Habilitar servicios (workers independientes)
+sudo systemctl enable oraculo-news    # News Worker (Puerto 8000)
+sudo systemctl enable oraculo-grid    # Grid Worker (Puerto 8001)  
+sudo systemctl enable oraculo-api     # API Gateway (Puerto 8002)
 
 # Iniciar servicios
 sudo systemctl start oraculo-news
@@ -240,19 +230,48 @@ sudo systemctl start oraculo-api
 sudo systemctl status oraculo-*
 ```
 
-### 📊 Monitoreo
+### 🌐 Configuración Nginx (Solo API Gateway Público)
 
-- **Logs**: `journalctl -u oraculo-news -f`
-- **Estado**: `systemctl status oraculo-*`
-- **API Health**: `curl http://tu-vps:8002/api/v1/health`
+```nginx
+server {
+    listen 80;
+    server_name tu-dominio.com;
+
+    # Solo exponer API Gateway público
+    location / {
+        proxy_pass http://localhost:8002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    
+    # Workers internos no expuestos públicamente
+    # News Worker (8000) y Grid Worker (8001) solo acceso local
+}
+```
+
+### 📊 Monitoreo en VPS
+
+```bash
+# Health check agregado (muestra estado de todos los workers)
+curl http://tu-vps:8002/api/v1/health
+
+# Logs de servicios independientes
+journalctl -u oraculo-news -f    # News Worker logs
+journalctl -u oraculo-grid -f    # Grid Worker logs
+journalctl -u oraculo-api -f     # API Gateway logs
+
+# Estado de workers
+sudo systemctl status oraculo-*
+```
 
 ## 🛠️ Tecnologías Utilizadas
 
-### 🚀 Framework y APIs
-- **[FastAPI](https://fastapi.tiangolo.com/)**: Framework web moderno para microservicios
-- **[SQLAlchemy](https://www.sqlalchemy.org/)**: ORM para Python
+### 🚀 Framework y Comunicación
+- **[FastAPI](https://fastapi.tiangolo.com/)**: Framework para API Gateway y workers
+- **[aiohttp](https://docs.aiohttp.org/)**: **Health checks HTTP** entre servicios
+- **[SQLAlchemy](https://www.sqlalchemy.org/)**: ORM compartido
 - **[SQLite](https://www.sqlite.org/)**: Base de datos compartida
-- **[APScheduler](https://apscheduler.readthedocs.io/)**: Scheduler de tareas automáticas
+- **[APScheduler](https://apscheduler.readthedocs.io/)**: Background jobs en workers
 
 ### 🤖 Integrations
 - **[PRAW](https://praw.readthedocs.io/)**: Reddit API integration
@@ -261,68 +280,68 @@ sudo systemctl status oraculo-*
 - **[python-telegram-bot](https://python-telegram-bot.org/)**: Notificaciones
 
 ### 🔧 Infraestructura
-- **[Uvicorn](https://www.uvicorn.org/)**: Servidor ASGI de alto rendimiento
+- **[Uvicorn](https://www.uvicorn.org/)**: Servidor ASGI para cada worker
 - **[Pydantic](https://pydantic-docs.helpmanual.io/)**: Validación de datos
-- **Systemd**: Gestión de servicios en producción
+- **Systemd**: Gestión de servicios en VPS
 
 ## 🔮 Características Avanzadas
 
-### 🤖 Trading Automatizado
-- **Grid Strategy**: Compra y venta automática en rangos de precio
-- **Risk Management**: Stop loss y take profit configurables
-- **Portfolio Balancing**: Gestión automática del balance
-- **24/7 Operations**: Trading continuo sin intervención manual
+### 🤖 Pure Workers Architecture
+- **Independent Processes**: Cada worker es un proceso separado
+- **Minimal APIs**: Solo endpoints `/health` para monitoreo
+- **Background Focus**: Lógica de negocio en background jobs
+- **Fault Isolation**: Fallos en un worker no afectan otros
 
-### 🧠 Análisis de Sentimientos IA
-- **Google Gemini Integration**: Análisis avanzado con IA de última generación
-- **Context-Aware**: Entiende el contexto específico del mercado crypto
-- **Batch Processing**: Procesa múltiples noticias eficientemente
-- **Sentiment Scoring**: Puntuación de -1.0 (negativo) a 1.0 (positivo)
+### 🌐 API Gateway Centralizado
+- **Single Entry Point**: Un solo puerto público (8002)
+- **Health Aggregation**: Comunica con workers vía HTTP
+- **Service Discovery**: Conoce ubicación de todos los workers
+- **Monitoring Hub**: Dashboard centralizado del sistema
 
-### 📊 Monitoreo y Alertas
-- **Health Checks**: Verificación automática de estado de servicios
-- **Telegram Notifications**: Alertas en tiempo real
-- **Comprehensive Logging**: Logs detallados para debugging
-- **Performance Metrics**: Métricas de rendimiento de trading
+### 🔗 Inter-Service Communication
+- **HTTP Health Checks**: Comunicación real entre servicios
+- **Timeout Handling**: 5 segundos timeout para health checks
+- **Parallel Checks**: Verifica todos los workers simultáneamente
+- **Graceful Degradation**: Sistema funciona aunque un worker falle
 
-### 🔒 Seguridad y Robustez
-- **Error Handling**: Manejo robusto de errores en todos los servicios
-- **Rate Limiting**: Respeto a límites de APIs externas
-- **Graceful Degradation**: Funcionamiento parcial si algún servicio falla
-- **Configuration Management**: Variables de entorno centralizadas
+### 🛡️ Monitoring y Observabilidad
+- **Aggregated Health**: Un endpoint muestra estado de todo
+- **Individual Health**: Cada worker expone su estado
+- **Service Discovery**: Lista automática de workers disponibles
+- **Error Isolation**: Errores no se propagan entre servicios
 
 ## 🔮 Roadmap y Funcionalidades Futuras
 
-### 🚀 Próximas Versiones
-- **Multiple Exchange Support**: Soporte para más exchanges (Coinbase, Kraken, etc.)
-- **Advanced Strategies**: Más algoritmos de trading (DCA, Scalping, etc.)
-- **Machine Learning**: Predicciones basadas en sentimientos históricos
-- **Web Dashboard**: Interfaz gráfica para monitoreo y control
-- **Mobile App**: Aplicación móvil para monitoreo en tiempo real
+### 🚀 Arquitectura
+- **Kubernetes Deployment**: Migración a K8s con health checks
+- **Load Balancing**: Múltiples instancias de workers
+- **Service Mesh**: Istio para comunicación avanzada
+- **Distributed Tracing**: OpenTelemetry para observabilidad
 
-### 🧠 IA y Analytics
-- **Predictive Analytics**: Predicciones de precio basadas en noticias
-- **Pattern Recognition**: Identificación de patrones en el mercado
-- **Multi-source Sentiment**: Análisis de Twitter, Discord, otras fuentes
-- **Entity Extraction**: Identificación automática de coins y proyectos
+### 🧠 Workers Adicionales
+- **Sentiment Aggregator Worker**: Análisis de sentimientos agregados
+- **Notification Worker**: Worker dedicado para notificaciones
+- **Analytics Worker**: Métricas y analytics en tiempo real
+- **Alert Worker**: Sistema de alertas inteligentes
 
-### 🔗 Integraciones
-- **DEX Integration**: Trading en exchanges descentralizados
-- **DeFi Protocols**: Integración con protocolos DeFi
-- **Cross-chain**: Soporte para múltiples blockchains
-- **API Marketplace**: APIs públicas para desarrolladores
+### 🔗 Integraciones Futuras
+- **Multiple Exchanges**: Más exchanges de trading
+- **Social Media Workers**: Twitter, Discord, Telegram sentiment
+- **News API Workers**: Más fuentes de noticias crypto
+- **DeFi Protocol Workers**: Integración con protocolos DeFi
 
 ## 🤝 Contribuciones
 
-Las contribuciones son bienvenidas. El proyecto sigue la arquitectura de microservicios:
+Las contribuciones son bienvenidas. El proyecto sigue **arquitectura de pure workers**:
 
 1. Haz fork del proyecto
 2. Crea una rama para tu feature (`git checkout -b feature/nueva-funcionalidad`)
-3. Desarrolla en el microservicio correspondiente (`services/news/`, `services/grid/`, etc.)
-4. Asegúrate de mantener la compatibilidad con `shared/`
-5. Commit tus cambios (`git commit -am 'Agregar nueva funcionalidad'`)
-6. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-7. Abre un Pull Request
+3. **Desarrolla workers puros**: Enfócate en background jobs, no APIs complejas
+4. **Mantén health checks**: Agrega `/health` a nuevos workers
+5. **Actualiza API Gateway**: Si necesitas nuevos endpoints de monitoreo
+6. Commit tus cambios (`git commit -am 'Agregar nueva funcionalidad'`)
+7. Push a la rama (`git push origin feature/nueva-funcionalidad`)
+8. Abre un Pull Request
 
 ## 📝 Licencia
 
@@ -330,8 +349,15 @@ Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más det
 
 ---
 
-## 🏆 Arquitectura de Microservicios Moderna
+## 🏆 Pure Workers + API Gateway Architecture
 
-**El Oráculo Cripto Bot** representa una implementación completa de arquitectura de microservicios para trading automatizado y análisis de noticias crypto, combinando las mejores prácticas de desarrollo moderno con tecnologías de punta en IA y trading algorítmico.
+**El Oráculo Cripto Bot** representa una implementación moderna de **pure workers** con **API Gateway centralizado**, donde cada worker se enfoca en sus background jobs específicos y el gateway agrega su estado mediante **health checks HTTP reales**. 
 
-**Desarrollado con ❤️ para la comunidad crypto y trading automatizado** 
+Esta arquitectura garantiza:
+- ✅ **Separación total** de responsabilidades
+- ✅ **Comunicación HTTP** real entre servicios  
+- ✅ **Monitoreo centralizado** agregado
+- ✅ **Fault isolation** completo
+- ✅ **Escalabilidad independiente** por worker
+
+**Desarrollado con ❤️ para arquitectura de microservicios moderna y trading automatizado** 
