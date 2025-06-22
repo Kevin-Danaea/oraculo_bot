@@ -1,6 +1,6 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.core.config import settings
+# Compatibilidad hacia atrás: importar desde shared
+# TODO: Remover este archivo una vez completada la migración
+from shared.database.session import engine, SessionLocal
 
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) 
+# Re-exportar para compatibilidad
+__all__ = ['engine', 'SessionLocal'] 
