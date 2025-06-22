@@ -6,6 +6,7 @@ pydantic
 pydantic-settings
 python-dotenv
 requests
+aiohttp
 google-genai
 praw
 ccxt 

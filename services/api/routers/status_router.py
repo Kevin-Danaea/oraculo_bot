@@ -1,6 +1,6 @@
 """
-Router de Status - Endpoints de estado y diagnóstico
-Migrado desde app/api/endpoints.py para el nuevo API Gateway.
+Router de Status - Endpoints de estado del sistema
+Incluye health checks de todos los microservicios workers.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -8,6 +8,10 @@ from shared.services.logging_config import get_logger
 from shared.database.session import SessionLocal
 from services.news.schedulers.news_scheduler import get_news_scheduler
 from services.grid.schedulers.grid_scheduler import get_grid_scheduler
+import requests
+from typing import Dict, Any
+import asyncio
+import aiohttp
 
 logger = get_logger(__name__)
 
@@ -21,6 +25,172 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Configuración de servicios workers
+WORKER_SERVICES = {
+    "news": {
+        "name": "News Worker",
+        "url": "http://localhost:8000",
+        "description": "Servicio de recolección de noticias y análisis de sentimientos"
+    },
+    "grid": {
+        "name": "Grid Trading Worker", 
+        "url": "http://localhost:8001",
+        "description": "Servicio de trading automatizado con estrategia de grilla"
+    }
+}
+
+async def check_worker_health(service_name: str, service_config: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Verifica el estado de salud de un worker específico mediante HTTP.
+    """
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)  # 5 segundos timeout
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(f"{service_config['url']}/health") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {
+                        "service": service_name,
+                        "name": service_config["name"],
+                        "status": "healthy",
+                        "url": service_config["url"],
+                        "response_time": "< 5s",
+                        "details": data
+                    }
+                else:
+                    return {
+                        "service": service_name,
+                        "name": service_config["name"],
+                        "status": "unhealthy",
+                        "url": service_config["url"],
+                        "error": f"HTTP {response.status}"
+                    }
+    except asyncio.TimeoutError:
+        return {
+            "service": service_name,
+            "name": service_config["name"],
+            "status": "timeout",
+            "url": service_config["url"],
+            "error": "Timeout después de 5 segundos"
+        }
+    except Exception as e:
+        return {
+            "service": service_name,
+            "name": service_config["name"],
+            "status": "error",
+            "url": service_config["url"],
+            "error": str(e)
+        }
+
+@router.get("/health", tags=["System"])
+async def system_health_check():
+    """
+    Health check completo del sistema - verifica todos los microservicios workers.
+    Este endpoint actúa como agregador de estado para todo el sistema.
+    """
+    logger.info("🔍 Ejecutando health check completo del sistema...")
+    
+    # Verificar workers en paralelo
+    health_checks = []
+    for service_name, service_config in WORKER_SERVICES.items():
+        health_checks.append(check_worker_health(service_name, service_config))
+    
+    # Ejecutar todos los health checks en paralelo
+    worker_results = await asyncio.gather(*health_checks, return_exceptions=True)
+    
+    # Procesar resultados
+    services_status = []
+    all_healthy = True
+    
+    for result in worker_results:
+        if isinstance(result, Exception):
+            services_status.append({
+                "service": "unknown",
+                "status": "error",
+                "error": str(result)
+            })
+            all_healthy = False
+        else:
+            services_status.append(result)
+            if isinstance(result, dict) and result.get("status") != "healthy":
+                all_healthy = False
+    
+    # Estado del API Gateway
+    api_gateway_status = {
+        "service": "api_gateway",
+        "name": "API Gateway",
+        "status": "healthy",
+        "url": "http://localhost:8002",
+        "description": "Gateway centralizado para todos los microservicios"
+    }
+    services_status.insert(0, api_gateway_status)
+    
+    # Respuesta final
+    overall_status = "healthy" if all_healthy else "degraded"
+    healthy_count = sum(1 for s in services_status if s.get("status") == "healthy")
+    total_count = len(services_status)
+    
+    return {
+        "system_status": overall_status,
+        "timestamp": "$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')",
+        "summary": f"{healthy_count}/{total_count} servicios saludables",
+        "services": services_status,
+        "architecture": "microservices",
+        "gateway_version": "v1.0"
+    }
+
+@router.get("/services", tags=["System"])
+async def list_services():
+    """
+    Lista todos los microservicios del sistema con su información básica.
+    """
+    services = []
+    
+    # API Gateway
+    services.append({
+        "service": "api_gateway",
+        "name": "API Gateway",
+        "port": 8002,
+        "status": "running",
+        "description": "Gateway centralizado - punto único de entrada HTTP",
+        "endpoints": ["/api/v1/health", "/api/v1/news/*", "/api/v1/grid/*"]
+    })
+    
+    # Workers
+    for service_name, config in WORKER_SERVICES.items():
+        port = int(config["url"].split(":")[-1])
+        services.append({
+            "service": service_name,
+            "name": config["name"], 
+            "port": port,
+            "status": "worker",
+            "description": config["description"],
+            "type": "background_worker"
+        })
+    
+    return {
+        "total_services": len(services),
+        "architecture": "api_gateway + workers",
+        "services": services
+    }
+
+@router.get("/", tags=["System"])
+def system_status():
+    """Estado general del sistema y información arquitectónica."""
+    return {
+        "system": "Oráculo Cripto Bot",
+        "architecture": "Microservicios con API Gateway",
+        "version": "2.0.0",
+        "status": "operational",
+        "components": {
+            "api_gateway": "Centralized HTTP endpoints",
+            "news_worker": "Reddit collection + Sentiment analysis", 
+            "grid_worker": "Automated grid trading on Binance"
+        },
+        "health_check": "/api/v1/health",
+        "documentation": "/docs"
+    }
 
 # --- Endpoints de Estado ---
 @router.get("/", tags=["Status"])

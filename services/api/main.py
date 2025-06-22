@@ -1,10 +1,10 @@
 """
 API Gateway - Punto de entrada unificado
-Centraliza todos los endpoints de los microservicios de Oráculo Bot.
+Centraliza el monitoreo y health checks de todos los microservicios workers.
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from services.api.routers import news_router, grid_router, status_router
+from services.api.routers import status_router
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
 
@@ -20,15 +20,16 @@ def start_api_gateway():
         logger.info("🌐 Iniciando API Gateway...")
         
         logger.info("✅ API Gateway iniciado correctamente")
-        logger.info("📡 Endpoints unificados disponibles")
-        logger.info("🔗 Conectando con microservicios")
+        logger.info("📡 Health checks y monitoreo disponibles")
+        logger.info("🔗 Conectando con workers: News (8000) + Grid (8001)")
         
         # Enviar notificación de inicio con características específicas
         features = [
-            "🌐 API Gateway centralizado",
-            "📰 Endpoints de servicio de noticias", 
-            "🤖 Endpoints de grid trading",
-            "📊 Monitoreo y estado de servicios"
+            "🌐 API Gateway centralizado - Puerto 8002",
+            "📊 Health checks agregados de todos los workers", 
+            "📰 Monitoreo News Worker (Puerto 8000)",
+            "🤖 Monitoreo Grid Worker (Puerto 8001)",
+            "🔗 Único punto de entrada HTTP público"
         ]
         send_service_startup_notification("API Gateway", features)
         
@@ -69,39 +70,43 @@ async def lifespan(app: FastAPI):
 # Aplicación FastAPI principal
 app = FastAPI(
     title="Oráculo Bot - API Gateway",
-    version="0.1.0",
-    description="Gateway centralizado para todos los microservicios de Oráculo Bot",
+    version="2.0.0",
+    description="Gateway centralizado para monitoreo de microservicios workers",
     lifespan=lifespan
 )
 
-# Incluir routers de todos los microservicios
-app.include_router(status_router.router, prefix="/api/v1", tags=["Status"])
-app.include_router(news_router.router, prefix="/api/v1/news", tags=["News Service"])
-app.include_router(grid_router.router, prefix="/api/v1/grid", tags=["Grid Trading"])
+# Incluir router de status/health checks
+app.include_router(status_router.router, prefix="/api/v1", tags=["System"])
 
 # Endpoint raíz del gateway
 @app.get("/", tags=["Gateway"])
 def read_root():
     """Endpoint principal del API Gateway."""
     return {
-        "message": "🌐 Oráculo Bot - API Gateway",
+        "message": "🌐 Oráculo Bot - API Gateway v2.0",
+        "architecture": "microservices",
         "status": "operational",
-        "services": {
-            "news": "📰 Servicio de noticias disponible en /api/v1/news/",
-            "grid": "🤖 Grid trading disponible en /api/v1/grid/",
-            "status": "📊 Estado general en /api/v1/status"
+        "workers": {
+            "news_worker": "📰 Puerto 8000 - Recolección noticias + análisis sentimientos",
+            "grid_worker": "🤖 Puerto 8001 - Grid trading automatizado"
+        },
+        "monitoring": {
+            "health_check": "/api/v1/health - Estado agregado de todos los workers",
+            "services_list": "/api/v1/services - Lista de workers disponibles",
+            "system_status": "/api/v1/ - Información general del sistema"
         },
         "docs": "/docs"
     }
 
 # Endpoint de salud general del gateway
 @app.get("/health", tags=["Gateway"])
-def health_check():
-    """Health check del API Gateway."""
+def gateway_health():
+    """Health check básico del API Gateway (no agrega workers)."""
     return {
         "status": "healthy",
         "gateway": "operational",
-        "version": "0.1.0"
+        "version": "2.0.0",
+        "note": "Para health check completo del sistema usar /api/v1/health"
     }
 
 if __name__ == "__main__":
@@ -111,6 +116,7 @@ if __name__ == "__main__":
         
         # Mantener el servicio corriendo
         import time
+        logger.info("🌐 API Gateway ejecutándose en modo standalone...")
         while True:
             time.sleep(60)  # Revisar cada minuto
             

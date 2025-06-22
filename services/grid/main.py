@@ -1,6 +1,7 @@
 """
-Servicio de Grid Trading Bot - Punto de entrada principal
-Maneja la ejecución del bot de trading automatizado en Binance.
+Grid Worker - Servicio de Trading (Pure Worker)
+Ejecuta estrategias de grid trading automatizado como background worker.
+Expone minimal FastAPI para health checks únicamente.
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -17,13 +18,13 @@ def start_grid_service():
     try:
         # Configurar logging
         setup_logging()
-        logger.info("🤖 Iniciando Servicio de Grid Trading...")
+        logger.info("🤖 Iniciando Grid Worker...")
         
         # Configurar e iniciar scheduler
         scheduler = setup_grid_scheduler()
         scheduler.start()
         
-        logger.info("✅ Servicio de Grid Trading iniciado correctamente")
+        logger.info("✅ Grid Worker iniciado correctamente")
         logger.info("🔄 Monitor de salud: Cada 5 minutos")
         logger.info("💹 Trading automatizado: Activo")
         
@@ -32,14 +33,15 @@ def start_grid_service():
             "🤖 Bot de Grid Trading automatizado",
             "💹 Trading en Binance con estrategia de grilla", 
             "🔄 Monitoreo continuo y recuperación automática",
-            "📊 Reportes automáticos por Telegram"
+            "📊 Reportes automáticos por Telegram",
+            "🌐 Health endpoint en puerto 8001"
         ]
-        send_service_startup_notification("Servicio de Grid Trading", features)
+        send_service_startup_notification("Grid Worker", features)
         
         return scheduler
         
     except Exception as e:
-        logger.error(f"❌ Error al iniciar servicio de grid trading: {e}")
+        logger.error(f"❌ Error al iniciar grid worker: {e}")
         raise
 
 def stop_grid_service():
@@ -47,111 +49,88 @@ def stop_grid_service():
     Detiene el servicio de grid trading y todos sus schedulers.
     """
     try:
-        logger.info("🛑 Deteniendo Servicio de Grid Trading...")
+        logger.info("🛑 Deteniendo Grid Worker...")
         
         # Detener scheduler
         stop_grid_bot_scheduler()
         
-        logger.info("✅ Servicio de Grid Trading detenido correctamente")
+        logger.info("✅ Grid Worker detenido correctamente")
         
     except Exception as e:
-        logger.error(f"❌ Error al detener servicio de grid trading: {e}")
+        logger.error(f"❌ Error al detener grid worker: {e}")
 
 # Gestor de Ciclo de Vida para FastAPI
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("🚀 Iniciando aplicación FastAPI del Grid Service...")
+    logger.info("🚀 Iniciando FastAPI del Grid Worker...")
     try:
         start_grid_service()
     except Exception as e:
-        logger.error(f"❌ Error al iniciar Grid Service: {e}")
+        logger.error(f"❌ Error al iniciar Grid Worker: {e}")
     
     yield
     
     # Shutdown
-    logger.info("🛑 Cerrando aplicación FastAPI del Grid Service...")
+    logger.info("🛑 Cerrando FastAPI del Grid Worker...")
     try:
         stop_grid_service()
     except Exception as e:
-        logger.error(f"❌ Error al detener Grid Service: {e}")
+        logger.error(f"❌ Error al detener Grid Worker: {e}")
 
-# Aplicación FastAPI
+# Aplicación FastAPI minimal para health checks
 app = FastAPI(
-    title="Oráculo Bot - Grid Trading Service",
+    title="Oráculo Bot - Grid Worker",
     version="0.1.0",
-    description="Servicio de Grid Trading automatizado para Binance",
+    description="Worker de grid trading automatizado para Binance",
     lifespan=lifespan
 )
 
-# Endpoints básicos del servicio
-@app.get("/", tags=["Status"])
+# Endpoints mínimos para health checks
+@app.get("/", tags=["Worker"])
 def read_root():
-    """Endpoint principal para verificar que el Grid Service está vivo."""
-    return {"status": "Grid Trading Service está vivo y operativo", "service": "grid"}
+    """Endpoint básico para verificar que el Grid Worker está vivo."""
+    return {
+        "worker": "grid",
+        "status": "alive",
+        "description": "Worker de trading - Grid trading automatizado en Binance"
+    }
 
-@app.get("/health", tags=["Status"])
+@app.get("/health", tags=["Health"])
 def health_check():
-    """Endpoint de health check específico para el grid service."""
+    """Health check específico para el grid worker."""
     try:
         scheduler = get_grid_scheduler()
         is_running = scheduler.running if scheduler else False
         
+        jobs_count = len(scheduler.get_jobs()) if scheduler and is_running else 0
+        
         return {
+            "worker": "grid",
             "status": "healthy" if is_running else "stopped",
             "scheduler_running": is_running,
-            "service": "grid"
+            "active_jobs": jobs_count,
+            "features": [
+                "🤖 Grid trading strategy",
+                "💹 Binance automated trading",
+                "🔄 Health monitoring every 5 minutes"
+            ]
         }
     except Exception as e:
         return {
+            "worker": "grid",
             "status": "error",
-            "error": str(e),
-            "service": "grid"
-        }
-
-@app.get("/status", tags=["Grid Bot"])
-def grid_status():
-    """Endpoint para verificar el estado del grid bot."""
-    try:
-        scheduler = get_grid_scheduler()
-        
-        if not scheduler or not scheduler.running:
-            return {
-                "status": "scheduler_stopped",
-                "message": "El scheduler del grid bot no está ejecutándose",
-                "jobs": []
-            }
-        
-        jobs_info = []
-        for job in scheduler.get_jobs():
-            job_data = {
-                "id": job.id,
-                "name": job.name or job.func.__name__ if hasattr(job.func, '__name__') else str(job.func),
-                "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
-            }
-            jobs_info.append(job_data)
-        
-        return {
-            "status": "running",
-            "message": f"Grid Bot activo con {len(jobs_info)} tareas programadas",
-            "jobs": jobs_info,
-            "service": "grid"
-        }
-    
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error al obtener el estado del grid bot: {str(e)}",
-            "service": "grid"
+            "error": str(e)
         }
 
 if __name__ == "__main__":
-    # Punto de entrada directo
+    # Punto de entrada directo (sin FastAPI)
     try:
         scheduler = start_grid_service()
         
         # Mantener el servicio corriendo
         import time
+        logger.info("🤖 Grid Worker ejecutándose en modo standalone...")
         while True:
             time.sleep(60)  # Revisar cada minuto
             
