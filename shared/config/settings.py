@@ -9,11 +9,6 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     DATABASE_URL: str = "sqlite:///./oraculo.db"
     
-    # URL de la API de CryptoPanic (Deprecated - usando Reddit ahora)
-    CRYPTOPANIC_API_URL: str = "https://cryptopanic.com/api/developer/v2/posts/"
-    # API Key para CryptoPanic (Deprecated - usando Reddit ahora)
-    CRYPTOPANIC_API_KEY: str = ""
-    
     # Configuración de Reddit API
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""
