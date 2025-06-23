@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from services.api.routers import status_router
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
+from shared.database.session import init_database
 
 logger = get_logger(__name__)
 
@@ -18,6 +19,11 @@ def start_api_gateway():
         # Configurar logging
         setup_logging()
         logger.info("🌐 Iniciando API Gateway...")
+        
+        # Inicializar base de datos (crear tablas si no existen)
+        logger.info("🗄️ Inicializando base de datos...")
+        init_database()
+        logger.info("✅ Base de datos inicializada correctamente")
         
         logger.info("✅ API Gateway iniciado correctamente")
         logger.info("📡 Health checks y monitoreo disponibles")
