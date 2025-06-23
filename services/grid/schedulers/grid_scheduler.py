@@ -14,15 +14,21 @@ grid_bot_running = False
 
 def get_grid_bot_config():
     """
-    Configuración del grid bot
-    Puedes modificar esta función para cargar la configuración desde base de datos
+    Configuración del grid bot - Ahora usa configuración dinámica desde la base de datos
     """
-    return {
-        'pair': 'ETH/USDT',
-        'total_capital': 56.88,
-        'grid_levels': 4,
-        'price_range_percent': 10.0,
-    }
+    # Importar función de configuración dinámica
+    try:
+        from services.grid.interfaces.telegram_interface import get_dynamic_grid_config
+        return get_dynamic_grid_config()
+    except ImportError as e:
+        logger.warning(f"⚠️ No se pudo importar configuración dinámica: {e}")
+        # Fallback a configuración por defecto
+        return {
+            'pair': 'ETH/USDT',
+            'total_capital': 56.88,
+            'grid_levels': 4,
+            'price_range_percent': 10.0,
+        }
 
 def run_grid_bot():
     """

@@ -26,4 +26,11 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+def get_db_session():
+    """
+    Context manager para obtener una sesión de base de datos.
+    Útil para operaciones directas fuera de FastAPI.
+    """
+    return SessionLocal() 

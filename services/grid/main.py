@@ -1,6 +1,7 @@
 """
 Grid Worker - Servicio de Trading (Pure Worker)
 Ejecuta estrategias de grid trading automatizado como background worker.
+Incluye bot de Telegram para control remoto.
 Expone minimal FastAPI para health checks únicamente.
 """
 from contextlib import asynccontextmanager
@@ -10,7 +11,66 @@ from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
 from shared.database.session import init_database
 
+# Imports para el bot de Telegram
+from shared.services.telegram_bot_service import TelegramBot
+from services.grid.interfaces.telegram_interface import GridTelegramInterface
+
 logger = get_logger(__name__)
+
+# Variables globales para el bot de Telegram
+telegram_bot = None
+telegram_interface = None
+telegram_thread = None
+
+def start_telegram_bot():
+    """
+    Inicia el bot de Telegram para control remoto del grid bot
+    """
+    global telegram_bot, telegram_interface, telegram_thread
+    
+    try:
+        from shared.config.settings import settings
+        
+        # Verificar si hay token configurado
+        if not settings.TELEGRAM_BOT_TOKEN:
+            logger.warning("⚠️ Token de Telegram no configurado - Bot de Telegram deshabilitado")
+            return None
+        
+        # Crear instancia del bot
+        telegram_bot = TelegramBot()
+        
+        # Crear interfaz específica del grid
+        telegram_interface = GridTelegramInterface(telegram_bot)
+        
+        # Iniciar polling en hilo separado
+        telegram_thread = telegram_bot.start_background_polling(interval=2)
+        
+        logger.info("🤖 Bot de Telegram iniciado correctamente")
+        return telegram_bot
+        
+    except Exception as e:
+        logger.error(f"❌ Error iniciando bot de Telegram: {e}")
+        return None
+
+def stop_telegram_bot():
+    """
+    Detiene el bot de Telegram
+    """
+    global telegram_bot, telegram_interface, telegram_thread
+    
+    try:
+        if telegram_thread and telegram_thread.is_alive():
+            logger.info("🛑 Deteniendo bot de Telegram...")
+            # El hilo del bot se detendrá automáticamente al salir del programa
+            telegram_thread = None
+        
+        telegram_bot = None
+        telegram_interface = None
+        
+        logger.info("✅ Bot de Telegram detenido")
+        
+    except Exception as e:
+        logger.error(f"❌ Error deteniendo bot de Telegram: {e}")
 
 def start_grid_service():
     """
@@ -30,6 +90,9 @@ def start_grid_service():
         scheduler = setup_grid_scheduler()
         scheduler.start()
         
+        # Iniciar bot de Telegram
+        telegram_bot_instance = start_telegram_bot()
+        
         logger.info("✅ Grid Worker iniciado correctamente")
         logger.info("🔄 Monitor de salud: Cada 5 minutos")
         logger.info("💹 Trading automatizado: Activo")
@@ -42,6 +105,10 @@ def start_grid_service():
             "📊 Reportes automáticos por Telegram",
             "🌐 Health endpoint en puerto 8001"
         ]
+        
+        if telegram_bot_instance:
+            features.append("🤖 Bot de Telegram para control remoto")
+        
         send_service_startup_notification("Grid Worker", features)
         
         return scheduler
@@ -56,6 +123,9 @@ def stop_grid_service():
     """
     try:
         logger.info("🛑 Deteniendo Grid Worker...")
+        
+        # Detener bot de Telegram
+        stop_telegram_bot()
         
         # Detener scheduler
         stop_grid_bot_scheduler()
@@ -111,16 +181,25 @@ def health_check():
         
         jobs_count = len(scheduler.get_jobs()) if scheduler and is_running else 0
         
+        # Verificar estado del bot de Telegram
+        telegram_running = telegram_thread is not None and telegram_thread.is_alive()
+        
+        features = [
+            "🤖 Grid trading strategy",
+            "💹 Binance automated trading",
+            "🔄 Health monitoring every 5 minutes"
+        ]
+        
+        if telegram_running:
+            features.append("🤖 Telegram bot active")
+        
         return {
             "worker": "grid",
             "status": "healthy" if is_running else "stopped",
             "scheduler_running": is_running,
+            "telegram_bot_running": telegram_running,
             "active_jobs": jobs_count,
-            "features": [
-                "🤖 Grid trading strategy",
-                "💹 Binance automated trading",
-                "🔄 Health monitoring every 5 minutes"
-            ]
+            "features": features
         }
     except Exception as e:
         return {
