@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from services.news.schedulers.news_scheduler import setup_news_scheduler, get_news_scheduler, stop_news_scheduler
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
+from shared.database.session import init_database
 
 logger = get_logger(__name__)
 
@@ -19,6 +20,11 @@ def start_news_service():
         # Configurar logging
         setup_logging()
         logger.info("📰 Iniciando News Worker...")
+        
+        # Inicializar base de datos (crear tablas si no existen)
+        logger.info("🗄️ Inicializando base de datos...")
+        init_database()
+        logger.info("✅ Base de datos inicializada correctamente")
         
         # Configurar e iniciar schedulers
         scheduler = setup_news_scheduler()

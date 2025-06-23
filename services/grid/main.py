@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from services.grid.schedulers.grid_scheduler import setup_grid_scheduler, get_grid_scheduler, stop_grid_bot_scheduler
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
+from shared.database.session import init_database
 
 logger = get_logger(__name__)
 
@@ -19,6 +20,11 @@ def start_grid_service():
         # Configurar logging
         setup_logging()
         logger.info("🤖 Iniciando Grid Worker...")
+        
+        # Inicializar base de datos (crear tablas si no existen)
+        logger.info("🗄️ Inicializando base de datos...")
+        init_database()
+        logger.info("✅ Base de datos inicializada correctamente")
         
         # Configurar e iniciar scheduler
         scheduler = setup_grid_scheduler()
