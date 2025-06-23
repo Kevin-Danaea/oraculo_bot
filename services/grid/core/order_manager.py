@@ -5,6 +5,7 @@ Maneja creación, cancelación y procesamiento de órdenes de compra/venta.
 
 import ccxt
 import time
+import uuid
 from typing import Dict, List, Any, Optional, Literal
 from datetime import datetime
 from shared.services.logging_config import get_logger
@@ -12,6 +13,27 @@ from .config_manager import ORDER_RETRY_ATTEMPTS
 from ..strategies.grid_strategy import calculate_order_quantity, calculate_dynamic_profit_percentage
 
 logger = get_logger(__name__)
+
+# Prefijos para identificar órdenes del bot
+GRID_BUY_PREFIX = "GRID_BUY_"
+GRID_SELL_PREFIX = "GRID_SELL_"
+
+
+def generate_bot_order_id(order_type: Literal['buy', 'sell']) -> str:
+    """
+    Genera un clientOrderId único para identificar órdenes del bot.
+    
+    Args:
+        order_type: Tipo de orden ('buy' o 'sell')
+        
+    Returns:
+        ClientOrderId único del bot
+    """
+    prefix = GRID_BUY_PREFIX if order_type == 'buy' else GRID_SELL_PREFIX
+    unique_id = str(uuid.uuid4())[:8]  # Usar solo los primeros 8 caracteres
+    timestamp = int(datetime.now().timestamp())
+    
+    return f"{prefix}{timestamp}_{unique_id}"
 
 
 def create_order_with_retry(exchange: ccxt.Exchange, order_type: Literal['buy', 'sell'], pair: str, 
@@ -32,9 +54,18 @@ def create_order_with_retry(exchange: ccxt.Exchange, order_type: Literal['buy', 
     """
     for attempt in range(retries):
         try:
-            # Type cast para resolver el error del linter con ccxt OrderSide
-            order = exchange.create_limit_order(pair, order_type, quantity, price)  # type: ignore
-            logger.info(f"✅ Orden {order_type} creada: {quantity:.6f} a ${price}")
+            # Generar clientOrderId personalizado para identificar la orden
+            client_order_id = generate_bot_order_id(order_type)
+            
+            # Crear la orden con clientOrderId personalizado
+            order = exchange.create_limit_order(
+                symbol=pair, 
+                side=order_type, 
+                amount=quantity, 
+                price=price,
+                params={'newClientOrderId': client_order_id}  # Identificador del bot
+            )
+            logger.info(f"✅ Orden {order_type} creada: {quantity:.6f} a ${price} (ID: {client_order_id})")
             return order
         except Exception as e:
             logger.error(f"❌ Intento {attempt + 1} falló: {e}")

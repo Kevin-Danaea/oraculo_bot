@@ -6,7 +6,7 @@ Expone minimal FastAPI para health checks únicamente.
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from services.grid.schedulers.grid_scheduler import setup_grid_scheduler, get_grid_scheduler, stop_grid_bot_scheduler
+from services.grid.schedulers.grid_scheduler import get_grid_scheduler, stop_grid_bot_scheduler
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
 from shared.database.session import init_database
@@ -86,9 +86,10 @@ def start_grid_service():
         init_database()
         logger.info("✅ Base de datos inicializada correctamente")
         
-        # Configurar e iniciar scheduler
-        scheduler = setup_grid_scheduler()
-        scheduler.start()
+        # Configurar e iniciar scheduler en modo standby (incluye limpieza automática de órdenes huérfanas)
+        from services.grid.schedulers.grid_scheduler import start_grid_bot_scheduler
+        start_grid_bot_scheduler()
+        scheduler = get_grid_scheduler()
         
         # Iniciar bot de Telegram
         telegram_bot_instance = start_telegram_bot()
