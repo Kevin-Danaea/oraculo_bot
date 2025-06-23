@@ -20,7 +20,7 @@ from .state_manager import (
 )
 from ..strategies.grid_strategy import calculate_grid_prices
 from .order_manager import create_initial_buy_orders
-from .monitor import monitor_grid_orders
+from .monitor_v2 import monitor_grid_orders
 
 logger = get_logger(__name__)
 

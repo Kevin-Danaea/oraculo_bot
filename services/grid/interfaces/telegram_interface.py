@@ -35,7 +35,8 @@ class GridTelegramInterface:
         self.register_commands()
     
     def register_commands(self):
-        """Registra todos los comandos específicos del grid bot"""
+        """Registra todos los comandos específicos del grid bot V2"""
+        # Comandos básicos V1
         self.bot.register_command("start", self.handle_start_command)
         self.bot.register_command("config", self.handle_config_command)
         self.bot.register_command("start_bot", self.handle_start_bot_command)
@@ -44,12 +45,20 @@ class GridTelegramInterface:
         self.bot.register_command("status", self.handle_status_command)
         self.bot.register_command("delete_config", self.handle_delete_config_command)
         
+        # Comandos V2: Estrategias Avanzadas
+        self.bot.register_command("enable_stop_loss", self.handle_enable_stop_loss_command)
+        self.bot.register_command("disable_stop_loss", self.handle_disable_stop_loss_command)
+        self.bot.register_command("enable_trailing", self.handle_enable_trailing_command)
+        self.bot.register_command("disable_trailing", self.handle_disable_trailing_command)
+        self.bot.register_command("set_stop_loss", self.handle_set_stop_loss_command)
+        self.bot.register_command("protections", self.handle_protections_command)
+        
         # Handlers para estados de conversación
         self.bot.register_command("config_pair_selection", self.handle_pair_selection)
         self.bot.register_command("config_capital_input", self.handle_capital_input)
         self.bot.register_command("config_confirmation", self.handle_config_confirmation)
         
-        logger.info("✅ Comandos del Grid Bot registrados en Telegram")
+        logger.info("✅ Comandos del Grid Bot V2 registrados en Telegram")
     
     def get_supported_pairs(self) -> list:
         """Lista de pares soportados"""
@@ -59,25 +68,32 @@ class GridTelegramInterface:
         ]
     
     def calculate_optimal_config(self, pair: str, capital: float) -> Dict[str, Any]:
-        """Calcula configuración óptima basada en el capital"""
+        """Calcula configuración óptima basada en el capital - V2 con estrategias avanzadas"""
         if capital < 50:
             grid_levels = 2
             price_range = 5.0
+            stop_loss = 3.0  # Más conservador para capitales pequeños
         elif capital < 100:
             grid_levels = 4
             price_range = 8.0
+            stop_loss = 4.0
         elif capital < 500:
             grid_levels = 6
             price_range = 10.0
+            stop_loss = 5.0
         else:
             grid_levels = 6
             price_range = 12.0
+            stop_loss = 6.0  # Más agresivo para capitales grandes
         
         return {
             'pair': pair,
             'total_capital': capital,
             'grid_levels': grid_levels,
-            'price_range_percent': price_range
+            'price_range_percent': price_range,
+            'stop_loss_percent': stop_loss,
+            'enable_stop_loss': True,  # Siempre activado por defecto
+            'enable_trailing_up': True  # Siempre activado por defecto
         }
     
     def get_user_config(self, chat_id: str) -> Optional[GridBotConfig]:
@@ -102,12 +118,15 @@ class GridTelegramInterface:
                     GridBotConfig.telegram_chat_id == chat_id
                 ).update({'is_active': False})
                 
-                # Crear nueva configuración
+                # Crear nueva configuración V2
                 new_config = GridBotConfig(
                     pair=config_data['pair'],
                     total_capital=config_data['total_capital'],
                     grid_levels=config_data['grid_levels'],
                     price_range_percent=config_data['price_range_percent'],
+                    stop_loss_percent=config_data.get('stop_loss_percent', 5.0),
+                    enable_stop_loss=config_data.get('enable_stop_loss', True),
+                    enable_trailing_up=config_data.get('enable_trailing_up', True),
                     telegram_chat_id=chat_id,
                     is_active=True
                 )
@@ -154,7 +173,14 @@ class GridTelegramInterface:
             message += "/stop_bot - Detener bot\n"
             message += "/restart_bot - Reiniciar con nueva config\n"
             message += "/status - Ver estado detallado\n"
-            message += "/delete_config - Borrar configuración\n"
+            message += "/delete_config - Borrar configuración\n\n"
+            message += "🛡️ <b>Comandos V2 - Estrategias Avanzadas:</b>\n"
+            message += "/protections - Ver estado de protecciones\n"
+            message += "/enable_stop_loss - Activar stop-loss\n"
+            message += "/disable_stop_loss - Desactivar stop-loss\n"
+            message += "/enable_trailing - Activar trailing up\n"
+            message += "/disable_trailing - Desactivar trailing up\n"
+            message += "/set_stop_loss X - Configurar % de stop-loss\n"
             
             bot.send_message(chat_id, message)
             
@@ -523,6 +549,217 @@ class GridTelegramInterface:
         except Exception as e:
             logger.error(f"❌ Error eliminando config: {e}")
             bot.send_message(chat_id, "❌ Error eliminando configuración")
+
+    # ============================================================================
+    # COMANDOS V2 - ESTRATEGIAS AVANZADAS
+    # ============================================================================
+
+    def handle_enable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Maneja el comando /enable_stop_loss"""
+        try:
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
+                return
+            
+            # Actualizar en base de datos
+            with get_db_session() as db:
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.is_active == True
+                ).update({'enable_stop_loss': True})
+                db.commit()
+            
+            message = "🛡️ <b>STOP-LOSS ACTIVADO</b>\n\n"
+            message += f"📉 Se activará si el precio baja {user_config.stop_loss_percent}% debajo del nivel más bajo\n"
+            message += f"⚠️ El bot se detendrá automáticamente si se activa\n\n"
+            message += f"💡 Usa /set_stop_loss X para cambiar el porcentaje"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error habilitando stop-loss: {e}")
+            bot.send_message(chat_id, "❌ Error activando stop-loss")
+
+    def handle_disable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Maneja el comando /disable_stop_loss"""
+        try:
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
+                return
+            
+            # Actualizar en base de datos
+            with get_db_session() as db:
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.is_active == True
+                ).update({'enable_stop_loss': False})
+                db.commit()
+            
+            message = "🚫 <b>STOP-LOSS DESACTIVADO</b>\n\n"
+            message += f"⚠️ <b>ATENCIÓN:</b> El bot NO se protegerá contra caídas bruscas\n"
+            message += f"💡 Usa /enable_stop_loss para reactivar la protección"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error deshabilitando stop-loss: {e}")
+            bot.send_message(chat_id, "❌ Error desactivando stop-loss")
+
+    def handle_enable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Maneja el comando /enable_trailing"""
+        try:
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
+                return
+            
+            # Actualizar en base de datos
+            with get_db_session() as db:
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.is_active == True
+                ).update({'enable_trailing_up': True})
+                db.commit()
+            
+            message = "📈 <b>TRAILING UP ACTIVADO</b>\n\n"
+            message += f"🚀 El bot seguirá tendencias alcistas automáticamente\n"
+            message += f"🎯 Reposicionará el grid si el precio rompe el límite superior\n\n"
+            message += f"💡 Esto mantiene al bot activo en mercados alcistas"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error habilitando trailing up: {e}")
+            bot.send_message(chat_id, "❌ Error activando trailing up")
+
+    def handle_disable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Maneja el comando /disable_trailing"""
+        try:
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
+                return
+            
+            # Actualizar en base de datos
+            with get_db_session() as db:
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.is_active == True
+                ).update({'enable_trailing_up': False})
+                db.commit()
+            
+            message = "🚫 <b>TRAILING UP DESACTIVADO</b>\n\n"
+            message += f"📊 El bot mantendrá su grid fijo sin reposicionarse\n"
+            message += f"⚠️ Puede quedarse fuera del mercado en tendencias alcistas\n\n"
+            message += f"💡 Usa /enable_trailing para reactivar"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error deshabilitando trailing up: {e}")
+            bot.send_message(chat_id, "❌ Error desactivando trailing up")
+
+    def handle_set_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Maneja el comando /set_stop_loss X"""
+        try:
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
+                return
+            
+            # Extraer porcentaje del mensaje
+            parts = message_text.strip().split()
+            if len(parts) != 2:
+                bot.send_message(
+                    chat_id, 
+                    "❌ Formato incorrecto.\n\n"
+                    "✅ Uso correcto: <code>/set_stop_loss 3.5</code>\n"
+                    "💡 Ejemplo: 3.5 significa 3.5% de pérdida máxima"
+                )
+                return
+            
+            try:
+                new_percentage = float(parts[1])
+                if new_percentage < 0.1 or new_percentage > 20:
+                    bot.send_message(
+                        chat_id,
+                        "❌ El porcentaje debe estar entre 0.1% y 20%\n\n"
+                        "💡 Valores recomendados:\n"
+                        "• Conservador: 2-3%\n"
+                        "• Moderado: 4-6%\n"
+                        "• Agresivo: 7-10%"
+                    )
+                    return
+            except ValueError:
+                bot.send_message(chat_id, "❌ Porcentaje inválido. Usa números como: 3.5")
+                return
+            
+            # Actualizar en base de datos
+            with get_db_session() as db:
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.is_active == True
+                ).update({
+                    'stop_loss_percent': new_percentage,
+                    'enable_stop_loss': True  # Activar automáticamente al configurar
+                })
+                db.commit()
+            
+            message = f"✅ <b>STOP-LOSS CONFIGURADO</b>\n\n"
+            message += f"📉 <b>Nuevo porcentaje:</b> {new_percentage}%\n"
+            message += f"🛡️ <b>Estado:</b> Activado automáticamente\n\n"
+            message += f"💡 El bot se detendrá si el precio baja {new_percentage}% debajo del nivel más bajo"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error configurando stop-loss: {e}")
+            bot.send_message(chat_id, "❌ Error configurando stop-loss")
+
+    def handle_protections_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Maneja el comando /protections"""
+        try:
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
+                return
+            
+            message = "🛡️ <b>ESTADO DE PROTECCIONES V2</b>\n\n"
+            
+            # Stop-Loss
+            if bool(user_config.enable_stop_loss):
+                message += f"🟢 <b>Stop-Loss:</b> ACTIVO ({user_config.stop_loss_percent}%)\n"
+                message += f"   📉 Se activará si baja {user_config.stop_loss_percent}% del nivel más bajo\n\n"
+            else:
+                message += f"🔴 <b>Stop-Loss:</b> INACTIVO\n"
+                message += f"   ⚠️ Sin protección contra caídas bruscas\n\n"
+            
+            # Trailing Up
+            if bool(user_config.enable_trailing_up):
+                message += f"🟢 <b>Trailing Up:</b> ACTIVO\n"
+                message += f"   📈 Seguirá tendencias alcistas automáticamente\n\n"
+            else:
+                message += f"🔴 <b>Trailing Up:</b> INACTIVO\n"
+                message += f"   📊 Grid fijo, puede perderse rallies\n\n"
+            
+            message += "🔧 <b>Comandos disponibles:</b>\n"
+            message += "/enable_stop_loss - Activar protección\n"
+            message += "/disable_stop_loss - Desactivar protección\n"
+            message += "/enable_trailing - Activar seguimiento\n"
+            message += "/disable_trailing - Desactivar seguimiento\n"
+            message += "/set_stop_loss X - Configurar porcentaje\n\n"
+            
+            message += f"📊 <b>Configuración actual:</b>\n"
+            message += f"Par: {user_config.pair} | Capital: ${user_config.total_capital}\n"
+            message += f"Niveles: {user_config.grid_levels} | Rango: ±{user_config.price_range_percent}%"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error mostrando protecciones: {e}")
+            bot.send_message(chat_id, "❌ Error obteniendo estado de protecciones")
 
 
 def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:

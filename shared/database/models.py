@@ -26,7 +26,8 @@ class Noticia(Base):
 
 class GridBotConfig(Base):
     """
-    Modelo para almacenar la configuración del bot de grid trading.
+    Modelo para almacenar la configuración del bot de grid trading V2.
+    Incluye configuración de estrategias avanzadas: stop-loss y trailing up.
     Permite gestionar la configuración dinámicamente sin necesidad de redeploys.
     """
     __tablename__ = "grid_bot_config"
@@ -36,6 +37,13 @@ class GridBotConfig(Base):
     total_capital = Column(Float, nullable=False)
     grid_levels = Column(Integer, nullable=False)
     price_range_percent = Column(Float, nullable=False)
+    
+    # Estrategias V2: Stop-Loss y Trailing Up
+    stop_loss_percent = Column(Float, default=5.0, nullable=False)  # % de pérdida máxima
+    enable_stop_loss = Column(Boolean, default=True, nullable=False)  # Activado por defecto
+    enable_trailing_up = Column(Boolean, default=True, nullable=False)  # Activado por defecto
+    
+    # Control y metadata
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -47,13 +55,17 @@ class GridBotConfig(Base):
             'pair': self.pair,
             'total_capital': self.total_capital,
             'grid_levels': self.grid_levels,
-            'price_range_percent': self.price_range_percent
+            'price_range_percent': self.price_range_percent,
+            'stop_loss_percent': self.stop_loss_percent,
+            'enable_stop_loss': self.enable_stop_loss,
+            'enable_trailing_up': self.enable_trailing_up
         }
 
 
 class GridBotState(Base):
     """
-    Modelo para almacenar el estado actual del bot de grid trading.
+    Modelo para almacenar el estado actual del bot de grid trading V2.
+    Incluye tracking de estrategias avanzadas y métricas de performance.
     Permite persistir el estado entre reinicios y hacer tracking del bot.
     """
     __tablename__ = "grid_bot_state"
@@ -61,10 +73,23 @@ class GridBotState(Base):
     id = Column(Integer, primary_key=True, index=True)
     config_id = Column(Integer, nullable=False)  # Referencia a GridBotConfig
     is_running = Column(Boolean, default=False)
+    
+    # Trading metrics
     last_execution = Column(DateTime, nullable=True)
     total_trades = Column(Integer, default=0)
     total_profit = Column(Float, default=0.0)
     current_price = Column(Float, nullable=True)
     active_orders_count = Column(Integer, default=0)
+    
+    # Grid boundaries tracking
+    lowest_buy_price = Column(Float, nullable=True)  # Para calcular stop-loss
+    highest_sell_price = Column(Float, nullable=True)  # Para calcular trailing up
+    
+    # Advanced strategies tracking
+    stop_loss_triggered_count = Column(Integer, default=0)
+    trailing_up_triggered_count = Column(Integer, default=0)
+    last_grid_adjustment = Column(DateTime, nullable=True)
+    
+    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow) 
