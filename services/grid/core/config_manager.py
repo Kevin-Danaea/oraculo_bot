@@ -16,7 +16,6 @@ logger = get_logger(__name__)
 # CONSTANTES
 # ============================================================================
 
-# PROFIT_PERCENTAGE se calcula dinámicamente en grid_strategy.py
 ORDER_RETRY_ATTEMPTS = 3
 RECONNECTION_DELAY = 5  # segundos
 MAX_RECONNECTION_ATTEMPTS = 5

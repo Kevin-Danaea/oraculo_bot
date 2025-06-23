@@ -4,7 +4,7 @@ Diseñado para ser reutilizado por diferentes servicios con diferentes lógicas 
 """
 import requests
 import json
-from typing import Dict, Callable, Optional, Any, Union
+from typing import Dict, Callable, Optional
 from shared.config.settings import settings
 from shared.services.logging_config import get_logger
 

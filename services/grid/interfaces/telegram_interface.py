@@ -2,13 +2,11 @@
 Interfaz de Telegram específica para el Grid Trading Bot.
 Maneja todos los comandos y lógica de conversación específica del grid bot.
 """
-import re
 from typing import Dict, Any, Optional
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from shared.database.session import get_db_session
-from shared.database.models import GridBotConfig, GridBotState
+from shared.database.models import GridBotConfig
 from shared.services.logging_config import get_logger
 from shared.services.telegram_bot_service import TelegramBot
 from services.grid.schedulers.grid_scheduler import (
