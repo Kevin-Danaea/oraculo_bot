@@ -139,8 +139,10 @@ class BasicCommandsHandler(BaseHandler):
                     
                     if success:
                         message = "🛑 <b>Grid Bot detenido correctamente</b>\n\n"
-                        message += "✅ Todas las órdenes activas han sido canceladas\n"
-                        message += "⏸️ Bot en modo standby\n\n"
+                        message += "✅ Se señaló la parada del bot\n"
+                        message += "🧹 Las órdenes serán canceladas automáticamente\n"
+                        message += "⏸️ Bot entrando en modo standby\n\n"
+                        message += "ℹ️ <i>El proceso de cancelación puede tomar unos segundos</i>\n"
                         message += "▶️ Usa /start_bot para reanudar trading"
                         bot.send_message(chat_id, message)
                     else:

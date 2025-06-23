@@ -1,40 +1,42 @@
 """
-Módulo de Monitoreo V2 del Grid Trading Bot.
-Incluye monitoreo de estrategias avanzadas: stop-loss y trailing up.
-Mantiene compatibilidad con funcionalidad básica de V1.
+Monitor V2 del Grid Trading Bot con estrategias avanzadas integradas.
+Incluye stop-loss automático, trailing up y monitoreo de órdenes mejorado.
 """
 
-import ccxt
 import time
+import ccxt
 from typing import Dict, List, Any, Tuple, Optional
+from datetime import datetime
+
 from shared.services.logging_config import get_logger
 from shared.services.telegram_service import send_telegram_message, send_grid_trade_notification, send_grid_hourly_summary
 from .config_manager import reconnect_exchange
-from .state_manager import save_bot_state
-from .order_manager import create_sell_order_after_buy, create_replacement_buy_order
-
-# Importar estrategias avanzadas
+from .state_manager import save_bot_state, cancel_all_active_orders
 from ..strategies.advanced_strategies import (
-    should_trigger_stop_loss, 
-    should_trigger_trailing_up,
+    should_trigger_stop_loss,
+    should_trigger_trailing_up, 
     execute_stop_loss_strategy,
     execute_trailing_up_strategy
 )
+from .order_manager import create_sell_order_after_buy, create_replacement_buy_order
 
 logger = get_logger(__name__)
 
 # ============================================================================
-# CONSTANTES DE MONITOREO V2
+# CONSTANTES DE CONFIGURACIÓN
 # ============================================================================
 
-MONITORING_INTERVAL = 30  # segundos entre chequeos
-STATUS_REPORT_CYCLES = 120  # enviar resumen cada 120 ciclos (1 hora)
-ADVANCED_STRATEGIES_CHECK_INTERVAL = 2  # ciclos entre verificaciones de estrategias avanzadas
+MONITORING_INTERVAL = 30  # segundos entre verificaciones
+STATUS_REPORT_CYCLES = 120  # Cada X ciclos enviar resumen (60 minutos)  
+ADVANCED_STRATEGIES_CHECK_INTERVAL = 10  # Cada X ciclos verificar estrategias avanzadas
 
+# ============================================================================
+# FUNCIONES DE UTILIDAD
+# ============================================================================
 
 def get_grid_boundaries(active_orders: List[Dict[str, Any]]) -> Tuple[Optional[float], Optional[float]]:
     """
-    Calcula los límites actuales del grid basado en las órdenes activas.
+    Obtiene los límites del grid (precio más bajo de compra y más alto de venta).
     
     Args:
         active_orders: Lista de órdenes activas
@@ -42,18 +44,75 @@ def get_grid_boundaries(active_orders: List[Dict[str, Any]]) -> Tuple[Optional[f
     Returns:
         Tuple de (precio_compra_más_bajo, precio_venta_más_alto)
     """
+    buy_prices = [order['price'] for order in active_orders if order['type'] == 'buy']
+    sell_prices = [order['price'] for order in active_orders if order['type'] == 'sell']
+    
+    lowest_buy = min(buy_prices) if buy_prices else None
+    highest_sell = max(sell_prices) if sell_prices else None
+    
+    return lowest_buy, highest_sell
+
+
+def check_manual_stop_requested() -> bool:
+    """
+    Verifica si se ha solicitado una parada manual del bot.
+    Importa y verifica la variable global grid_bot_running.
+    
+    Returns:
+        True si se debe detener el bot, False si debe continuar
+    """
     try:
-        buy_prices = [order['price'] for order in active_orders if order['type'] == 'buy' and order['status'] == 'open']
-        sell_prices = [order['price'] for order in active_orders if order['type'] == 'sell' and order['status'] == 'open']
+        # Importar variable global del scheduler
+        from ..schedulers.grid_scheduler import grid_bot_running
+        return not grid_bot_running
+    except ImportError:
+        logger.warning("⚠️ No se pudo importar grid_bot_running del scheduler")
+        return False
+
+
+def handle_manual_stop_cleanup(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]], 
+                              config: Dict[str, Any]) -> None:
+    """
+    Maneja la limpieza al detectar una parada manual del bot.
+    Cancela todas las órdenes activas y envía notificación.
+    
+    Args:
+        exchange: Instancia del exchange
+        active_orders: Lista de órdenes activas para cancelar
+        config: Configuración del bot
+    """
+    try:
+        logger.info("🛑 ========== PARADA MANUAL DETECTADA - INICIANDO LIMPIEZA ==========")
         
-        lowest_buy_price = min(buy_prices) if buy_prices else None
-        highest_sell_price = max(sell_prices) if sell_prices else None
+        if not active_orders:
+            logger.info("ℹ️ No hay órdenes activas para cancelar")
+            return
         
-        return lowest_buy_price, highest_sell_price
+        # Cancelar todas las órdenes activas
+        cancelled_count = cancel_all_active_orders(exchange, active_orders)
+        
+        # Limpiar estado guardado
+        from .state_manager import clear_bot_state
+        clear_bot_state()
+        
+        # Enviar notificación de parada limpia
+        pair = config.get('pair', 'N/A')
+        message = f"🛑 <b>GRID BOT DETENIDO MANUALMENTE</b>\n\n"
+        message += f"📊 <b>Par:</b> {pair}\n"
+        message += f"🚫 <b>Órdenes canceladas:</b> {cancelled_count}/{len(active_orders)}\n"
+        message += f"🧹 <b>Estado limpiado:</b> ✅\n"
+        message += f"⏸️ <b>Bot en modo standby</b>\n\n"
+        message += f"▶️ Usa /start_bot para reanudar trading\n"
+        message += f"🕐 <i>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</i>"
+        
+        send_telegram_message(message)
+        
+        logger.info(f"✅ Limpieza completada - {cancelled_count} órdenes canceladas")
         
     except Exception as e:
-        logger.error(f"❌ Error calculando límites del grid: {e}")
-        return None, None
+        logger.error(f"❌ Error durante limpieza de parada manual: {e}")
+        # Enviar notificación de error
+        send_telegram_message(f"🚨 <b>ERROR EN LIMPIEZA</b>\n\n❌ {str(e)}")
 
 
 def check_advanced_strategies(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]], 
@@ -160,6 +219,7 @@ def monitor_grid_orders_v2(exchange: ccxt.Exchange, active_orders: List[Dict[str
                           config: Dict[str, Any]) -> None:
     """
     Bucle principal de monitoreo V2 con estrategias avanzadas integradas.
+    FIXED: Ahora verifica parada manual y cancela órdenes correctamente.
     
     Args:
         exchange: Instancia del exchange
@@ -180,6 +240,13 @@ def monitor_grid_orders_v2(exchange: ccxt.Exchange, active_orders: List[Dict[str
             cycle_count += 1
             
             try:
+                # 0. VERIFICAR PARADA MANUAL (NUEVO FIX) ⭐
+                if check_manual_stop_requested():
+                    logger.info("🛑 Parada manual detectada - Iniciando limpieza...")
+                    handle_manual_stop_cleanup(exchange, active_orders, config)
+                    bot_should_stop = True
+                    break
+                
                 # 1. Verificar estrategias avanzadas cada N ciclos
                 if cycle_count % ADVANCED_STRATEGIES_CHECK_INTERVAL == 0:
                     strategy_action, strategy_result = check_advanced_strategies(exchange, active_orders, config)
@@ -249,7 +316,7 @@ def monitor_grid_orders_v2(exchange: ccxt.Exchange, active_orders: List[Dict[str
     finally:
         # Guardar estado final
         save_bot_state(active_orders, config)
-        logger.info("💾 Estado final V2 guardado")
+        logger.info("💾 Estado final V2 guardado - Monitor detenido")
 
 
 # Función de compatibilidad para usar monitor V2 como predeterminado
@@ -268,6 +335,8 @@ __all__ = [
     'STATUS_REPORT_CYCLES', 
     'ADVANCED_STRATEGIES_CHECK_INTERVAL',
     'get_grid_boundaries',
+    'check_manual_stop_requested',
+    'handle_manual_stop_cleanup',
     'check_advanced_strategies',
     'check_and_process_filled_orders_v2',
     'monitor_grid_orders_v2',
