@@ -1,102 +1,180 @@
-# 🔮 Oráculo Cripto Bot - Arquitectura de Pure Workers + API Gateway
+# �� Oráculo Cripto Bot V2.0 - Grid Trading Inteligente + News Analysis
 
-Un sistema inteligente de **microservicios pure workers** para trading automatizado y análisis de noticias crypto con **API Gateway centralizado** y **health checks HTTP** en tiempo real.
+Un sistema avanzado de **microservicios** para **trading automatizado inteligente** y **análisis de noticias crypto** con **estrategias defensivas/ofensivas** y **control total desde Telegram**.
 
 ## 📋 Descripción del Proyecto
 
-El **Oráculo Cripto Bot** es un ecosistema de **pure workers** con **API Gateway centralizado** que combina **trading automatizado** y **análisis de sentimientos** de noticias cripto. La arquitectura está diseñada como **microservicios modernos** donde cada worker es independiente y el gateway agrega su estado mediante **health checks HTTP**.
+El **Oráculo Cripto Bot V2.0** es un ecosistema moderno que combina **Grid Trading inteligente con IA** y **análisis de sentimientos** de noticias crypto. La arquitectura está diseñada con **microservicios independientes** y **control avanzado desde Telegram**.
 
-### 🎯 Arquitectura: Pure Workers + Gateway Centralizado
+### 🎯 Arquitectura V2: Pure Workers + Gateway + Telegram Control
 
 #### 📰 News Worker (Puerto 8000)
 - **Recolección Automática**: Reddit (r/CryptoCurrency) cada hora
 - **Análisis de Sentimientos**: Google Gemini AI cada 4 horas  
 - **Background Jobs**: Schedulers independientes
-- **Minimal API**: Solo `/health` para monitoreo
+- **Health Check**: `/health` para monitoreo
 
-#### 🤖 Grid Worker (Puerto 8001)
-- **Grid Trading Bot**: Estrategias automatizadas en Binance
-- **Trading 24/7**: Operaciones continuas con gestión de riesgos
-- **Background Jobs**: Schedulers de trading independientes
-- **Minimal API**: Solo `/health` para monitoreo
+#### 🤖 Grid Worker V2.0 (Puerto 8001) ⭐ **NUEVO**
+- **🛡️ Grid Trading Inteligente**: Stop-Loss + Trailing Up automático
+- **⏸️ Modo Standby**: NO inicia automáticamente tras reinicio
+- **🧹 Limpieza Automática**: Cancela órdenes huérfanas al startup
+- **🎮 Control Total**: Comandos manuales desde Telegram
+- **🚨 Estrategias Defensivas**: Protección automática contra pérdidas
+- **📈 Estrategias Ofensivas**: Seguimiento de tendencias alcistas
+- **Background Jobs**: Trading 24/7 con IA integrada
 
 #### 🌐 API Gateway (Puerto 8002)
 - **Único Punto HTTP**: Entrada pública centralizada
-- **Health Checks Agregados**: Estado de todos los workers vía HTTP
-- **Monitoreo Centralizado**: `/api/v1/health` agrega todo el sistema
-- **Communication Hub**: Comunica con workers via `localhost:8000` y `localhost:8001`
+- **Health Checks Agregados**: Estado de todos los workers
+- **Monitoreo Centralizado**: Estado completo del sistema
 
-### 🏗️ Arquitectura Final Optimizada
+### 🏗️ Arquitectura V2.0 Mejorada
 
 ```
 oraculo_bot/
-├── services/                    # 🔥 MICROSERVICIOS PURE WORKERS
-│   ├── api/                     # 🌐 API Gateway (Puerto 8002) - PÚBLICO
-│   │   ├── main.py              # Entry point único HTTP
+├── services/                    # 🔥 MICROSERVICIOS
+│   ├── api/                     # 🌐 API Gateway (Puerto 8002)
+│   │   ├── main.py              # Entry point HTTP
 │   │   └── routers/
-│   │       └── status_router.py # Health checks agregados HTTP
-│   ├── news/                    # 📰 News Worker (Puerto 8000) - WORKER PURO
-│   │   ├── main.py              # Minimal FastAPI + Background jobs
-│   │   ├── schedulers/          # Reddit + Sentiment analysis jobs
-│   │   └── services/            # Reddit API + Google Gemini AI
-│   └── grid/                    # 🤖 Grid Worker (Puerto 8001) - WORKER PURO
-│       ├── main.py              # Minimal FastAPI + Trading jobs
-│       ├── schedulers/          # Grid trading background jobs
-│       ├── core/                # Trading engine
-│       └── strategies/          # Trading algorithms
+│   │       └── status_router.py # Health checks agregados
+│   ├── news/                    # 📰 News Worker (Puerto 8000)
+│   │   ├── main.py              # News + Sentiment analysis
+│   │   ├── schedulers/          # Reddit + Gemini AI jobs
+│   │   └── services/            # Reddit API + Google Gemini
+│   └── grid/                    # 🤖 Grid Worker V2.0 (Puerto 8001) ⭐
+│       ├── main.py              # Grid trading service
+│       ├── core/                # 🧠 Trading engine V2
+│   │   ├── startup_manager.py     # ⭐ Limpieza + Standby
+│   │   ├── monitor_v2.py          # ⭐ Monitor inteligente
+│   │   ├── trading_engine.py      # Motor principal
+│   │   ├── config_manager.py      # Gestión configuración
+│   │   ├── order_manager.py       # Gestión órdenes
+│   │   └── state_manager.py       # Persistencia estado
+│   │   └── interfaces/          # 🎮 Control V2
+│   │       └── telegram_interface.py # ⭐ Comandos avanzados
+│   └── schedulers/          # 📅 Jobs V2
+│       └── grid_scheduler.py      # ⭐ Modo standby
 ├── shared/                      # 🧩 CÓDIGO COMPARTIDO
 │   ├── config/                  # Configuración centralizada
-│   ├── database/                # SQLite compartido (sentimientos)
-│   └── services/                # Logging + Telegram compartidos
-├── run_api_service.py           # 🚀 Entry point API Gateway
-├── run_news_service.py          # 🚀 Entry point News Worker
-├── run_grid_service.py          # 🚀 Entry point Grid Worker
-└── requirements.txt             # Dependencias (incluye aiohttp)
+│   ├── database/                # 💾 SQLite + Modelos V2
+│   │   ├── models.py            # ⭐ Modelos actualizados V2
+│   │   └── session.py           # Gestión DB
+│   └── services/                # 🔧 Servicios compartidos
+│       ├── logging_config.py    # Logging centralizado
+│       ├── telegram_service.py  # Mensajería Telegram
+│       └── telegram_bot_service.py # Bot service
+├── deployment/                  # 🚀 DESPLIEGUE
+│   ├── deploy_services.sh       # Script automático
+│   └── services/                # Servicios systemd
+│       ├── oraculo-api.service
+│       ├── oraculo-news.service
+│       └── oraculo-grid.service
+├── run_api_service.py           # 🚀 Entry point API
+├── run_news_service.py          # 🚀 Entry point News
+├── run_grid_service.py          # 🚀 Entry point Grid V2
+└── requirements.txt             # Dependencias
 ```
 
-### 🔗 Comunicación Entre Microservicios
+## 🚀 Grid Bot V2.0 - Funcionalidades Avanzadas
 
-```mermaid
-graph LR
-    A[👤 Usuario/Nginx] -->|HTTP| B[🌐 API Gateway :8002]
-    B -->|Health Check HTTP| C[📰 News Worker :8000]
-    B -->|Health Check HTTP| D[🤖 Grid Worker :8001]
-    C -->|SQLite| E[(🗄️ DB Compartida)]
-    D -->|SQLite| E
-    C -->|Background| F[📡 Reddit API]
-    C -->|Background| G[🧠 Google Gemini]
-    D -->|Background| H[💹 Binance API]
+### 🛡️ Estrategias Defensivas
+
+#### 🚨 Stop-Loss Inteligente
+- **Trigger**: Precio < (orden_más_baja × (1 - stop_loss%))
+- **Acción**: Cancelar TODO → Vender TODO → Detener bot → Modo standby
+- **Objetivo**: Protección automática contra pérdidas > X%
+- **Control**: Configurable desde Telegram (0.1% - 20%)
+
+#### ⏸️ Modo Standby Automático
+- **Al reiniciar servidor**: Bot NO inicia automáticamente
+- **Limpieza automática**: Cancela órdenes huérfanas de sesiones anteriores
+- **Notificación**: Informa limpieza y estado standby
+- **Activación**: Solo manual con `/start_bot` desde Telegram
+
+### 📈 Estrategias Ofensivas
+
+#### 🎯 Trailing Up Dinámico
+- **Trigger**: Precio > límite_superior_del_grid
+- **Acción**: Cancelar órdenes → Recalcular grid → Nuevas órdenes en niveles altos
+- **Objetivo**: Seguir tendencias alcistas automáticamente
+- **Optimización**: Reutiliza balances para minimizar comisiones
+
+### 🎮 Control Total desde Telegram
+
+#### 📋 Comandos Básicos V2
+```
+/start          - Bienvenida e información general
+/config         - Configuración paso a paso inteligente
+/start_bot      - ⭐ Iniciar trading manual
+/stop_bot       - ⭐ Detener trading (modo standby)
+/restart_bot    - ⭐ Reiniciar con nueva configuración
+/status         - ⭐ Estado detallado V2 con protecciones
+/delete_config  - Eliminar configuración guardada
 ```
 
-#### 🔧 Flujo de Health Checks
+#### 🛡️ Comandos V2 - Estrategias Avanzadas
+```
+/protections         - Ver estado completo de protecciones
+/enable_stop_loss    - Activar stop-loss
+/disable_stop_loss   - Desactivar stop-loss  
+/enable_trailing     - Activar trailing up
+/disable_trailing    - Desactivar trailing up
+/set_stop_loss X     - Configurar % stop-loss (0.1-20%)
+```
 
-1. **API Gateway** (Puerto 8002) hace HTTP requests a:
-   - `http://localhost:8000/health` (News Worker)
-   - `http://localhost:8001/health` (Grid Worker)
+#### 🧠 Configuración Automática Inteligente V2
+- **Capital < $50**: 2 niveles, 5% rango, **3% stop-loss**
+- **Capital $50-100**: 4 niveles, 8% rango, **4% stop-loss**
+- **Capital $100-500**: 6 niveles, 10% rango, **5% stop-loss**
+- **Capital > $500**: 6 niveles, 12% rango, **6% stop-loss**
 
-2. **Endpoint Agregado** `/api/v1/health` retorna estado completo:
-   ```json
-   {
-     "system_status": "healthy",
-     "summary": "3/3 servicios saludables",
-     "services": [
-       {"service": "api_gateway", "status": "healthy", "url": "localhost:8002"},
-       {"service": "news", "status": "healthy", "url": "localhost:8000"},
-       {"service": "grid", "status": "healthy", "url": "localhost:8001"}
-     ]
-   }
-   ```
+### 🔄 Flujo de Operación V2
+
+#### 🆕 Primer Uso
+```
+1. /config → Configuración automática inteligente
+2. /start_bot → Inicio manual del trading
+3. 🤖 Bot opera con estrategias V2 activadas
+4. 📊 /status → Monitoreo en tiempo real
+```
+
+#### 🔄 Reinicio de Servidor
+```
+1. 🧹 Limpieza automática de órdenes huérfanas
+2. ⏸️ Modo standby (NO inicia automáticamente)
+3. 📢 Notificación automática a Telegram
+4. 🎮 /start_bot → Reactivación manual
+```
+
+#### 🚨 Activación de Stop-Loss
+```
+1. 📉 Precio baja > X% del grid
+2. 🚫 Cancelación automática de órdenes
+3. 💸 Venta automática de crypto
+4. 🛑 Detención automática del bot
+5. ⏸️ Modo standby hasta reactivación manual
+6. 📨 Notificación detallada de pérdidas
+```
+
+#### 📈 Activación de Trailing Up
+```
+1. 🚀 Precio sube > límite superior del grid
+2. 🚫 Cancelación automática de órdenes antiguas
+3. 🎯 Recálculo de grid en niveles superiores
+4. 📈 Nuevas órdenes en zona alta
+5. 🤖 Continúa trading automáticamente
+6. 📨 Notificación de reposicionamiento
+```
 
 ## 🚀 Instalación y Configuración
 
 ### 📋 Prerrequisitos
 
 - Python 3.8 o superior
-- pip (gestor de paquetes de Python)
-- **Cuenta de Reddit** para API credentials
+- **Cuenta de Reddit** para API credentials (noticias)
 - **Google API Key** para análisis de sentimientos con Gemini
-- **Cuenta de Binance** para trading (opcional)
-- **Bot de Telegram** para notificaciones (opcional)
+- **Cuenta de Binance** para trading
+- **Bot de Telegram** para control y notificaciones
 
 ### 🔧 Instalación Local
 
@@ -108,11 +186,11 @@ graph LR
 
 2. **Crear y activar el entorno virtual**:
    ```bash
-   # En Windows
+   # Windows
    python -m venv venv
    venv\Scripts\activate
 
-   # En macOS/Linux
+   # macOS/Linux
    python3 -m venv venv
    source venv/bin/activate
    ```
@@ -122,242 +200,184 @@ graph LR
    pip install -r requirements.txt
    ```
 
-4. **Configurar variables de entorno**:
-   
-   Crear un archivo `.env` en la raíz del proyecto:
+4. **Configurar variables de entorno** (`.env`):
    ```env
    # Configuración General
-   PROJECT_NAME=Oráculo Cripto Bot
+   PROJECT_NAME=Oráculo Cripto Bot V2
    DATABASE_URL=sqlite:///./oraculo.db
    
-   # Reddit API (para noticias)
+   # Reddit API (noticias)
    REDDIT_CLIENT_ID=tu_client_id_aqui
    REDDIT_CLIENT_SECRET=tu_client_secret_aqui
    REDDIT_USER_AGENT=OraculoBot by tu_usuario_de_reddit
    
-   # Google Gemini API (para análisis de sentimientos)
+   # Google Gemini API (análisis sentimientos)
    GOOGLE_API_KEY=tu_google_api_key_aqui
    
-   # Binance API (para trading)
+   # Binance API (trading)
    BINANCE_API_KEY=tu_binance_api_key_aqui
    BINANCE_SECRET_KEY=tu_binance_secret_key_aqui
    
-   # Telegram Bot (para notificaciones)
+   # Telegram Bot (control + notificaciones)
    TELEGRAM_BOT_TOKEN=tu_telegram_bot_token
    TELEGRAM_CHAT_ID=tu_chat_id
    ```
 
 ## 🎮 Ejecución del Proyecto
 
-### 🔥 Ejecutar Pure Workers + API Gateway
+### 🔥 Ejecutar Microservicios V2
 
 ```bash
-# 📰 News Worker (Puerto 8000) - Background jobs
+# 📰 News Worker (Puerto 8000)
 python run_news_service.py
 
-# 🤖 Grid Trading Worker (Puerto 8001) - Background jobs  
+# 🤖 Grid Trading Worker V2 (Puerto 8001) ⭐
 python run_grid_service.py
 
-# 🌐 API Gateway (Puerto 8002) - HTTP público
+# 🌐 API Gateway (Puerto 8002)
 python run_api_service.py
 ```
 
 ### 🌐 URLs del Sistema
 
-- **🌐 API Gateway**: http://localhost:8002 (ÚNICO PUNTO PÚBLICO)
+- **🌐 API Gateway**: http://localhost:8002
   - **Documentación**: http://localhost:8002/docs
-  - **Health Check Sistema**: http://localhost:8002/api/v1/health
-  - **Lista Workers**: http://localhost:8002/api/v1/services
-- **📰 News Worker**: http://localhost:8000/health (INTERNO)
-- **🤖 Grid Worker**: http://localhost:8001/health (INTERNO)
+  - **Health Check**: http://localhost:8002/api/v1/health
+- **📰 News Worker**: http://localhost:8000/health (interno)
+- **🤖 Grid Worker V2**: http://localhost:8001/health (interno)
 
-### 📡 Endpoints del API Gateway Centralizado
+## 🏭 Despliegue en Producción
 
-#### 🌐 Sistema (`/api/v1/`)
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/` | Información general del sistema y arquitectura |
-| GET | `/api/v1/health` | **Health check agregado** de todos los workers |
-| GET | `/api/v1/services` | Lista de workers y sus puertos |
-| GET | `/api/v1/` | Estado general y información arquitectónica |
+### 🐧 VPS Ubuntu (Recomendado)
 
-#### 🔍 Ejemplos de Monitoreo
-
-1. **Health check completo del sistema**:
+1. **Clonar y configurar**:
    ```bash
-   curl http://localhost:8002/api/v1/health
-   ```
-   
-   **Respuesta**: Estado agregado de todos los workers con comunicación HTTP real
-
-2. **Lista de workers disponibles**:
-   ```bash
-   curl http://localhost:8002/api/v1/services
+   git clone <repo>
+   cd oraculo_bot
+   cp .env.example .env
+   # Editar .env con tus credenciales
    ```
 
-3. **Información del sistema**:
+2. **Desplegar servicios systemd**:
    ```bash
-   curl http://localhost:8002/
+   chmod +x deployment/deploy_services.sh
+   sudo ./deployment/deploy_services.sh
    ```
 
-4. **Health check individual de worker** (interno):
+3. **Verificar servicios**:
    ```bash
-   curl http://localhost:8000/health  # News Worker
-   curl http://localhost:8001/health  # Grid Worker
+   sudo systemctl status oraculo-grid.service
+   sudo systemctl status oraculo-news.service
+   sudo systemctl status oraculo-api.service
    ```
 
-## 🐳 Deployment en VPS
+### 🎯 Beneficios del Modo Standby V2
 
-### 🛠️ Configuración con Systemd (Pure Workers)
+✅ **Seguridad**: No trading automático tras reinicio  
+✅ **Limpieza**: Cancela órdenes huérfanas automáticamente  
+✅ **Control**: Inicio manual desde Telegram  
+✅ **Notificaciones**: Informa estado tras reinicio  
+✅ **Profesional**: Comportamiento predecible en producción  
 
-El proyecto mantiene compatibilidad con systemd services en `deployment/services/`:
+## 🧠 Base de Datos V2
 
+### 📊 Modelos Actualizados
+
+#### GridBotConfig V2
+```sql
+CREATE TABLE gridbot_configs (
+    id INTEGER PRIMARY KEY,
+    pair VARCHAR(20) NOT NULL,           -- ETH/USDT, BTC/USDT
+    total_capital FLOAT NOT NULL,        -- Capital en USDT
+    grid_levels INTEGER NOT NULL,        -- Número de niveles
+    price_range_percent FLOAT NOT NULL,  -- % rango del grid
+    stop_loss_percent FLOAT DEFAULT 5.0, -- ⭐ % stop-loss
+    enable_stop_loss BOOLEAN DEFAULT 1,  -- ⭐ Activar stop-loss
+    enable_trailing_up BOOLEAN DEFAULT 1, -- ⭐ Activar trailing
+    telegram_chat_id VARCHAR(50),        -- Chat ID Telegram
+    is_active BOOLEAN DEFAULT 1,         -- Configuración activa
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### GridBotState V2
+```sql
+CREATE TABLE gridbot_states (
+    id INTEGER PRIMARY KEY,
+    config_id INTEGER,                   -- FK a config
+    lowest_buy_price FLOAT,              -- ⭐ Precio compra más bajo
+    highest_sell_price FLOAT,            -- ⭐ Precio venta más alto
+    stop_loss_triggered_count INTEGER DEFAULT 0, -- ⭐ Veces activado SL
+    trailing_up_triggered_count INTEGER DEFAULT 0, -- ⭐ Veces activado TU
+    last_grid_adjustment TIMESTAMP,      -- ⭐ Último ajuste
+    active_orders_json TEXT,             -- Órdenes activas JSON
+    last_updated TIMESTAMP DEFAULT NOW()
+);
+```
+
+## 📈 Monitoreo y Logs
+
+### 📂 Estructura de Logs
+```
+logs/
+├── oraculo_grid.log     # Grid Bot V2 principal
+├── oraculo_news.log     # News worker
+├── oraculo_api.log      # API Gateway
+└── system.log           # Logs generales
+```
+
+### 🔍 Comandos de Monitoreo
 ```bash
-# Copiar archivos de servicio
-sudo cp deployment/services/*.service /etc/systemd/system/
+# Ver logs del Grid Bot V2
+tail -f logs/oraculo_grid.log
 
-# Habilitar servicios (workers independientes)
-sudo systemctl enable oraculo-news    # News Worker (Puerto 8000)
-sudo systemctl enable oraculo-grid    # Grid Worker (Puerto 8001)  
-sudo systemctl enable oraculo-api     # API Gateway (Puerto 8002)
+# Ver solo stop-loss y trailing up
+grep -E "(stop-loss|trailing)" logs/oraculo_grid.log
 
-# Iniciar servicios
-sudo systemctl start oraculo-news
-sudo systemctl start oraculo-grid  
-sudo systemctl start oraculo-api
+# Ver modo standby
+grep "standby" logs/oraculo_grid.log
 
-# Verificar estado
-sudo systemctl status oraculo-*
+# Estado de servicios
+curl http://localhost:8002/api/v1/health
 ```
 
-### 🌐 Configuración Nginx (Solo API Gateway Público)
+## 🛡️ Seguridad y Mejores Prácticas
 
-```nginx
-server {
-    listen 80;
-    server_name tu-dominio.com;
+### 🔐 API Keys
+- Mantén las credenciales en `.env` (nunca en código)
+- Usa permisos mínimos en Binance (solo trading spot)
+- Revisa logs regularmente para detectar anomalías
 
-    # Solo exponer API Gateway público
-    location / {
-        proxy_pass http://localhost:8002;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-    
-    # Workers internos no expuestos públicamente
-    # News Worker (8000) y Grid Worker (8001) solo acceso local
-}
-```
+### 💰 Trading Seguro
+- Empieza con capital pequeño ($50-100)
+- Usa stop-loss conservadores (3-5%)
+- Monitorea desde Telegram diariamente
+- Revisa configuración antes de reiniciar
 
-### 📊 Monitoreo en VPS
+### 🎮 Control desde Telegram
+- Solo tú debes tener acceso al bot
+- Usa `/status` frecuentemente
+- Activa notificaciones importantes
+- Mantén backup de configuraciones
 
-```bash
-# Health check agregado (muestra estado de todos los workers)
-curl http://tu-vps:8002/api/v1/health
+## 🔮 Roadmap V3.0
 
-# Logs de servicios independientes
-journalctl -u oraculo-news -f    # News Worker logs
-journalctl -u oraculo-grid -f    # Grid Worker logs
-journalctl -u oraculo-api -f     # API Gateway logs
-
-# Estado de workers
-sudo systemctl status oraculo-*
-```
-
-## 🛠️ Tecnologías Utilizadas
-
-### 🚀 Framework y Comunicación
-- **[FastAPI](https://fastapi.tiangolo.com/)**: Framework para API Gateway y workers
-- **[aiohttp](https://docs.aiohttp.org/)**: **Health checks HTTP** entre servicios
-- **[SQLAlchemy](https://www.sqlalchemy.org/)**: ORM compartido
-- **[SQLite](https://www.sqlite.org/)**: Base de datos compartida
-- **[APScheduler](https://apscheduler.readthedocs.io/)**: Background jobs en workers
-
-### 🤖 Integrations
-- **[PRAW](https://praw.readthedocs.io/)**: Reddit API integration
-- **[Google Gemini](https://ai.google.dev/)**: Análisis de sentimientos con IA
-- **[Binance API](https://github.com/sammchardy/python-binance)**: Trading automatizado
-- **[python-telegram-bot](https://python-telegram-bot.org/)**: Notificaciones
-
-### 🔧 Infraestructura
-- **[Uvicorn](https://www.uvicorn.org/)**: Servidor ASGI para cada worker
-- **[Pydantic](https://pydantic-docs.helpmanual.io/)**: Validación de datos
-- **Systemd**: Gestión de servicios en VPS
-
-## 🔮 Características Avanzadas
-
-### 🤖 Pure Workers Architecture
-- **Independent Processes**: Cada worker es un proceso separado
-- **Minimal APIs**: Solo endpoints `/health` para monitoreo
-- **Background Focus**: Lógica de negocio en background jobs
-- **Fault Isolation**: Fallos en un worker no afectan otros
-
-### 🌐 API Gateway Centralizado
-- **Single Entry Point**: Un solo puerto público (8002)
-- **Health Aggregation**: Comunica con workers vía HTTP
-- **Service Discovery**: Conoce ubicación de todos los workers
-- **Monitoring Hub**: Dashboard centralizado del sistema
-
-### 🔗 Inter-Service Communication
-- **HTTP Health Checks**: Comunicación real entre servicios
-- **Timeout Handling**: 5 segundos timeout para health checks
-- **Parallel Checks**: Verifica todos los workers simultáneamente
-- **Graceful Degradation**: Sistema funciona aunque un worker falle
-
-### 🛡️ Monitoring y Observabilidad
-- **Aggregated Health**: Un endpoint muestra estado de todo
-- **Individual Health**: Cada worker expone su estado
-- **Service Discovery**: Lista automática de workers disponibles
-- **Error Isolation**: Errores no se propagan entre servicios
-
-## 🔮 Roadmap y Funcionalidades Futuras
-
-### 🚀 Arquitectura
-- **Kubernetes Deployment**: Migración a K8s con health checks
-- **Load Balancing**: Múltiples instancias de workers
-- **Service Mesh**: Istio para comunicación avanzada
-- **Distributed Tracing**: OpenTelemetry para observabilidad
-
-### 🧠 Workers Adicionales
-- **Sentiment Aggregator Worker**: Análisis de sentimientos agregados
-- **Notification Worker**: Worker dedicado para notificaciones
-- **Analytics Worker**: Métricas y analytics en tiempo real
-- **Alert Worker**: Sistema de alertas inteligentes
-
-### 🔗 Integraciones Futuras
-- **Multiple Exchanges**: Más exchanges de trading
-- **Social Media Workers**: Twitter, Discord, Telegram sentiment
-- **News API Workers**: Más fuentes de noticias crypto
-- **DeFi Protocol Workers**: Integración con protocolos DeFi
-
-## 🤝 Contribuciones
-
-Las contribuciones son bienvenidas. El proyecto sigue **arquitectura de pure workers**:
-
-1. Haz fork del proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/nueva-funcionalidad`)
-3. **Desarrolla workers puros**: Enfócate en background jobs, no APIs complejas
-4. **Mantén health checks**: Agrega `/health` a nuevos workers
-5. **Actualiza API Gateway**: Si necesitas nuevos endpoints de monitoreo
-6. Commit tus cambios (`git commit -am 'Agregar nueva funcionalidad'`)
-7. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-8. Abre un Pull Request
-
-## 📝 Licencia
-
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+### 🚀 Próximas Funcionalidades
+- [ ] **Multi-pair trading**: Varios pares simultáneos
+- [ ] **DCA inteligente**: Dollar Cost Averaging con IA
+- [ ] **Backtesting**: Pruebas históricas de estrategias
+- [ ] **Web Dashboard**: Panel web para monitoreo
+- [ ] **Stop-loss dinámico**: Ajuste automático según volatilidad
+- [ ] **Integración CEX**: Soporte para más exchanges
 
 ---
 
-## 🏆 Pure Workers + API Gateway Architecture
+## 🎯 Grid Bot V2.0 - Resumen Ejecutivo
 
-**El Oráculo Cripto Bot** representa una implementación moderna de **pure workers** con **API Gateway centralizado**, donde cada worker se enfoca en sus background jobs específicos y el gateway agrega su estado mediante **health checks HTTP reales**. 
+**🛡️ Defensivo**: Stop-loss configurable, modo standby automático, limpieza de órdenes  
+**📈 Ofensivo**: Trailing up dinámico, seguimiento de tendencias  
+**🎮 Control**: Comandos avanzados desde Telegram  
+**🏭 Producción**: Despliegue seguro, monitoreo completo  
+**💡 Inteligente**: Configuración automática, estrategias adaptativas  
 
-Esta arquitectura garantiza:
-- ✅ **Separación total** de responsabilidades
-- ✅ **Comunicación HTTP** real entre servicios  
-- ✅ **Monitoreo centralizado** agregado
-- ✅ **Fault isolation** completo
-- ✅ **Escalabilidad independiente** por worker
-
-**Desarrollado con ❤️ para arquitectura de microservicios moderna y trading automatizado** 
+¡Grid Bot V2.0 está listo para trading profesional! 🚀 
