@@ -2,6 +2,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import threading
 import time
+from datetime import datetime
 from shared.services.logging_config import get_logger
 from services.grid.core.trading_engine import run_grid_trading_bot
 
@@ -76,7 +77,8 @@ def run_grid_bot_thread():
 
 def check_grid_bot_health():
     """
-    Función que verifica si el grid bot sigue ejecutándose y lo reinicia si es necesario
+    Función que verifica si el grid bot sigue ejecutándose.
+    MODIFICADO V2: Solo reinicia si estaba corriendo previamente, NO inicia automáticamente.
     """
     global grid_bot_thread, grid_bot_running
     
@@ -84,14 +86,13 @@ def check_grid_bot_health():
         # Verificar estado del hilo
         if not grid_bot_thread or not grid_bot_thread.is_alive():
             if grid_bot_running:
-                # El hilo murió pero se supone que debería estar corriendo
+                # El hilo murió pero se supone que debería estar corriendo - REINICIAR
                 logger.warning("⚠️ Grid Bot se detuvo inesperadamente, reiniciando...")
                 grid_bot_running = False
                 run_grid_bot_thread()
-            elif not grid_bot_running:
-                # Primera ejecución o reinicio normal
-                logger.info("🔄 Iniciando Grid Bot...")
-                run_grid_bot_thread()
+            else:
+                # Bot no está corriendo intencionalmente - MODO STANDBY
+                logger.debug("⏸️ Grid Bot en modo standby (esperando comando manual)")
         else:
             logger.info("✅ Grid Bot ejecutándose correctamente")
             
@@ -125,7 +126,8 @@ def setup_grid_scheduler():
 
 def start_grid_bot_scheduler():
     """
-    Inicia el scheduler del grid bot con monitoreo de salud
+    Inicia el scheduler del grid bot en MODO STANDBY.
+    V2: NO inicia trading automáticamente, solo responde a comandos.
     """
     try:
         # Configurar scheduler
@@ -135,9 +137,15 @@ def start_grid_bot_scheduler():
         scheduler.start()
         logger.info("✅ Grid Bot Scheduler iniciado correctamente")
         
-        # Iniciar inmediatamente el grid bot
-        time.sleep(2)  # Esperar un poco para que el scheduler se stabilice
-        check_grid_bot_health()
+        # V2: NO iniciar bot automáticamente - MODO STANDBY
+        logger.info("⏸️ Grid Bot en MODO STANDBY - Use /start_bot para iniciar trading")
+        
+        # Inicializar limpieza de órdenes huérfanas
+        try:
+            from ..core.startup_manager import initialize_standby_mode
+            initialize_standby_mode()
+        except ImportError:
+            logger.warning("⚠️ No se pudo importar startup_manager, saltando limpieza automática")
         
     except Exception as e:
         logger.error(f"❌ Error al iniciar Grid Bot Scheduler: {e}")
@@ -178,11 +186,116 @@ def stop_grid_bot_scheduler():
     except Exception as e:
         logger.error(f"❌ Error al detener Grid Bot Scheduler: {e}")
 
+def start_grid_bot_manual():
+    """
+    Inicia el grid bot manualmente (comando desde Telegram)
+    V2: Función específica para inicio manual del trading
+    """
+    global grid_bot_running, grid_bot_thread
+    
+    try:
+        if grid_bot_running:
+            logger.warning("⚠️ Grid Bot ya está ejecutándose")
+            return False, "El bot ya está ejecutándose"
+        
+        if grid_bot_thread and grid_bot_thread.is_alive():
+            logger.warning("⚠️ Hilo del Grid Bot aún está activo")
+            return False, "Hay un proceso del bot aún activo"
+        
+        # Iniciar el bot
+        logger.info("🚀 Iniciando Grid Bot por comando manual...")
+        run_grid_bot_thread()
+        
+        # Esperar un momento para verificar que inició correctamente
+        time.sleep(3)
+        
+        if grid_bot_running and grid_bot_thread and grid_bot_thread.is_alive():
+            logger.info("✅ Grid Bot iniciado exitosamente por comando manual")
+            return True, "Grid Bot iniciado exitosamente"
+        else:
+            logger.error("❌ Error al iniciar Grid Bot manualmente")
+            return False, "Error al iniciar el bot"
+            
+    except Exception as e:
+        logger.error(f"❌ Error en inicio manual del Grid Bot: {e}")
+        return False, f"Error: {str(e)}"
+
+def stop_grid_bot_manual():
+    """
+    Detiene el grid bot manualmente (comando desde Telegram)
+    V2: Función específica para detención manual del trading
+    """
+    global grid_bot_running, grid_bot_thread
+    
+    try:
+        if not grid_bot_running:
+            logger.warning("⚠️ Grid Bot no está ejecutándose")
+            return False, "El bot no está ejecutándose"
+        
+        # Señalar detención
+        logger.info("🛑 Deteniendo Grid Bot por comando manual...")
+        grid_bot_running = False
+        
+        # Esperar a que termine el hilo (máximo 30 segundos)
+        if grid_bot_thread and grid_bot_thread.is_alive():
+            logger.info("⏳ Esperando que termine el Grid Bot...")
+            grid_bot_thread.join(timeout=30)
+            
+            if grid_bot_thread.is_alive():
+                logger.warning("⚠️ Grid Bot no terminó en el tiempo esperado")
+                return False, "El bot no se detuvo completamente"
+            else:
+                logger.info("✅ Grid Bot detenido exitosamente por comando manual")
+                return True, "Grid Bot detenido exitosamente"
+        else:
+            logger.info("✅ Grid Bot detenido (no había hilo activo)")
+            return True, "Grid Bot detenido"
+            
+    except Exception as e:
+        logger.error(f"❌ Error en detención manual del Grid Bot: {e}")
+        return False, f"Error: {str(e)}"
+
+def get_grid_bot_status():
+    """
+    Obtiene el estado actual del grid bot.
+    V2: Información completa del estado para comandos de Telegram
+    """
+    global grid_bot_running, grid_bot_thread
+    
+    try:
+        thread_alive = grid_bot_thread and grid_bot_thread.is_alive()
+        scheduler_running = scheduler and scheduler.running
+        
+        return {
+            'bot_running': grid_bot_running,
+            'thread_alive': thread_alive,
+            'scheduler_active': scheduler_running,
+            'standby_mode': not grid_bot_running,
+            'ready_to_start': scheduler_running and not grid_bot_running,
+            'ready_to_stop': grid_bot_running and thread_alive,
+            'timestamp': datetime.now().isoformat() if 'datetime' in globals() else time.time()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo estado del Grid Bot: {e}")
+        return {
+            'bot_running': False,
+            'thread_alive': False,
+            'scheduler_active': False,
+            'standby_mode': True,
+            'ready_to_start': False,
+            'ready_to_stop': False,
+            'error': str(e)
+        }
+
 # Re-exportar para compatibilidad
 __all__ = [
     'setup_grid_scheduler',
     'start_grid_bot_scheduler', 
     'stop_grid_bot_scheduler',
     'get_grid_scheduler',
-    'get_grid_bot_config'
+    'get_grid_bot_config',
+    'start_grid_bot_manual',
+    'stop_grid_bot_manual', 
+    'get_grid_bot_status'
 ] 

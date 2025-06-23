@@ -12,7 +12,10 @@ from shared.services.telegram_bot_service import TelegramBot
 from services.grid.schedulers.grid_scheduler import (
     start_grid_bot_scheduler, 
     stop_grid_bot_scheduler,
-    get_grid_scheduler
+    get_grid_scheduler,
+    start_grid_bot_manual,
+    stop_grid_bot_manual,
+    get_grid_bot_status
 )
 
 logger = get_logger(__name__)
@@ -377,7 +380,7 @@ class GridTelegramInterface:
             bot.send_message(chat_id, "❌ Error procesando confirmación")
     
     def handle_start_bot_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja el comando /start_bot"""
+        """Maneja el comando /start_bot - V2 con modo manual"""
         try:
             # Verificar configuración
             user_config = self.get_user_config(chat_id)
@@ -387,27 +390,41 @@ class GridTelegramInterface:
                 bot.send_message(chat_id, message)
                 return
             
-            # Verificar si ya está ejecutándose
-            scheduler = get_grid_scheduler()
-            if scheduler and scheduler.running:
+            # Verificar estado del bot
+            bot_status = get_grid_bot_status()
+            if bot_status['bot_running']:
                 bot.send_message(chat_id, "⚠️ El bot ya está ejecutándose. Usa /stop_bot para detenerlo primero.")
                 return
             
-            # Iniciar bot
+            if not bot_status['ready_to_start']:
+                message = "⚠️ <b>Servicio no está listo</b>\n\n"
+                message += "El scheduler no está activo. Contacta al administrador."
+                bot.send_message(chat_id, message)
+                return
+            
+            # Iniciar bot manualmente
             import threading
             
             def start_bot_async():
                 try:
-                    start_grid_bot_scheduler()
-                    bot.send_message(
-                        chat_id, 
-                        f"🚀 <b>¡Grid Bot iniciado!</b>\n\n"
-                        f"📊 Trading: {user_config.pair}\n"
-                        f"💰 Capital: ${user_config.total_capital} USDT\n\n"
-                        f"Usa /status para monitorear el progreso."
-                    )
+                    success, result_message = start_grid_bot_manual()
+                    
+                    if success:
+                        message = f"🚀 <b>¡Grid Bot iniciado exitosamente!</b>\n\n"
+                        message += f"📊 <b>Trading:</b> {user_config.pair}\n"
+                        message += f"💰 <b>Capital:</b> ${user_config.total_capital} USDT\n"
+                        message += f"🎚️ <b>Niveles:</b> {user_config.grid_levels}\n"
+                        message += f"📊 <b>Rango:</b> ±{user_config.price_range_percent}%\n\n"
+                        message += f"🛡️ <b>Protecciones V2:</b>\n"
+                        message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
+                        message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n\n"
+                        message += f"📈 Usa /status para monitorear el progreso."
+                        bot.send_message(chat_id, message)
+                    else:
+                        bot.send_message(chat_id, f"❌ <b>Error iniciando bot:</b> {result_message}")
+                        
                 except Exception as e:
-                    logger.error(f"❌ Error iniciando bot: {e}")
+                    logger.error(f"❌ Error en start_bot_async: {e}")
                     bot.send_message(chat_id, f"❌ Error iniciando bot: {str(e)}")
             
             threading.Thread(target=start_bot_async, daemon=True).start()
@@ -418,25 +435,37 @@ class GridTelegramInterface:
             bot.send_message(chat_id, "❌ Error iniciando bot")
     
     def handle_stop_bot_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja el comando /stop_bot"""
+        """Maneja el comando /stop_bot - V2 con modo manual"""
         try:
-            scheduler = get_grid_scheduler()
-            if not scheduler or not scheduler.running:
-                bot.send_message(chat_id, "ℹ️ El bot ya está detenido.")
+            # Verificar estado del bot
+            bot_status = get_grid_bot_status()
+            if not bot_status['bot_running']:
+                bot.send_message(chat_id, "ℹ️ El bot ya está detenido (modo standby).")
+                return
+            
+            if not bot_status['ready_to_stop']:
+                message = "⚠️ <b>No se puede detener el bot</b>\n\n"
+                message += "El bot no está en un estado válido para detener."
+                bot.send_message(chat_id, message)
                 return
             
             import threading
             
             def stop_bot_async():
                 try:
-                    stop_grid_bot_scheduler()
-                    bot.send_message(
-                        chat_id, 
-                        "🛑 <b>Grid Bot detenido correctamente</b>\n\n"
-                        "Todas las órdenes activas han sido canceladas."
-                    )
+                    success, result_message = stop_grid_bot_manual()
+                    
+                    if success:
+                        message = "🛑 <b>Grid Bot detenido correctamente</b>\n\n"
+                        message += "✅ Todas las órdenes activas han sido canceladas\n"
+                        message += "⏸️ Bot en modo standby\n\n"
+                        message += "▶️ Usa /start_bot para reanudar trading"
+                        bot.send_message(chat_id, message)
+                    else:
+                        bot.send_message(chat_id, f"❌ <b>Error deteniendo bot:</b> {result_message}")
+                        
                 except Exception as e:
-                    logger.error(f"❌ Error deteniendo bot: {e}")
+                    logger.error(f"❌ Error en stop_bot_async: {e}")
                     bot.send_message(chat_id, f"❌ Error deteniendo bot: {str(e)}")
             
             threading.Thread(target=stop_bot_async, daemon=True).start()
@@ -485,17 +514,28 @@ class GridTelegramInterface:
             bot.send_message(chat_id, "❌ Error reiniciando bot")
     
     def handle_status_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja el comando /status"""
+        """Maneja el comando /status - V2 con modo standby"""
         try:
-            scheduler = get_grid_scheduler()
-            is_running = scheduler and scheduler.running
+            bot_status = get_grid_bot_status()
             
-            message = "📊 <b>ESTADO DEL GRID BOT</b>\n\n"
+            message = "📊 <b>ESTADO DEL GRID BOT V2</b>\n\n"
             
-            if is_running:
-                message += "🟢 <b>Estado:</b> Ejecutándose\n"
+            # Estado principal
+            if bot_status['bot_running']:
+                message += "🟢 <b>Estado:</b> EJECUTÁNDOSE\n"
+                message += "📈 Trading activo\n"
+            elif bot_status['standby_mode']:
+                message += "⏸️ <b>Estado:</b> MODO STANDBY\n"
+                message += "🛡️ Servicio activo, esperando comando\n"
             else:
-                message += "🔴 <b>Estado:</b> Detenido\n"
+                message += "🔴 <b>Estado:</b> DETENIDO\n"
+                message += "❌ Servicio inactivo\n"
+            
+            # Estado técnico
+            message += f"\n🔧 <b>Estado técnico:</b>\n"
+            message += f"• Scheduler: {'✅' if bot_status['scheduler_active'] else '❌'}\n"
+            message += f"• Bot trading: {'✅' if bot_status['bot_running'] else '❌'}\n"
+            message += f"• Hilo activo: {'✅' if bot_status['thread_alive'] else '❌'}\n"
             
             # Mostrar configuración del usuario
             user_config = self.get_user_config(chat_id)
@@ -505,15 +545,25 @@ class GridTelegramInterface:
                 message += f"💰 <b>Capital:</b> ${user_config.total_capital} USDT\n"
                 message += f"🎚️ <b>Niveles:</b> {user_config.grid_levels}\n"
                 message += f"📊 <b>Rango:</b> ±{user_config.price_range_percent}%\n"
-                message += f"📅 <b>Creado:</b> {user_config.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                
+                # Protecciones V2
+                message += f"\n🛡️ <b>Protecciones V2:</b>\n"
+                message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
+                message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n"
+                
+                message += f"\n📅 <b>Creado:</b> {user_config.created_at.strftime('%Y-%m-%d %H:%M')}\n"
             else:
                 message += "\n⚠️ <b>Sin configuración guardada</b>\n"
                 message += "Usa /config para configurar el bot\n"
             
-            # Estado del scheduler
-            if scheduler:
-                jobs = scheduler.get_jobs()
-                message += f"\n🔧 <b>Jobs activos:</b> {len(jobs)}\n"
+            # Acciones disponibles
+            message += f"\n🎮 <b>Acciones disponibles:</b>\n"
+            if bot_status['ready_to_start']:
+                message += "▶️ /start_bot - Iniciar trading\n"
+            if bot_status['ready_to_stop']:
+                message += "⏸️ /stop_bot - Detener trading\n"
+            message += "🔄 /restart_bot - Reiniciar con nueva config\n"
+            message += "🛡️ /protections - Ver estrategias avanzadas\n"
             
             message += f"\n⏰ <i>Consultado: {datetime.now().strftime('%H:%M:%S')}</i>"
             
