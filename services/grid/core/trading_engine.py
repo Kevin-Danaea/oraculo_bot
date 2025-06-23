@@ -18,7 +18,7 @@ from .state_manager import (
     reset_bot_for_new_config, 
     force_reset_bot
 )
-from .grid_calculator import calculate_grid_prices
+from ..strategies.grid_strategy import calculate_grid_prices
 from .order_manager import create_initial_buy_orders
 from .monitor import monitor_grid_orders
 

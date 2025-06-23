@@ -8,6 +8,7 @@ import time
 from typing import Dict, Any, Optional
 from shared.services.logging_config import get_logger
 from shared.config.settings import settings
+from ..strategies.grid_strategy import calculate_dynamic_profit_percentage
 
 logger = get_logger(__name__)
 
@@ -15,7 +16,7 @@ logger = get_logger(__name__)
 # CONSTANTES
 # ============================================================================
 
-PROFIT_PERCENTAGE = 0.01  # 1% de ganancia por trade
+# PROFIT_PERCENTAGE se calcula dinámicamente en grid_strategy.py
 ORDER_RETRY_ATTEMPTS = 3
 RECONNECTION_DELAY = 5  # segundos
 MAX_RECONNECTION_ATTEMPTS = 5
@@ -56,12 +57,20 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         if price_range_percent <= 0 or price_range_percent > 50:
             raise ValueError("El rango de precio debe estar entre 0.1% y 50%")
         
+        # Configuración temporal para calcular profit
+        temp_config = {
+            'price_range_percent': price_range_percent,
+            'grid_levels': grid_levels
+        }
+        dynamic_profit = calculate_dynamic_profit_percentage(temp_config)
+        
         validated_config = {
             'pair': pair,
             'total_capital': total_capital,
             'grid_levels': grid_levels,
             'price_range_percent': price_range_percent,
-            'profit_percentage': PROFIT_PERCENTAGE * 100,  # Para logging
+            'profit_percentage': dynamic_profit * 100,  # Para logging
+            'dynamic_profit_decimal': dynamic_profit,  # Para uso interno
             'max_orders_per_side': grid_levels // 2 + 1,
             'min_order_size': total_capital * 0.001  # 0.1% del capital mínimo por orden
         }
@@ -170,7 +179,6 @@ def config_has_significant_changes(saved_config: Dict[str, Any], new_config: Dic
 
 # Exportar constantes para otros módulos
 __all__ = [
-    'PROFIT_PERCENTAGE',
     'ORDER_RETRY_ATTEMPTS', 
     'RECONNECTION_DELAY',
     'MAX_RECONNECTION_ATTEMPTS',

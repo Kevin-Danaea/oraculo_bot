@@ -1,6 +1,6 @@
 """
-Módulo de cálculos de grilla del Grid Trading Bot.
-Maneja cálculos de precios, cantidades y distribución de la grilla.
+Estrategia de Grid Trading - Cálculos y lógica de grilla.
+Maneja cálculos de precios, cantidades, distribución y profit dinámico.
 """
 
 from typing import Dict, Any
@@ -8,6 +8,42 @@ from decimal import Decimal, ROUND_DOWN
 from shared.services.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+def calculate_dynamic_profit_percentage(config: Dict[str, Any]) -> float:
+    """
+    Calcula el porcentaje de ganancia de forma dinámica basado en la estrategia
+    
+    Args:
+        config: Configuración del bot
+        
+    Returns:
+        Porcentaje de ganancia como decimal (ej: 0.01 para 1%)
+    """
+    try:
+        price_range_percent = config['price_range_percent']
+        grid_levels = config['grid_levels']
+        
+        # Calcular profit dinámico: rango de precio dividido entre niveles
+        # Esto asegura que cada nivel tenga una ganancia proporcional al rango
+        dynamic_profit = (price_range_percent / 100) / grid_levels
+        
+        # Aplicar un factor de seguridad para garantizar ganancias
+        # Mínimo 0.5% para cubrir fees, máximo 5% para no ser demasiado agresivo
+        min_profit = 0.005  # 0.5%
+        max_profit = 0.05   # 5%
+        
+        profit_percentage = max(min_profit, min(dynamic_profit, max_profit))
+        
+        logger.info(f"💹 Profit dinámico calculado: {profit_percentage:.3f} ({profit_percentage*100:.2f}%)")
+        logger.info(f"📊 Basado en: rango {price_range_percent}% / {grid_levels} niveles")
+        
+        return profit_percentage
+        
+    except Exception as e:
+        logger.error(f"❌ Error calculando profit dinámico: {e}")
+        # Fallback a 1% si hay error
+        return 0.01
 
 
 def calculate_grid_prices(current_price: float, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -99,6 +135,7 @@ def calculate_order_quantity(capital_per_order: float, price: float, min_qty: fl
 
 
 __all__ = [
+    'calculate_dynamic_profit_percentage',
     'calculate_grid_prices',
     'calculate_order_quantity'
 ] 

@@ -52,7 +52,7 @@ def check_and_process_filled_orders(exchange: ccxt.Exchange, active_orders: List
                 
                 if order_info['type'] == 'buy':
                     # Crear orden de venta correspondiente
-                    sell_order = create_sell_order_after_buy(exchange, order_info)
+                    sell_order = create_sell_order_after_buy(exchange, order_info, config)
                     if sell_order:
                         updated_orders.append(sell_order)
                         

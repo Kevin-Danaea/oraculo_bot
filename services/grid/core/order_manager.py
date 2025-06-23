@@ -8,8 +8,8 @@ import time
 from typing import Dict, List, Any, Optional, Literal
 from datetime import datetime
 from shared.services.logging_config import get_logger
-from .config_manager import PROFIT_PERCENTAGE, ORDER_RETRY_ATTEMPTS
-from .grid_calculator import calculate_order_quantity
+from .config_manager import ORDER_RETRY_ATTEMPTS
+from ..strategies.grid_strategy import calculate_order_quantity, calculate_dynamic_profit_percentage
 
 logger = get_logger(__name__)
 
@@ -100,7 +100,7 @@ def create_initial_buy_orders(exchange: ccxt.Exchange, config: Dict[str, Any],
         return active_orders
 
 
-def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """
     Crea orden de venta después de ejecutarse una compra
     
@@ -116,8 +116,19 @@ def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, An
         quantity = buy_order['quantity']
         buy_price = buy_order['price']
         
-        # Calcular precio de venta con ganancia
-        sell_price = buy_price * (1 + PROFIT_PERCENTAGE)
+        # Obtener profit dinámico de la configuración
+        if config and 'dynamic_profit_decimal' in config:
+            profit_percentage = config['dynamic_profit_decimal']
+        else:
+            # Fallback: calcular dinámicamente usando configuración disponible o valores por defecto
+            fallback_config = config if config else {
+                'price_range_percent': 10.0,  # Valor por defecto
+                'grid_levels': 4
+            }
+            profit_percentage = calculate_dynamic_profit_percentage(fallback_config)
+        
+        # Calcular precio de venta con ganancia dinámica
+        sell_price = buy_price * (1 + profit_percentage)
         sell_price = round(sell_price, 2)
         
         order = create_order_with_retry(exchange, 'sell', pair, quantity, sell_price)
