@@ -20,17 +20,16 @@ from shared.database.session import SessionLocal
 
 logger = get_logger(__name__)
 
-# Subreddits de alto riesgo para detectar hype
+# Subreddits de alto riesgo para detectar hype (verificados y activos)
 HYPE_SUBREDDITS = [
-    'SatoshiStreetBets',
-    'CryptoMoonShots', 
-    'CryptoCurrencyTrading',
-    'altcoin',
-    'CryptoHorde',
-    'CryptoBets',
-    'CryptoPumping',
-    'SmallCryptos',
-    'shitcoinstreetbets'
+    'SatoshiStreetBets',        # Activo - pump discussions
+    'CryptoMoonShots',          # Activo - new coin launches
+    'CryptoCurrency',           # Activo - general crypto discussions
+    'altcoin',                  # Activo - altcoin discussions
+    'CryptoBets',               # Activo - high risk plays
+    'SmallCryptos',             # Activo - small cap discussions
+    'ethtrader',                # Activo - ethereum trading
+    'defi'                      # Activo - DeFi discussions
 ]
 
 # Lista de tickers de memecoins y altcoins populares para monitorear
@@ -278,7 +277,7 @@ def execute_hype_radar_scan(db: Optional[Session] = None) -> Dict[str, Any]:
         
     try:
         # Ejecutar escaneo completo
-        result = run_full_hype_scan(time_window_hours=1)
+        result = run_full_hype_scan(time_window_hours=3)
         
         # Si el escaneo fue exitoso, analizar tendencias y enviar alertas
         if result.get('success', False):
