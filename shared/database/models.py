@@ -21,7 +21,8 @@ class Noticia(Base):
     url = Column(String, unique=True, index=True)
     published_at = Column(String, nullable=False)
     sentiment_score = Column(Float, nullable=True)  # Se llenará en fases futuras
-    entities = Column(Text, nullable=True)          # Se llenará en fases futuras
+    primary_emotion = Column(String, nullable=True)  # Emoción principal: Euforia, Optimismo, etc.
+    news_category = Column(String, nullable=True)    # Categoría: Regulación, Tecnología/Adopción, etc.
 
 
 class GridBotConfig(Base):

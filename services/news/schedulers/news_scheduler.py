@@ -30,27 +30,24 @@ def run_sentiment_analysis_job():
     """
     Tarea que busca noticias sin análisis de sentimiento, las procesa y actualiza la BD.
     Se ejecuta cada 4 horas para no saturar la API del LLM.
+    Ahora con análisis enriquecido: sentiment_score, primary_emotion y key_entity.
     """
-    logger.info("Iniciando job de análisis de sentimiento...")
+    logger.info("Iniciando job de análisis de sentimiento enriquecido...")
     db = SessionLocal()
     try:
-        noticias_sin_analizar = db.query(models.Noticia).filter(
-            models.Noticia.sentiment_score == None
-        ).limit(60).all()  # Limitamos a 60 por ciclo para no exceder cuotas de API
+        # Usar la función del servicio que maneja toda la lógica
+        result = sentiment_service.analyze_sentiment(db)
         
-        if not noticias_sin_analizar:
-            logger.info("No hay noticias nuevas para analizar.")
-            return
-
-        logger.info(f"Analizando {len(noticias_sin_analizar)} noticias...")
-        for noticia in noticias_sin_analizar:
-            score = sentiment_service.analyze_sentiment_text(str(noticia.headline))
-            setattr(noticia, 'sentiment_score', score)
-        
-        db.commit()
-        logger.info("Análisis de sentimiento completado y guardado.")
+        if result["success"]:
+            logger.info(f"✅ {result['message']}")
+        else:
+            logger.error(f"❌ Error en análisis de sentimientos: {result.get('error', 'Error desconocido')}")
+            
+    except Exception as e:
+        logger.error(f"💥 Error inesperado en job de análisis de sentimiento: {e}")
     finally:
         db.close()
+    logger.info("Job de análisis de sentimiento finalizado.")
 
 def setup_news_scheduler():
     """
