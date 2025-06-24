@@ -57,7 +57,7 @@ def start_hype_service():
             "🎯 Detección de tendencias de memecoins/altcoins",
             "📡 Monitoreo de 9 subreddits de alto riesgo",
             "🔍 Análisis de ~45+ tickers populares",
-            "⏰ Escaneos cada 5 minutos con ventana de 1h ⚡",
+            "⏰ Escaneos cada 5 minutos con ventana de 3h ⚡",
             "🌐 Health endpoint en puerto 8000"
         ]
         send_service_startup_notification("Hype Radar Worker", features)
