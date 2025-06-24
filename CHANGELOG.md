@@ -4,7 +4,99 @@ Registro completo de cambios, mejoras y nuevas funcionalidades del ecosistema de
 
 ---
 
-## [V2.5] - 2024-12-15 🔥 **VERSIÓN ACTUAL**
+## [V2.6] - 2024-12-23 🎯 **VERSIÓN ACTUAL**
+
+### 🎯 **Hype Radar - Sistema de Detección de Tendencias** ⭐ **NUEVO SERVICIO**
+
+#### ✨ **Funcionalidades Principales**
+- **🔍 Detección Inteligente**: Monitorea incrementos súbitos en menciones de criptomonedas
+- **📡 Subreddits de Alto Riesgo**: 9 subreddits especializados (SatoshiStreetBets, CryptoMoonShots, etc.)
+- **⏰ Análisis Continuo**: Escaneos automáticos cada 15 minutos
+- **🚨 Alertas Automáticas**: Sistema de notificaciones por Telegram con 3 niveles de intensidad
+- **📊 Análisis de Velocidad**: Compara menciones actuales vs promedio de 24 horas
+
+#### 🎯 **Detección Avanzada de Tickers**
+- **Lista Principal**: 45+ tickers conocidos (DOGE, SHIB, PEPE, BTC, ETH, SOL, etc.)
+- **Detección Automática**: Cualquier ticker que supere el umbral, incluso si no está en la lista
+- **Patrones Inteligentes**: $TICKER, TICKER/USD, "TICKER is pumping", etc.
+- **Filtrado**: Excluye palabras comunes y falsos positivos
+
+#### 🚨 **Sistema de Alertas Graduado**
+```
+🔥 ALERTA DE HYPE (500%+)     - Incremento significativo
+🔥🔥 ALERTA ALTA (1000%+)     - Incremento muy alto  
+🔥🔥🔥 ALERTA EXTREMA (1500%+) - Posible pump viral
+```
+
+#### 📱 **Notificaciones Telegram**
+- **Alertas Inmediatas**: Envío automático cuando se supera umbral
+- **Cooldown Inteligente**: 1 hora por ticker para evitar spam
+- **Resumen Diario**: Reporte completo a las 23:00 hora México Centro con top trending
+
+#### 💾 **Base de Datos Integrada**
+- **Tabla HypeEvent**: Almacena todos los eventos de hype detectados
+- **Persistencia**: Timestamp, ticker, % incremento, post que disparó la alerta
+- **Análisis Histórico**: Datos para análisis posterior de tendencias
+
+#### 🌐 **API Completa**
+```
+GET  /health          - Estado del servicio
+GET  /trends?hours=24  - Resumen de tendencias
+GET  /events?hours=24  - Eventos históricos desde BD
+POST /configure?threshold=500.0  - Configurar umbral de alerta
+GET  /alerts/test      - Probar sistema de alertas
+```
+
+#### 🏗️ **Arquitectura del Servicio**
+```
+services/hype/
+├── main.py                      # FastAPI + health checks
+├── core/
+│   ├── hype_analytics.py        # Motor de análisis de velocidad
+│   └── notifications.py         # Sistema de alertas y notificaciones
+├── services/
+│   └── hype_radar_service.py    # Lógica principal de detección
+└── schedulers/
+    └── hype_scheduler.py        # Jobs automáticos cada 15min
+```
+
+#### 🚀 **Deployment**
+- **Puerto**: 8003
+- **Servicio systemd**: `oraculo-hype.service`
+- **Logs**: Integrados con journalctl
+- **Monitoreo**: Health checks incluidos
+
+### 📰 **Mejoras al Servicio de News** ⭐ **ACTUALIZADO**
+
+#### 🌐 **Expansión de Fuentes**
+- **9 Subreddits**: CryptoCurrency, ethtrader, Bitcoin, defi, altcoin, CryptoNews, btc, ethereum
+- **Más Noticias**: Posts 'hot' (15) + 'new' (10) por subreddit
+- **Deduplicación**: Previene noticias duplicadas
+- **Filtrado Avanzado**: Dominios válidos ampliados
+
+#### 🤖 **Análisis Enriquecido con IA**
+- **Sentiment Score**: Valor numérico de -1.0 a 1.0
+- **Emotion Detection**: Euforia, Optimismo, Neutral, Incertidumbre, Miedo
+- **Category Classification**: Regulación, Tecnología, Mercado, Seguridad, Macroeconomía
+- **Rate Limiting**: Máximo 60 análisis cada 4 horas
+
+#### 💾 **Base de Datos Actualizada**
+- **Nuevas Columnas**: `primary_emotion`, `news_category`
+- **Migración**: Scripts automáticos para actualizar BD existente
+- **Compatibilidad**: Soporta SQLite y PostgreSQL
+
+### 🏗️ **Arquitectura Actualizada**
+```
+🔮 Oráculo Bot V2.6
+├── 🌐 API Gateway (Puerto 8002)     # Entry point público
+├── 📰 News Worker (Puerto 8000)     # Análisis de noticias + IA
+├── 🤖 Grid Worker (Puerto 8001)     # Trading inteligente
+└── 🎯 Hype Radar (Puerto 8003)      # Detector de tendencias ⭐ NUEVO
+```
+
+---
+
+## [V2.5] - 2024-12-15 🔥 **Refactorización Modular**
 
 ### 🧩 **Refactorización Modular Completa** ⭐ **MAJOR UPDATE**
 

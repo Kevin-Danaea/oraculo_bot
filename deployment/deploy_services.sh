@@ -57,17 +57,19 @@ systemctl daemon-reload
 log "✅ Habilitando servicios..."
 
 # Habilitar solo el servicio de noticias por defecto
-systemctl enable oraculo-news.service
+# systemctl enable oraculo-news.service
 
 # Descomentar las siguientes líneas según los servicios que necesites:
 # systemctl enable oraculo-grid.service
 # systemctl enable oraculo-api.service
+systemctl enable oraculo-hype.service
 
 # 6. Mostrar estado de servicios
 log "📊 Estado actual de los servicios:"
-systemctl status oraculo-news.service --no-pager -l || true
+# systemctl status oraculo-news.service --no-pager -l || true
 # systemctl status oraculo-grid.service --no-pager -l || true
 # systemctl status oraculo-api.service --no-pager -l || true
+# systemctl status oraculo-hype.service --no-pager -l || true
 
 echo
 log "🎉 Deployment completado!"
@@ -76,13 +78,16 @@ log "Para iniciar los servicios:"
 log "  sudo systemctl start oraculo-news"
 log "  sudo systemctl start oraculo-grid"
 log "  sudo systemctl start oraculo-api"
+log "  sudo systemctl start oraculo-hype"
 echo
 log "Para ver logs:"
 log "  sudo journalctl -u oraculo-news -f"
 log "  sudo journalctl -u oraculo-grid -f"
 log "  sudo journalctl -u oraculo-api -f"
+log "  sudo journalctl -u oraculo-hype -f"
 echo
 log "Para detener servicios:"
 log "  sudo systemctl stop oraculo-news"
 log "  sudo systemctl stop oraculo-grid"
-log "  sudo systemctl stop oraculo-api" 
+log "  sudo systemctl stop oraculo-api"
+log "  sudo systemctl stop oraculo-hype" 

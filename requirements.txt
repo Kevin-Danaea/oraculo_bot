@@ -9,4 +9,5 @@ requests
 aiohttp
 google-genai
 praw
-ccxt 
+ccxt
+pytz 

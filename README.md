@@ -12,9 +12,16 @@ Un ecosistema avanzado de **microservicios** para **trading automatizado** con *
 - **🎮 Control Total**: Gestión completa desde Telegram
 
 ### 📰 **Análisis de Noticias Automático**
-- **Recolección**: Reddit (r/CryptoCurrency) cada hora
+- **Recolección**: 9 subreddits cada 4 horas
 - **IA Integrada**: Análisis de sentimientos con Google Gemini
 - **Background Jobs**: Procesamiento automático 24/7
+
+### 🎯 **Hype Radar - Detector de Tendencias**
+- **Detección Inteligente**: Monitorea 9 subreddits de alto riesgo cada 15 minutos
+- **Alertas Automáticas**: Detecta incrementos súbitos en menciones de criptomonedas
+- **Análisis de Velocidad**: Compara menciones actuales vs promedio 24h
+- **Base de Datos**: Almacena todos los eventos de hype para análisis
+- **Configurable**: Umbrales de alerta ajustables (por defecto 500%)
 
 ### 🏗️ **Arquitectura Modular Refactorizada**
 - **Microservicios**: Servicios independientes y escalables
@@ -28,7 +35,8 @@ Un ecosistema avanzado de **microservicios** para **trading automatizado** con *
 🔮 Oráculo Bot V2.5
 ├── 🌐 API Gateway (Puerto 8002)     # Entry point público
 ├── 📰 News Worker (Puerto 8000)     # Análisis de noticias + IA
-└── 🤖 Grid Worker (Puerto 8001)     # Trading inteligente
+├── 🤖 Grid Worker (Puerto 8001)     # Trading inteligente
+└── 🎯 Hype Radar (Puerto 8003)      # Detector de tendencias
 ```
 
 ### 📁 Estructura del Proyecto
@@ -43,23 +51,31 @@ oraculo_bot/
 │   │   ├── main.py
 │   │   ├── schedulers/
 │   │   └── services/
-│   └── grid/                    # 🤖 Grid Trading V2.5 ⭐
+│   ├── grid/                    # 🤖 Grid Trading V2.5 ⭐
+│   │   ├── main.py
+│   │   ├── core/                # 🧠 Motor de trading
+│   │   │   ├── startup_manager.py      # 🧹 Limpieza + Standby
+│   │   │   ├── monitor_v2.py           # 📊 Monitor inteligente
+│   │   │   ├── trading_engine.py       # 🎯 Motor principal
+│   │   │   ├── order_manager.py        # 📋 Gestión órdenes
+│   │   │   └── state_manager.py        # 💾 Persistencia
+│   │   ├── interfaces/          # 🎮 Control Telegram Refactorizado
+│   │   │   ├── telegram_interface.py   # 🎭 Orquestador principal
+│   │   │   └── handlers/               # 🧩 Handlers modulares
+│   │   │       ├── base_handler.py     # 🏗️ Base común
+│   │   │       ├── basic_commands.py   # 📋 Comandos básicos
+│   │   │       ├── config_flow.py      # ⚙️ Configuración
+│   │   │       └── advanced_strategies.py # 🛡️ Estrategias avanzadas
+│   │   ├── schedulers/          # 📅 Jobs de background
+│   │   └── strategies/          # 📈 Estrategias de trading
+│   └── hype/                    # 🎯 Hype Radar ⭐
 │       ├── main.py
-│       ├── core/                # 🧠 Motor de trading
-│       │   ├── startup_manager.py      # 🧹 Limpieza + Standby
-│       │   ├── monitor_v2.py           # 📊 Monitor inteligente
-│       │   ├── trading_engine.py       # 🎯 Motor principal
-│       │   ├── order_manager.py        # 📋 Gestión órdenes
-│       │   └── state_manager.py        # 💾 Persistencia
-│       ├── interfaces/          # 🎮 Control Telegram Refactorizado
-│       │   ├── telegram_interface.py   # 🎭 Orquestador principal
-│       │   └── handlers/               # 🧩 Handlers modulares
-│       │       ├── base_handler.py     # 🏗️ Base común
-│       │       ├── basic_commands.py   # 📋 Comandos básicos
-│       │       ├── config_flow.py      # ⚙️ Configuración
-│       │       └── advanced_strategies.py # 🛡️ Estrategias avanzadas
-│       ├── schedulers/          # 📅 Jobs de background
-│       └── strategies/          # 📈 Estrategias de trading
+│       ├── core/                # 🧠 Motor de análisis
+│       │   ├── hype_analytics.py       # 📈 Análisis de velocidad
+│       │   └── notifications.py        # 📱 Sistema de alertas
+│       ├── services/            # 🔍 Servicios de detección
+│       │   └── hype_radar_service.py   # 🎯 Motor principal
+│       └── schedulers/          # ⏰ Jobs cada 15 minutos
 ├── shared/                      # 🧩 CÓDIGO COMPARTIDO
 │   ├── config/                  # ⚙️ Configuración
 │   ├── database/                # 💾 Base de datos
@@ -171,6 +187,9 @@ Activación:   Solo manual con /start_bot
    # News Analysis  
    python run_news_service.py
    
+   # Hype Radar
+   python run_hype_service.py
+   
    # API Gateway
    python run_api_service.py
    ```
@@ -191,7 +210,8 @@ sudo ./deployment/deploy_services.sh
 
 # Verificar servicios
 sudo systemctl status oraculo-grid.service
-sudo systemctl status oraculo-news.service  
+sudo systemctl status oraculo-news.service
+sudo systemctl status oraculo-hype.service  
 sudo systemctl status oraculo-api.service
 ```
 
@@ -256,6 +276,89 @@ grep "standby" logs/oraculo_grid.log
 
 ---
 
+## 🎯 Hype Radar - Detector de Tendencias
+
+### 🔍 **¿Qué Detecta?**
+El Hype Radar monitorea **incrementos súbitos** en menciones de criptomonedas en subreddits de alto riesgo para identificar posibles "pumps" antes de que ocurran.
+
+### 📡 **Subreddits Monitoreados**
+```
+• SatoshiStreetBets        • CryptoMoonShots
+• CryptoCurrencyTrading    • altcoin
+• CryptoHorde             • CryptoBets  
+• CryptoPumping           • SmallCryptos
+• shitcoinstreetbets
+```
+
+### 🎯 **Detección Inteligente**
+- **Lista Principal**: 45+ tickers conocidos (DOGE, SHIB, PEPE, etc.)
+- **Detección Automática**: Cualquier ticker que supere el umbral
+- **Patrones**: $TICKER, TICKER/USD, "TICKER is pumping", etc.
+
+### 📊 **Algoritmo de Análisis**
+```
+1. 🕐 Escaneo cada 15 minutos
+2. 📈 Cuenta menciones por ticker
+3. 🔍 Compara vs promedio de 24h
+4. 🚨 Alerta si incremento > 500%
+5. 💾 Guarda evento en base de datos
+6. 📱 Envía notificación por Telegram
+```
+
+### 🚨 **Tipos de Alertas**
+```
+🔥 ALERTA DE HYPE (500%+)     - Incremento significativo
+🔥🔥 ALERTA ALTA (1000%+)     - Incremento muy alto  
+🔥🔥🔥 ALERTA EXTREMA (1500%+) - Posible pump viral
+```
+
+### 📱 **Ejemplo de Alerta**
+```
+🚨 ALERTA DE HYPE
+
+🔥 TICKER: $DOGE
+📈 Menciones última hora: 15
+📊 Promedio 24h: 2.5  
+🚀 Incremento: 500.0%
+⚡ Umbral configurado: 500%
+
+📡 HYPE SIGNIFICATIVO DETECTADO
+💡 Monitorear de cerca
+
+⏰ 2025-06-23 15:30:00
+🤖 Hype Radar Alert System
+```
+
+### 🌙 **Resumen Diario (23:00 México Centro)**
+```
+📊 RESUMEN DIARIO - HYPE RADAR
+📅 Fecha: 2025-06-23
+
+🚨 Alertas enviadas: 5
+
+🔥 TOP TRENDING DEL DÍA:
+1. $DOGE: 47 menciones
+2. $SHIB: 23 menciones  
+3. $PEPE: 18 menciones
+4. $SOL: 12 menciones
+5. $ADA: 8 menciones
+```
+
+### 🔧 **Configuración**
+- **Puerto**: 8003
+- **Umbral por defecto**: 500% de incremento
+- **Cooldown**: 1 hora por ticker (evita spam)
+- **Base de datos**: Tabla `hype_events` con todos los eventos
+
+### 🌐 **Endpoints API**
+```
+GET  /health          - Estado del servicio
+GET  /trends?hours=24  - Resumen de tendencias
+GET  /events?hours=24  - Eventos desde BD
+POST /configure?threshold=500.0  - Configurar umbral
+GET  /alerts/test      - Probar sistema de alertas
+```
+
 ## 📚 Documentación Adicional
 
 - **[CHANGELOG.md](CHANGELOG.md)** - Historial completo de cambios
@@ -264,5 +367,5 @@ grep "standby" logs/oraculo_grid.log
 
 ---
 
-**🔮 Oráculo Cripto Bot V2.5** - Trading Inteligente + Análisis de Noticias + Control Total  
+**🔮 Oráculo Cripto Bot V2.5** - Trading Inteligente + Análisis de Noticias + Detección de Tendencias  
 *Desarrollado con 💚 para traders crypto* 

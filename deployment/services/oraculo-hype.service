@@ -1,0 +1,17 @@
+[Unit]
+Description=Oraculo Bot - Hype Radar Service
+After=network.target
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/var/www/oraculo_bot
+
+# Variables de entorno
+EnvironmentFile=/var/www/oraculo_bot/.env
+
+ExecStart=/var/www/oraculo_bot/venv/bin/python run_hype_service.py
+
+
+[Install]
+WantedBy=multi-user.target 
