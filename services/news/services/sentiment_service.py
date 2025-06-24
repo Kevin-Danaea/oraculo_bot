@@ -91,9 +91,29 @@ def analyze_sentiment_text(text: str) -> Dict[str, Any]:
                 "news_category": "Mercado/Trading"
             }
             
+        # Limpiar la respuesta de posibles bloques de código markdown
+        response_text = response.text.strip()
+        
+        # Si la respuesta viene en bloques de código, extraer solo el JSON
+        if response_text.startswith('```json'):
+            # Extraer contenido entre ```json y ```
+            start_marker = '```json\n'
+            end_marker = '\n```'
+            start_index = response_text.find(start_marker)
+            end_index = response_text.find(end_marker)
+            
+            if start_index != -1 and end_index != -1:
+                start_index += len(start_marker)
+                response_text = response_text[start_index:end_index]
+        elif response_text.startswith('```'):
+            # Si empieza con ``` sin json, buscar el primer bloque
+            lines = response_text.split('\n')
+            if len(lines) > 1:
+                response_text = '\n'.join(lines[1:-1])  # Quitar primera y última línea
+        
         # Intentar parsear el JSON de la respuesta
         try:
-            result = json.loads(response.text.strip())
+            result = json.loads(response_text.strip())
             
             # Validar y limpiar la respuesta
             sentiment_score = float(result.get("sentiment_score", 0.0))
