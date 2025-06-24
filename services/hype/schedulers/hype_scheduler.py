@@ -52,7 +52,7 @@ def run_daily_summary_job():
 def run_hype_radar_job():
     """
     Tarea que ejecuta el escaneo del hype radar.
-    Se ejecuta cada hora para detectar tendencias emergentes.
+    Se ejecuta cada 5 minutos para detectar tendencias emergentes en tiempo crítico.
     """
     logger.info("🎯 Iniciando job de escaneo del Hype Radar...")
     db = SessionLocal()
@@ -96,11 +96,11 @@ def setup_hype_scheduler():
     if _scheduler is None:
         _scheduler = BackgroundScheduler()
         
-        # Tarea principal: Escanear hype cada 15 minutos
+        # Tarea principal: Escanear hype cada 5 minutos (tiempo crítico para pumps)
         _scheduler.add_job(
             run_hype_radar_job, 
             'interval', 
-            minutes=15, 
+            minutes=5, 
             id='hype_radar_scanner',
             name='Hype Radar Scanner'
         )
@@ -118,7 +118,7 @@ def setup_hype_scheduler():
         )
         
         logger.info("✅ Hype Radar scheduler configurado")
-        logger.info("🎯 Escaneo de tendencias programado cada 15 minutos")
+        logger.info("🎯 Escaneo de tendencias programado cada 5 minutos ⚡ (modo crítico)")
         logger.info("📊 Resumen diario programado a las 23:00 hora de México Centro (UTC-6)")
     
     return _scheduler

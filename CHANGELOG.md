@@ -11,7 +11,7 @@ Registro completo de cambios, mejoras y nuevas funcionalidades del ecosistema de
 #### ✨ **Funcionalidades Principales**
 - **🔍 Detección Inteligente**: Monitorea incrementos súbitos en menciones de criptomonedas
 - **📡 Subreddits de Alto Riesgo**: 9 subreddits especializados (SatoshiStreetBets, CryptoMoonShots, etc.)
-- **⏰ Análisis Continuo**: Escaneos automáticos cada 15 minutos
+- **⏰ Análisis Continuo**: Escaneos automáticos cada 5 minutos (modo crítico)
 - **🚨 Alertas Automáticas**: Sistema de notificaciones por Telegram con 3 niveles de intensidad
 - **📊 Análisis de Velocidad**: Compara menciones actuales vs promedio de 24 horas
 
@@ -57,7 +57,7 @@ services/hype/
 ├── services/
 │   └── hype_radar_service.py    # Lógica principal de detección
 └── schedulers/
-    └── hype_scheduler.py        # Jobs automáticos cada 15min
+    └── hype_scheduler.py        # Jobs automáticos cada 5min
 ```
 
 #### 🚀 **Deployment**
@@ -84,6 +84,14 @@ services/hype/
 - **Nuevas Columnas**: `primary_emotion`, `news_category`
 - **Migración**: Scripts automáticos para actualizar BD existente
 - **Compatibilidad**: Soporta SQLite y PostgreSQL
+
+### ⚡ **Optimización de Tiempo Crítico** ⭐ **ACTUALIZACIÓN**
+
+#### 🚀 **Escaneo Ultra-Rápido**
+- **Frecuencia**: Reducida de 15 minutos a **5 minutos**
+- **Justificación**: Los pumps crypto ocurren en los primeros 5-10 minutos
+- **Objetivo**: No perder oportunidades de entrada temprana
+- **Futuro**: Preparado para escalar a 1 minuto si es necesario
 
 ### 🏗️ **Arquitectura Actualizada**
 ```

@@ -17,7 +17,7 @@ Un ecosistema avanzado de **microservicios** para **trading automatizado** con *
 - **Background Jobs**: Procesamiento automático 24/7
 
 ### 🎯 **Hype Radar - Detector de Tendencias**
-- **Detección Inteligente**: Monitorea 9 subreddits de alto riesgo cada 15 minutos
+- **Detección Inteligente**: Monitorea 9 subreddits de alto riesgo cada 5 minutos
 - **Alertas Automáticas**: Detecta incrementos súbitos en menciones de criptomonedas
 - **Análisis de Velocidad**: Compara menciones actuales vs promedio 24h
 - **Base de Datos**: Almacena todos los eventos de hype para análisis
@@ -75,7 +75,7 @@ oraculo_bot/
 │       │   └── notifications.py        # 📱 Sistema de alertas
 │       ├── services/            # 🔍 Servicios de detección
 │       │   └── hype_radar_service.py   # 🎯 Motor principal
-│       └── schedulers/          # ⏰ Jobs cada 15 minutos
+│       └── schedulers/          # ⏰ Jobs cada 5 minutos
 ├── shared/                      # 🧩 CÓDIGO COMPARTIDO
 │   ├── config/                  # ⚙️ Configuración
 │   ├── database/                # 💾 Base de datos
@@ -297,7 +297,7 @@ El Hype Radar monitorea **incrementos súbitos** en menciones de criptomonedas e
 
 ### 📊 **Algoritmo de Análisis**
 ```
-1. 🕐 Escaneo cada 15 minutos
+1. 🕐 Escaneo cada 5 minutos
 2. 📈 Cuenta menciones por ticker
 3. 🔍 Compara vs promedio de 24h
 4. 🚨 Alerta si incremento > 500%
