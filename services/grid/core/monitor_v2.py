@@ -287,8 +287,12 @@ def monitor_grid_orders_v2(exchange: ccxt.Exchange, active_orders: List[Dict[str
                     current_price = exchange.fetch_ticker(pair)['last']
                     lowest_buy, highest_sell = get_grid_boundaries(active_orders)
                     
+                    # Formatear precios correctamente
+                    lowest_str = f"{lowest_buy:.2f}" if lowest_buy else "N/A"
+                    highest_str = f"{highest_sell:.2f}" if highest_sell else "N/A"
+                    
                     logger.info(f"📊 Estado V2 - Precio: ${current_price:.2f}, Órdenes: {len(active_orders)}, "
-                              f"Límites: ${lowest_buy:.2f if lowest_buy else 0} - ${highest_sell:.2f if highest_sell else 0}")
+                              f"Límites: ${lowest_str} - ${highest_str}")
                 
                 logger.debug(f"👀 Monitoreo V2 ciclo {cycle_count} - Órdenes activas: {len(active_orders)}")
                 

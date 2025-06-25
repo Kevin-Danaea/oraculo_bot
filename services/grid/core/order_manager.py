@@ -144,8 +144,27 @@ def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, An
     """
     try:
         pair = buy_order['pair']
-        quantity = buy_order['quantity']
         buy_price = buy_order['price']
+        crypto_symbol = pair.split('/')[0]  # ETH de ETH/USDT, SOL de SOL/USDT
+        
+        # CRÍTICO: Obtener balance REAL después de comisiones
+        balance = exchange.fetch_balance()
+        actual_crypto_balance = balance.get(crypto_symbol, {}).get('free', 0)
+        
+        # Usar 99% del balance disponible para evitar problemas de precisión
+        # (Binance a veces tiene problemas con decimales muy precisos)
+        available_quantity = actual_crypto_balance * 0.99
+        
+        # Verificar que tengamos cantidad mínima para operar
+        min_quantity = 0.001  # Ajustar según el activo
+        if available_quantity < min_quantity:
+            logger.warning(f"⚠️ Balance insuficiente para venta: {available_quantity:.6f} {crypto_symbol} < {min_quantity}")
+            return None
+        
+        # Redondear a 6 decimales para evitar problemas de precisión
+        sell_quantity = round(available_quantity, 6)
+        
+        logger.info(f"📊 Balance check - Compra ordenada: {buy_order['quantity']:.6f}, Balance disponible: {actual_crypto_balance:.6f}, Cantidad a vender: {sell_quantity:.6f}")
         
         # Obtener profit dinámico de la configuración
         if config and 'dynamic_profit_decimal' in config:
@@ -162,14 +181,14 @@ def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, An
         sell_price = buy_price * (1 + profit_percentage)
         sell_price = round(sell_price, 2)
         
-        order = create_order_with_retry(exchange, 'sell', pair, quantity, sell_price)
+        order = create_order_with_retry(exchange, 'sell', pair, sell_quantity, sell_price)
         if not order:
             return None
             
         sell_order_info = {
             'id': order['id'],
             'type': 'sell',
-            'quantity': quantity,
+            'quantity': sell_quantity,
             'price': sell_price,
             'pair': pair,
             'status': 'open',
@@ -180,8 +199,8 @@ def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, An
         }
         
         # Calcular ganancia esperada
-        profit = (sell_price - buy_price) * quantity
-        logger.info(f"💰 Orden venta creada: {quantity:.6f} a ${sell_price} (ganancia esperada: ${profit:.2f})")
+        profit = (sell_price - buy_price) * sell_quantity
+        logger.info(f"💰 Orden venta creada: {sell_quantity:.6f} a ${sell_price} (ganancia esperada: ${profit:.2f})")
         
         return sell_order_info
         

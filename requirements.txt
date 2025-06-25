@@ -12,3 +12,7 @@ praw
 ccxt
 pytz
 psycopg2-binary
+zstandard
+tqdm
+pandas
+psutil
