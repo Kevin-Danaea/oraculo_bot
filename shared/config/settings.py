@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     PROJECT_NAME: str = "Oráculo Cripto Bot"
     API_V1_STR: str = "/api/v1"
-    DATABASE_URL: str = "sqlite:///./oraculo.db"
+    DATABASE_URL: str = "sqlite:///./oraculo.db"  # Fallback por defecto
     
     # Configuración de Reddit API
     REDDIT_CLIENT_ID: str = ""

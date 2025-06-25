@@ -6,7 +6,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from shared.config.settings import settings
 
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
+# Configuración dinámica basada en el tipo de base de datos
+if settings.DATABASE_URL.startswith("sqlite"):
+    # Configuración específica para SQLite
+    engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    # Configuración para PostgreSQL (y otras bases de datos)
+    engine = create_engine(
+        settings.DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=3600,
+        pool_pre_ping=True
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_database():

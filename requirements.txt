@@ -10,4 +10,5 @@ aiohttp
 google-genai
 praw
 ccxt
-pytz 
+pytz
+psycopg2-binary
