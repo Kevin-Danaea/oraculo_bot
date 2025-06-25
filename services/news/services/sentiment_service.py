@@ -76,11 +76,11 @@ def analyze_sentiment_text(text: str) -> Dict[str, Any]:
     
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=prompt
         )
         # Pequeña pausa para no saturar la API
-        time.sleep(1) 
+        time.sleep(2) 
         
         # Verificar que la respuesta tiene contenido
         if not response.text or response.text.strip() == "":
