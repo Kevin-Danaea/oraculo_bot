@@ -262,13 +262,13 @@ class SentimentAnalyzer:
                 )
                 
                 # Pausa breve para no saturar la API
-                time.sleep(1)
+                time.sleep(0.2)
                 
                 if not response.text or response.text.strip() == "":
                     logger.warning(f"Respuesta vacía para: '{text[:50]}...'")
                     return self._get_default_analysis()
                 
-                return self._parse_response(response.text, text)
+                return self._parse_response(response.text)
                 
             except Exception as e:
                 error_msg = str(e).lower()
@@ -325,7 +325,7 @@ class SentimentAnalyzer:
         Responde ÚNICAMENTE con el JSON:
         """
     
-    def _parse_response(self, response_text: str, original_text: str) -> Dict[str, Any]:
+    def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """Parsea y valida la respuesta de Gemini."""
         try:
             # Limpiar respuesta de bloques de código markdown
