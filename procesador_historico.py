@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 import zstandard as zstd
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Set
 from urllib.parse import urlparse
 import psutil
@@ -447,7 +447,7 @@ class RedditPostProcessor:
                 'source': 'reddit_historical',
                 'headline': text_to_analyze,
                 'url': post_url,
-                'published_at': str(datetime.fromtimestamp(post.get('created_utc', 0))),
+                'published_at': format_utc_timestamp(post.get('created_utc', 0)),  # Formato UTC ISO 8601
                 'sentiment_score': analysis['sentiment_score'],
                 'primary_emotion': analysis['primary_emotion'],
                 'news_category': analysis['news_category']
@@ -966,6 +966,31 @@ def clear_processed_urls() -> None:
             logger.info("Archivo de URLs procesadas eliminado - procesamiento completado")
     except Exception as e:
         logger.warning(f"No se pudo eliminar archivo de URLs procesadas: {e}")
+
+
+def format_utc_timestamp(timestamp: float) -> str:
+    """
+    Convierte un timestamp UTC a formato ISO 8601 con timezone UTC.
+    
+    Args:
+        timestamp: Timestamp Unix en segundos (UTC)
+        
+    Returns:
+        Fecha en formato ISO 8601: 2020-05-01T15:30:45+00:00
+        
+    Example:
+        >>> format_utc_timestamp(1588346445.0)
+        '2020-05-01T15:07:25+00:00'
+    """
+    if not timestamp or timestamp <= 0:
+        # Si el timestamp es inválido, usar epoch como fallback
+        timestamp = 0
+    
+    # Crear datetime en UTC
+    dt_utc = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    
+    # Retornar en formato ISO 8601 con timezone UTC
+    return dt_utc.isoformat()
 
 
 def main():
