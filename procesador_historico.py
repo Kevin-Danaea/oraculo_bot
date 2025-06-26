@@ -14,9 +14,11 @@ Características:
 """
 
 import argparse
+import io
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 import zstandard as zstd
@@ -186,6 +188,42 @@ def check_gemini_api() -> bool:
             
     except Exception as e:
         logger.error(f"[ERROR] Error al probar la API de Gemini: {e}")
+        return False
+
+def check_zstd_availability() -> bool:
+    """
+    Verifica que el comando zstd esté disponible en el sistema.
+    Proporciona instrucciones de instalación si no está disponible.
+    
+    Returns:
+        True si zstd está disponible, False en caso contrario
+    """
+    logger.info("[CHECK] Verificando disponibilidad del comando zstd...")
+    try:
+        result = subprocess.run(['zstd', '--version'], capture_output=True, check=True, text=True)
+        version_info = result.stdout.strip().split('\n')[0] if result.stdout else "versión desconocida"
+        logger.info(f"[OK] Comando zstd encontrado: {version_info}")
+        return True
+    except FileNotFoundError:
+        logger.error("[ERROR] Comando 'zstd' no encontrado en el sistema")
+        logger.error("")
+        logger.error("💡 INSTRUCCIONES DE INSTALACIÓN:")
+        logger.error("   📦 Windows (con winget):")
+        logger.error("       winget install facebook.zstd")
+        logger.error("")
+        logger.error("   📦 Windows (manual):")
+        logger.error("       1. Descarga desde: https://github.com/facebook/zstd/releases")
+        logger.error("       2. Extrae zstd.exe a una carpeta en tu PATH")
+        logger.error("")
+        logger.error("   📦 macOS:")
+        logger.error("       brew install zstd")
+        logger.error("")
+        logger.error("   📦 Ubuntu/Debian:")
+        logger.error("       sudo apt install zstd")
+        logger.error("")
+        return False
+    except subprocess.CalledProcessError as e:
+        logger.error(f"[ERROR] Error ejecutando comando zstd: {e}")
         return False
 
 class SentimentAnalyzer:
@@ -622,50 +660,17 @@ def get_file_size(filepath: str) -> int:
     except OSError:
         return 0
 
-def get_optimal_settings(file_size_gb: float) -> tuple:
-    """
-    Determina configuraciones óptimas basadas en el tamaño del archivo.
-    Reddit usa compresión muy agresiva, así que somos ultra-conservadores.
-    
-    Args:
-        file_size_gb: Tamaño del archivo en GB
-        
-    Returns:
-        tuple: (chunk_size, window_size_power, description)
-    """
-    if file_size_gb <= 1.0:
-        # Archivos muy pequeños: velocidad normal
-        return (256 * 1024, 16, "velocidad normal")  # 256KB chunks, 64KB window
-    elif file_size_gb <= 3.0:
-        # Archivos pequeños: conservador
-        return (128 * 1024, 15, "conservador")  # 128KB chunks, 32KB window
-    elif file_size_gb <= 8.0:
-        # Archivos medianos: muy conservador
-        return (64 * 1024, 14, "muy conservador")  # 64KB chunks, 16KB window
-    else:
-        # Archivos grandes: extremadamente conservador
-        return (32 * 1024, 13, "extremadamente conservador")  # 32KB chunks, 8KB window
-
-
 def count_lines_in_zst(filepath: str) -> int:
-    """Cuenta aproximadamente las líneas en el archivo .zst para la barra de progreso."""
-    logger.info("Contando líneas en el archivo (puede tomar un momento)...")
-    try:
-        with open(filepath, 'rb') as file:
-            dctx = zstd.ZstdDecompressor()
-            with dctx.stream_reader(file) as reader:
-                lines = 0
-                while True:
-                    chunk = reader.read(1024 * 1024)  # Leer en chunks de 1MB
-                    if not chunk:
-                        break
-                    lines += chunk.count(b'\n')
-                return lines
-    except Exception as e:
-        logger.warning(f"No se pudo contar las líneas: {e}. Usando estimación.")
-        # Estimación basada en tamaño del archivo (aproximadamente 1KB por línea)
-        file_size = get_file_size(filepath)
-        return file_size // 1024
+    """
+    FUNCIÓN DESHABILITADA: Contaba líneas pero causaba MemoryError en archivos grandes.
+    Se mantiene comentada para referencia histórica.
+    """
+    # Esta función se deshabilitó porque causa problemas de memoria en archivos grandes
+    # Al leer todo el archivo para contar líneas antes del procesamiento principal
+    logger.warning("count_lines_in_zst está deshabilitada para evitar MemoryError")
+    # Estimación simple basada en tamaño del archivo
+    file_size = get_file_size(filepath)
+    return file_size // 1024  # Estimación: ~1KB por línea
 
 
 def process_reddit_file(filepath: str) -> Dict[str, Any]:
@@ -680,16 +685,15 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
     """
     logger.info(f"Iniciando procesamiento de archivo: {filepath}")
     
-    # Determinar configuraciones óptimas basadas en el tamaño del archivo
+    # Obtener información básica del archivo
     file_size_bytes = get_file_size(filepath)
     file_size_gb = file_size_bytes / (1024**3)
-    chunk_size, window_size_power, strategy_desc = get_optimal_settings(file_size_gb)
     
     logger.info(f"📊 ANÁLISIS DEL ARCHIVO:")
     logger.info(f"   Tamaño: {file_size_gb:.2f} GB")
-    logger.info(f"   Estrategia: {strategy_desc}")
-    logger.info(f"   Chunk size: {chunk_size // 1024} KB")
-    logger.info(f"   Window size: {2**window_size_power // 1024} KB")
+    logger.info(f"   Estrategia: Comando externo zstd con streaming")
+    logger.info(f"   Procesamiento: Línea por línea sin pre-carga")
+    logger.info(f"   Parámetros: --long=31 (window hasta 2GB), --memory=2048MB")
     
     # Variables para procesamiento en lotes
     batch_data = []
@@ -715,124 +719,117 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
         logger.info("Inicializando gestor de base de datos...")
         db_manager = DatabaseManager()
         
-        # Contar líneas para barra de progreso
-        logger.info("Contando líneas en el archivo para la barra de progreso...")
-        total_lines = count_lines_in_zst(filepath)
-        logger.info(f"Archivo contiene aproximadamente {total_lines:,} líneas")
+        # Usar barra de progreso sin total para evitar problemas de memoria
+        logger.info("Iniciando procesamiento sin pre-conteo de líneas (más eficiente en memoria)")
+        total_lines = None  # Sin total conocido
         
-        # Abrir y procesar archivo
-        logger.info("Abriendo archivo para procesamiento...")
-        with open(filepath, 'rb') as file:
-            logger.info("Inicializando descompresor zstandard con configuración dinámica...")
-            dctx = zstd.ZstdDecompressor(
-                max_window_size=2**window_size_power,  # Tamaño dinámico basado en archivo
-                format=zstd.FORMAT_ZSTD1  # Forzar formato estándar
-            )
+        # Abrir y procesar archivo usando comando externo zstd (más eficiente para archivos grandes)
+        logger.info("Abriendo archivo para procesamiento usando comando externo zstd...")
+        logger.info("Verificando disponibilidad del comando zstd...")
+        
+        # Verificar que zstd esté disponible
+        if not check_zstd_availability():
+            logger.error("❌ ERROR: Comando 'zstd' no disponible. Terminando script.")
+            sys.exit(1)
+        
+        logger.info("Iniciando descompresión con comando externo zstd...")
+        logger.info("Usando parámetros para archivos con window size grande...")
+        # Usamos subprocess para descomprimir streaming con zstd command line
+        # --long=31: Permite window sizes hasta 2GB (2^31 bytes)
+        # --memory=2048MB: Límite de memoria para decodificación
+        process = subprocess.Popen(
+            ['zstd', '-d', '-c', '--memory=4096MB', filepath],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            bufsize=1  # Line buffered
+        )
+        
+        logger.info("Iniciando procesamiento línea por línea desde stdout de zstd...")
+        # Procesar con barra de progreso (sin total conocido para eficiencia de memoria)
+        with tqdm(desc="Procesando posts", unit="posts", total=None) as pbar:
+            line_count = 0
             
-            logger.info("Iniciando procesamiento línea por línea...")
-            # Procesar con barra de progreso
-            with tqdm(total=total_lines, desc="Procesando posts", unit="posts") as pbar:
-                line_count = 0
+            try:
+                # Verificar que el proceso esté funcionando
+                if process.stdout is None:
+                    raise RuntimeError("No se pudo abrir stdout del proceso zstd")
                 
-                # Leer el archivo descomprimido en chunks y procesar línea por línea
-                with dctx.stream_reader(file) as reader:
-                    buffer = ""
-                    # chunk_size ya se determinó dinámicamente basado en el tamaño del archivo
+                # Ahora podemos iterar línea por línea desde el proceso zstd
+                for line in process.stdout:
+                    line_count += 1
                     
-                    while True:
-                        try:
-                            # Leer chunk del archivo descomprimido
-                            chunk = reader.read(chunk_size)
-                            if not chunk:
-                                break
-                            
-                            # Decodificar chunk a texto
-                            try:
-                                text_chunk = chunk.decode('utf-8')
-                            except UnicodeDecodeError as e:
-                                logger.warning(f"Error decodificando chunk: {e}")
-                                continue
-                            
-                            # Agregar al buffer
-                            buffer += text_chunk
-                            
-                            # Procesar líneas completas del buffer
-                            while '\n' in buffer:
-                                line, buffer = buffer.split('\n', 1)
-                                line_count += 1
-                                
-                                # Saltar líneas ya procesadas
-                                if line_count <= start_line:
-                                    pbar.update(1)
-                                    continue
-                                
-                                try:
-                                    if not line.strip():
-                                        pbar.update(1)
-                                        continue
-                                    
-                                    # Procesar post
-                                    post_data = processor.process_post(line)
-                                    
-                                    if post_data:
-                                        batch_data.append(post_data)
-                                    
-                                    # Insertar lote cuando se alcance el tamaño objetivo
-                                    if len(batch_data) >= BATCH_SIZE:
-                                        success = db_manager.insert_batch(batch_data)
-                                        if success:
-                                            batch_insertions += 1
-                                        else:
-                                            logger.error("Falló inserción de lote completamente")
-                                        batch_data.clear()
-                                        
-                                        # Guardar checkpoint cada lote procesado
-                                        save_checkpoint(line_count)
-                                        
-                                        # Guardar URLs procesadas cada 10 lotes (5000 registros)
-                                        if batch_insertions % 10 == 0:
-                                            save_processed_urls(processor.processed_urls)
-                                    
-                                    pbar.update(1)
-                                    
-                                    # Actualizar descripción de progreso cada 1000 posts
-                                    if pbar.n % 1000 == 0:
-                                        stats = processor.get_stats()
-                                        # Monitoreo de memoria cada 10,000 posts
-                                        if pbar.n % 10000 == 0:
-                                            memory_percent = psutil.virtual_memory().percent
-                                            logger.info(f"Checkpoint {pbar.n:,}: Uso de memoria: {memory_percent:.1f}%")
-                                        
-                                        pbar.set_description(
-                                            f"Procesando posts (procesados: {stats['processed']}, "
-                                            f"errores: {stats['errors']})"
-                                        )
-                                
-                                except Exception as e:
-                                    logger.error(f"Error procesando línea {line_count}: {e}")
-                                    pbar.update(1)
-                                    continue
-                        
-                        except Exception as e:
-                            error_msg = str(e).lower()
-                            if "frame requires too much memory" in error_msg or "memory" in error_msg:
-                                logger.error(f"❌ ERROR DE MEMORIA ZSTD: {e}")
-                                logger.error("🔧 El archivo requiere demasiada memoria para descomprimir")
-                                logger.error("💡 Solución: Usar herramienta externa zstd o archivo más pequeño")
-                                raise MemoryError(f"Archivo demasiado grande para descomprimir: {filepath}")
-                            else:
-                                logger.error(f"Error leyendo chunk: {e}")
-                                break
+                    # Saltar líneas ya procesadas (checkpoint)
+                    if line_count <= start_line:
+                        pbar.update(1)
+                        continue
                     
-                    # Procesar última línea si queda algo en el buffer
-                    if buffer.strip():
-                        try:
-                            post_data = processor.process_post(buffer)
-                            if post_data:
-                                batch_data.append(post_data)
+                    try:
+                        if not line.strip():
                             pbar.update(1)
-                        except Exception as e:
-                            logger.error(f"Error procesando última línea: {e}")
+                            continue
+                        
+                        # Procesar post
+                        post_data = processor.process_post(line)
+                        
+                        if post_data:
+                            batch_data.append(post_data)
+                        
+                        # Insertar lote cuando se alcance el tamaño objetivo
+                        if len(batch_data) >= BATCH_SIZE:
+                            success = db_manager.insert_batch(batch_data)
+                            if success:
+                                batch_insertions += 1
+                            else:
+                                logger.error("Falló inserción de lote completamente")
+                            batch_data.clear()
+                            
+                            # Guardar checkpoint cada lote procesado
+                            save_checkpoint(line_count)
+                            
+                            # Guardar URLs procesadas cada 10 lotes (5000 registros)
+                            if batch_insertions % 10 == 0:
+                                save_processed_urls(processor.processed_urls)
+                        
+                        pbar.update(1)
+                        
+                        # Actualizar descripción de progreso cada 1000 posts
+                        if pbar.n % 1000 == 0:
+                            stats = processor.get_stats()
+                            # Monitoreo de memoria cada 10,000 posts
+                            if pbar.n % 10000 == 0:
+                                memory_percent = psutil.virtual_memory().percent
+                                logger.info(f"Checkpoint {pbar.n:,}: Uso de memoria: {memory_percent:.1f}%")
+                            
+                            pbar.set_description(
+                                f"Procesando posts (procesados: {stats['processed']}, "
+                                f"errores: {stats['errors']})"
+                            )
+                    
+                    except json.JSONDecodeError:
+                        # Ignoramos líneas que no son JSON válido, es común en estos archivos
+                        pbar.update(1)
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error procesando línea {line_count}: {e}")
+                        pbar.update(1)
+                        continue
+                        
+            except Exception as e:
+                logger.error(f"Error en el procesamiento con comando zstd: {e}")
+                raise
+            finally:
+                # Asegurar que el proceso se termine correctamente
+                if process.stdout:
+                    process.stdout.close()
+                return_code = process.wait()
+                if return_code != 0:
+                    stderr_output = ""
+                    if process.stderr:
+                        stderr_output = process.stderr.read()
+                    logger.error(f"Error en comando zstd (código {return_code}): {stderr_output}")
+                    raise subprocess.CalledProcessError(return_code, 'zstd', stderr_output)
         
         # Insertar lote final si tiene datos
         if batch_data:
@@ -1015,6 +1012,11 @@ def main():
     # Chequeo 2: Verificar API de Gemini
     if not check_gemini_api():
         logger.error("[ERROR] Fallo en chequeo de API de Gemini. Terminando script.")
+        sys.exit(1)
+    
+    # Chequeo 3: Verificar disponibilidad de comando zstd
+    if not check_zstd_availability():
+        logger.error("[ERROR] Fallo en chequeo de comando zstd. Terminando script.")
         sys.exit(1)
     
     logger.info("[OK] Todos los chequeos previos completados exitosamente")
