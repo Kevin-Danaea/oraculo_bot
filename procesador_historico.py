@@ -289,7 +289,9 @@ class SentimentAnalyzer:
     def _build_prompt(self, text: str) -> str:
         """Construye el prompt para Gemini."""
         return f"""
-        Analiza el siguiente texto sobre criptomonedas y devuelve ÚNICAMENTE un JSON válido con esta estructura:
+        Actúa como un analista cuantitativo de sentimiento, especializado en el mercado de criptomonedas. Tu tarea es evaluar el siguiente texto y devolver un análisis estructurado.
+
+        Analiza el siguiente texto sobre criptomomedas y devuelve ÚNICAMENTE un JSON válido con esta estructura:
         
         {{
             "sentiment_score": float entre -1.0 y 1.0,
@@ -738,7 +740,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
         # --long=31: Permite window sizes hasta 2GB (2^31 bytes)
         # --memory=3072MB: Límite de memoria para decodificación
         process = subprocess.Popen(
-            ['zstd', '-d', '-c', '--long=31', '--memory=3072MB', filepath],
+            ['zstd', '-d', '-c', '--long=31', '--memory=2048MB', filepath],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
