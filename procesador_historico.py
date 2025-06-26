@@ -14,31 +14,31 @@ Características:
 """
 
 import argparse
-import io
+import concurrent.futures
 import json
 import logging
 import os
 import subprocess
 import sys
 import time
-import zstandard as zstd
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 import psutil
 
-import pandas as pd
 from google import genai
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
 
 # Importar configuración y modelos del proyecto
 from shared.config.settings import settings
-from shared.database.models import Base, Noticia
+from shared.database.models import Base
 
 # Configuración del script
 BATCH_SIZE = 500  # Tamaño del lote para inserción en BD
+PARALLEL_BATCH_SIZE = 1000  # Tamaño del lote para procesamiento paralelo de IA
+MAX_WORKERS = 15  # Número máximo de hilos para procesamiento concurrente (ajustado para rate limit)
 MAX_RETRIES = 5   # Máximo número de reintentos para API
 INITIAL_RETRY_DELAY = 5  # Delay inicial en segundos para exponential backoff
 DB_INSERT_RETRIES = 3  # Reintentos para inserción en base de datos
@@ -80,6 +80,49 @@ logger = logging.getLogger(__name__)
 if sys.platform == "win32":
     import codecs
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+
+def process_text_batch_parallel(analyzer: 'SentimentAnalyzer', tasks_to_process: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Procesa un lote de tareas de análisis de sentimiento en paralelo.
+    
+    Args:
+        analyzer: Instancia del analizador de sentimientos
+        tasks_to_process: Lista de tareas preparadas para análisis
+        
+    Returns:
+        Lista de resultados de análisis correspondientes a cada tarea
+    """
+    def analyze_single_task(task_data):
+        """Función auxiliar para procesar una sola tarea."""
+        try:
+            return analyzer.analyze_text_with_gemini(task_data['text_to_analyze'])
+        except Exception as e:
+            logger.error(f"Error analizando tarea: {e}")
+            return analyzer._get_default_analysis()
+    
+    # Procesar tareas en paralelo usando ThreadPoolExecutor
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # Enviar todas las tareas al pool de hilos
+        future_to_task = {
+            executor.submit(analyze_single_task, task): task 
+            for task in tasks_to_process
+        }
+        
+        results = []
+        # Recoger resultados en el mismo orden que las tareas
+        for task in tasks_to_process:
+            # Buscar el future correspondiente a esta tarea
+            for future, original_task in future_to_task.items():
+                if original_task is task:
+                    try:
+                        analysis_result = future.result()
+                        results.append(analysis_result)
+                    except Exception as e:
+                        logger.error(f"Error procesando future: {e}")
+                        results.append(analyzer._get_default_analysis())
+                    break
+    
+    return results
 
 def check_database_connection() -> bool:
     """
@@ -178,12 +221,10 @@ def check_gemini_api() -> bool:
                 return False
             
             logger.info("[OK] API de Gemini verificada exitosamente")
-            logger.info(f"   Respuesta de prueba: Score={sentiment_score:.2f}, Emoción={primary_emotion}, Categoría={news_category}")
             return True
             
         except json.JSONDecodeError as e:
             logger.error(f"[ERROR] Error parseando JSON de respuesta de Gemini: {e}")
-            logger.error(f"   Respuesta recibida: '{response.text[:200]}...'")
             return False
             
     except Exception as e:
@@ -261,8 +302,8 @@ class SentimentAnalyzer:
                     contents=prompt
                 )
                 
-                # Pausa breve para no saturar la API
-                time.sleep(0.2)
+                # Pausa para cumplir rate limit de 2000 RPM
+                time.sleep(0.5)
                 
                 if not response.text or response.text.strip() == "":
                     logger.warning(f"Respuesta vacía para: '{text[:50]}...'")
@@ -387,6 +428,7 @@ class RedditPostProcessor:
             'filtered_short_text': 0,
             'filtered_bad_link': 0,
             'filtered_duplicate_url': 0,  # Nueva métrica para duplicados
+            'queued_for_processing': 0,  # Tareas encoladas para análisis IA
             'processed': 0,
             'errors': 0
         }
@@ -513,6 +555,90 @@ class RedditPostProcessor:
         except Exception:
             return False
     
+    def prepare_task_if_valid(self, line: str) -> Optional[Dict[str, Any]]:
+        """
+        Aplica filtros a una línea del archivo y prepara la tarea para análisis de IA.
+        
+        Args:
+            line: Línea JSON del archivo de Reddit
+            
+        Returns:
+            Dict con datos de la tarea preparada o None si se filtra
+        """
+        self.stats['total_read'] += 1
+        
+        try:
+            post = json.loads(line.strip())
+        except json.JSONDecodeError:
+            self.stats['errors'] += 1
+            return None
+        
+        # Aplicar pipeline de filtros
+        if not self._filter_subreddit_relevance(post):
+            self.stats['filtered_irrelevant_subreddit'] += 1
+            return None
+        
+        if not self._filter_basic_quality(post):
+            self.stats['filtered_low_quality'] += 1
+            return None
+        
+        if not self._filter_minimum_engagement(post):
+            self.stats['filtered_low_engagement'] += 1
+            return None
+        
+        # Determinar tipo de post y texto a analizar
+        text_to_analyze = self._extract_text_to_analyze(post)
+        if not text_to_analyze:
+            if post.get('is_self', False):
+                self.stats['filtered_short_text'] += 1
+            else:
+                self.stats['filtered_bad_link'] += 1
+            return None
+        
+        # Verificar si ya procesamos esta URL
+        post_url = post.get('url', f"https://reddit.com{post.get('permalink', '')}")
+        if post_url in self.processed_urls:
+            self.stats['filtered_duplicate_url'] += 1
+            return None
+        
+        # Incrementar contador de tareas encoladas
+        self.stats['queued_for_processing'] += 1
+        
+        # Devolver tarea preparada para análisis de IA
+        return {
+            'text_to_analyze': text_to_analyze,
+            'post_url': post_url,
+            'created_utc': post.get('created_utc', 0)
+        }
+    
+    def create_post_data_from_analysis(self, task_data: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Crea los datos del post a partir de una tarea y su análisis de IA.
+        
+        Args:
+            task_data: Datos de la tarea preparada
+            analysis: Resultado del análisis de sentimiento
+            
+        Returns:
+            Dict con datos del post procesado
+        """
+        # Agregar URL al set de procesadas
+        self.processed_urls.add(task_data['post_url'])
+        
+        # Preparar datos para inserción en BD
+        post_data = {
+            'source': 'reddit_historical',
+            'headline': task_data['text_to_analyze'],
+            'url': task_data['post_url'],
+            'published_at': format_utc_timestamp(task_data['created_utc']),
+            'sentiment_score': analysis['sentiment_score'],
+            'primary_emotion': analysis['primary_emotion'],
+            'news_category': analysis['news_category']
+        }
+        
+        self.stats['processed'] += 1
+        return post_data
+
     def get_stats(self) -> Dict[str, int]:
         """Retorna estadísticas del procesamiento."""
         return self.stats.copy()
@@ -528,7 +654,6 @@ class DatabaseManager:
             Base.metadata.create_all(bind=self.engine)
             Session = sessionmaker(bind=self.engine)
             self.session = Session()
-            logger.info("Conexión a la base de datos principal establecida")
             
             # Inicializar base de datos SQLite de fallback
             self._init_fallback_db()
@@ -544,7 +669,6 @@ class DatabaseManager:
             Base.metadata.create_all(bind=self.fallback_engine)
             FallbackSession = sessionmaker(bind=self.fallback_engine)
             self.fallback_session = FallbackSession()
-            logger.info(f"Base de datos SQLite de fallback inicializada: {FALLBACK_DB_PATH}")
         except Exception as e:
             logger.error(f"Error inicializando base de datos de fallback: {e}")
             self.fallback_session = None
@@ -648,11 +772,9 @@ class DatabaseManager:
         """Cierra las conexiones a las bases de datos."""
         if self.session:
             self.session.close()
-            logger.info("Conexión a la base de datos principal cerrada")
             
         if hasattr(self, 'fallback_session') and self.fallback_session:
             self.fallback_session.close()
-            logger.info("Conexión a la base de datos de fallback cerrada")
 
 
 def get_file_size(filepath: str) -> int:
@@ -661,18 +783,6 @@ def get_file_size(filepath: str) -> int:
         return os.path.getsize(filepath)
     except OSError:
         return 0
-
-def count_lines_in_zst(filepath: str) -> int:
-    """
-    FUNCIÓN DESHABILITADA: Contaba líneas pero causaba MemoryError en archivos grandes.
-    Se mantiene comentada para referencia histórica.
-    """
-    # Esta función se deshabilitó porque causa problemas de memoria en archivos grandes
-    # Al leer todo el archivo para contar líneas antes del procesamiento principal
-    logger.warning("count_lines_in_zst está deshabilitada para evitar MemoryError")
-    # Estimación simple basada en tamaño del archivo
-    file_size = get_file_size(filepath)
-    return file_size // 1024  # Estimación: ~1KB por línea
 
 
 def process_reddit_file(filepath: str) -> Dict[str, Any]:
@@ -711,31 +821,18 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
         logger.info("🚀 INICIANDO procesamiento desde el principio")
     
     try:
-        # Inicializar componentes paso a paso con mejor error handling
-        logger.info("Inicializando analizador de sentimientos...")
+        # Inicializar componentes
+        logger.info("Inicializando componentes del procesador...")
         analyzer = SentimentAnalyzer()
-        
-        logger.info("Inicializando procesador de posts...")
         processor = RedditPostProcessor(analyzer)
-        
-        logger.info("Inicializando gestor de base de datos...")
         db_manager = DatabaseManager()
-        
-        # Usar barra de progreso sin total para evitar problemas de memoria
-        logger.info("Iniciando procesamiento sin pre-conteo de líneas (más eficiente en memoria)")
-        total_lines = None  # Sin total conocido
-        
-        # Abrir y procesar archivo usando comando externo zstd (más eficiente para archivos grandes)
-        logger.info("Abriendo archivo para procesamiento usando comando externo zstd...")
-        logger.info("Verificando disponibilidad del comando zstd...")
         
         # Verificar que zstd esté disponible
         if not check_zstd_availability():
             logger.error("❌ ERROR: Comando 'zstd' no disponible. Terminando script.")
             sys.exit(1)
         
-        logger.info("Iniciando descompresión con comando externo zstd...")
-        logger.info("Usando parámetros para archivos con window size grande...")
+        logger.info("Iniciando procesamiento con descompresión streaming...")
         # Usamos subprocess para descomprimir streaming con zstd command line
         # --long=31: Permite window sizes hasta 2GB (2^31 bytes)
         # --memory=3072MB: Límite de memoria para decodificación
@@ -748,10 +845,10 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
             bufsize=1  # Line buffered
         )
         
-        logger.info("Iniciando procesamiento línea por línea desde stdout de zstd...")
-        # Procesar con barra de progreso (sin total conocido para eficiencia de memoria)
+        # Procesar con barra de progreso y lógica de lotes paralelos
         with tqdm(desc="Procesando posts", unit="posts", total=None) as pbar:
             line_count = 0
+            tasks_to_process = []  # Acumulador de tareas para procesamiento paralelo
             
             try:
                 # Verificar que el proceso esté funcionando
@@ -772,25 +869,44 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                             pbar.update(1)
                             continue
                         
-                        # Procesar post
-                        post_data = processor.process_post(line)
+                        # Aplicar filtros y preparar tarea si es válida
+                        task_data = processor.prepare_task_if_valid(line)
                         
-                        if post_data:
-                            batch_data.append(post_data)
+                        if task_data:
+                            tasks_to_process.append(task_data)
                         
-                        # Insertar lote cuando se alcance el tamaño objetivo
-                        if len(batch_data) >= BATCH_SIZE:
-                            success = db_manager.insert_batch(batch_data)
-                            if success:
-                                batch_insertions += 1
-                            else:
-                                logger.error("Falló inserción de lote completamente")
-                            batch_data.clear()
+                        # Cuando se acumule un lote suficiente, procesar en paralelo
+                        if len(tasks_to_process) >= PARALLEL_BATCH_SIZE:
+                            logger.info(f"Procesando lote de {len(tasks_to_process)} tareas en paralelo...")
                             
-                            # Guardar checkpoint cada lote procesado
+                            # Procesar tareas en paralelo
+                            analysis_results = process_text_batch_parallel(analyzer, tasks_to_process)
+                            
+                            # Crear post_data a partir de los resultados
+                            for task_data, analysis in zip(tasks_to_process, analysis_results):
+                                try:
+                                    post_data = processor.create_post_data_from_analysis(task_data, analysis)
+                                    batch_data.append(post_data)
+                                except Exception as e:
+                                    logger.error(f"Error creando post_data: {e}")
+                                    processor.stats['errors'] += 1
+                            
+                            # Limpiar lista de tareas
+                            tasks_to_process.clear()
+                            
+                            # Insertar en BD cuando se alcance el tamaño objetivo
+                            while len(batch_data) >= BATCH_SIZE:
+                                current_batch = batch_data[:BATCH_SIZE]
+                                batch_data = batch_data[BATCH_SIZE:]
+                                
+                                success = db_manager.insert_batch(current_batch)
+                                if success:
+                                    batch_insertions += 1
+                                else:
+                                    logger.error("Falló inserción de lote completamente")
+                            
+                            # Guardar progreso periódicamente
                             save_checkpoint(line_count)
-                            
-                            # Guardar URLs procesadas cada 10 lotes (5000 registros)
                             if batch_insertions % 10 == 0:
                                 save_processed_urls(processor.processed_urls)
                         
@@ -805,8 +921,8 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                                 logger.info(f"Checkpoint {pbar.n:,}: Uso de memoria: {memory_percent:.1f}%")
                             
                             pbar.set_description(
-                                f"Procesando posts (procesados: {stats['processed']}, "
-                                f"errores: {stats['errors']})"
+                                f"Procesando posts (encolados: {stats['queued_for_processing']}, "
+                                f"completados: {stats['processed']}, errores: {stats['errors']})"
                             )
                     
                     except json.JSONDecodeError:
@@ -817,6 +933,22 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                         logger.error(f"Error procesando línea {line_count}: {e}")
                         pbar.update(1)
                         continue
+                
+                # Procesar tareas restantes al final del archivo
+                if tasks_to_process:
+                    logger.info(f"Procesando lote final de {len(tasks_to_process)} tareas en paralelo...")
+                    
+                    # Procesar tareas finales en paralelo
+                    analysis_results = process_text_batch_parallel(analyzer, tasks_to_process)
+                    
+                    # Crear post_data a partir de los resultados
+                    for task_data, analysis in zip(tasks_to_process, analysis_results):
+                        try:
+                            post_data = processor.create_post_data_from_analysis(task_data, analysis)
+                            batch_data.append(post_data)
+                        except Exception as e:
+                            logger.error(f"Error creando post_data: {e}")
+                            processor.stats['errors'] += 1
                         
             except Exception as e:
                 logger.error(f"Error en el procesamiento con comando zstd: {e}")
@@ -868,7 +1000,8 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
     logger.info("=" * 60)
     logger.info(f"Tiempo total: {processing_time:.2f} segundos")
     logger.info(f"Posts leídos: {stats['total_read']:,}")
-    logger.info(f"Posts procesados: {stats['processed']:,}")
+    logger.info(f"Posts encolados para IA: {stats['queued_for_processing']:,}")
+    logger.info(f"Posts completados: {stats['processed']:,}")
     logger.info(f"Lotes insertados: {batch_insertions}")
     logger.info(f"Errores: {stats['errors']:,}")
     logger.info("")
@@ -910,7 +1043,6 @@ def save_checkpoint(line_number: int) -> None:
     try:
         with open(CHECKPOINT_FILE, 'w') as f:
             f.write(str(line_number))
-        logger.info(f"Checkpoint guardado en línea {line_number:,}")
     except Exception as e:
         logger.warning(f"No se pudo guardar checkpoint: {e}")
 
@@ -920,7 +1052,6 @@ def load_checkpoint() -> int:
         if os.path.exists(CHECKPOINT_FILE):
             with open(CHECKPOINT_FILE, 'r') as f:
                 line_number = int(f.read().strip())
-            logger.info(f"Checkpoint encontrado: reanudando desde línea {line_number:,}")
             return line_number
         return 0
     except Exception as e:
@@ -932,7 +1063,6 @@ def clear_checkpoint() -> None:
     try:
         if os.path.exists(CHECKPOINT_FILE):
             os.remove(CHECKPOINT_FILE)
-            logger.info("Checkpoint eliminado - procesamiento completado")
     except Exception as e:
         logger.warning(f"No se pudo eliminar checkpoint: {e}")
 
@@ -943,7 +1073,6 @@ def save_processed_urls(processed_urls: set) -> None:
         with open(PROCESSED_URLS_FILE, 'w', encoding='utf-8') as f:
             for url in processed_urls:
                 f.write(f"{url}\n")
-        logger.info(f"URLs procesadas guardadas: {len(processed_urls):,}")
     except Exception as e:
         logger.warning(f"No se pudieron guardar URLs procesadas: {e}")
 
@@ -954,7 +1083,6 @@ def load_processed_urls() -> set:
         if os.path.exists(PROCESSED_URLS_FILE):
             with open(PROCESSED_URLS_FILE, 'r', encoding='utf-8') as f:
                 processed_urls = {line.strip() for line in f if line.strip()}
-            logger.info(f"URLs procesadas cargadas: {len(processed_urls):,}")
         return processed_urls
     except Exception as e:
         logger.warning(f"No se pudieron cargar URLs procesadas: {e}")
@@ -965,7 +1093,6 @@ def clear_processed_urls() -> None:
     try:
         if os.path.exists(PROCESSED_URLS_FILE):
             os.remove(PROCESSED_URLS_FILE)
-            logger.info("Archivo de URLs procesadas eliminado - procesamiento completado")
     except Exception as e:
         logger.warning(f"No se pudo eliminar archivo de URLs procesadas: {e}")
 
