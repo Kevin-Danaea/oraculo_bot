@@ -736,9 +736,9 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
         logger.info("Usando parámetros para archivos con window size grande...")
         # Usamos subprocess para descomprimir streaming con zstd command line
         # --long=31: Permite window sizes hasta 2GB (2^31 bytes)
-        # --memory=2048MB: Límite de memoria para decodificación
+        # --memory=3072MB: Límite de memoria para decodificación
         process = subprocess.Popen(
-            ['zstd', '-d', '-c', '--memory=4096MB', filepath],
+            ['zstd', '-d', '-c', '--long=31', '--memory=3072MB', filepath],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
