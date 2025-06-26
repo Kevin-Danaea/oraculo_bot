@@ -622,6 +622,30 @@ def get_file_size(filepath: str) -> int:
     except OSError:
         return 0
 
+def get_optimal_settings(file_size_gb: float) -> tuple:
+    """
+    Determina configuraciones óptimas basadas en el tamaño del archivo.
+    Reddit usa compresión muy agresiva, así que somos ultra-conservadores.
+    
+    Args:
+        file_size_gb: Tamaño del archivo en GB
+        
+    Returns:
+        tuple: (chunk_size, window_size_power, description)
+    """
+    if file_size_gb <= 1.0:
+        # Archivos muy pequeños: velocidad normal
+        return (256 * 1024, 16, "velocidad normal")  # 256KB chunks, 64KB window
+    elif file_size_gb <= 3.0:
+        # Archivos pequeños: conservador
+        return (128 * 1024, 15, "conservador")  # 128KB chunks, 32KB window
+    elif file_size_gb <= 8.0:
+        # Archivos medianos: muy conservador
+        return (64 * 1024, 14, "muy conservador")  # 64KB chunks, 16KB window
+    else:
+        # Archivos grandes: extremadamente conservador
+        return (32 * 1024, 13, "extremadamente conservador")  # 32KB chunks, 8KB window
+
 
 def count_lines_in_zst(filepath: str) -> int:
     """Cuenta aproximadamente las líneas en el archivo .zst para la barra de progreso."""
@@ -656,6 +680,17 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
     """
     logger.info(f"Iniciando procesamiento de archivo: {filepath}")
     
+    # Determinar configuraciones óptimas basadas en el tamaño del archivo
+    file_size_bytes = get_file_size(filepath)
+    file_size_gb = file_size_bytes / (1024**3)
+    chunk_size, window_size_power, strategy_desc = get_optimal_settings(file_size_gb)
+    
+    logger.info(f"📊 ANÁLISIS DEL ARCHIVO:")
+    logger.info(f"   Tamaño: {file_size_gb:.2f} GB")
+    logger.info(f"   Estrategia: {strategy_desc}")
+    logger.info(f"   Chunk size: {chunk_size // 1024} KB")
+    logger.info(f"   Window size: {2**window_size_power // 1024} KB")
+    
     # Variables para procesamiento en lotes
     batch_data = []
     batch_insertions = 0
@@ -688,8 +723,11 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
         # Abrir y procesar archivo
         logger.info("Abriendo archivo para procesamiento...")
         with open(filepath, 'rb') as file:
-            logger.info("Inicializando descompresor zstandard...")
-            dctx = zstd.ZstdDecompressor()
+            logger.info("Inicializando descompresor zstandard con configuración dinámica...")
+            dctx = zstd.ZstdDecompressor(
+                max_window_size=2**window_size_power,  # Tamaño dinámico basado en archivo
+                format=zstd.FORMAT_ZSTD1  # Forzar formato estándar
+            )
             
             logger.info("Iniciando procesamiento línea por línea...")
             # Procesar con barra de progreso
@@ -699,7 +737,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                 # Leer el archivo descomprimido en chunks y procesar línea por línea
                 with dctx.stream_reader(file) as reader:
                     buffer = ""
-                    chunk_size = 1024 * 1024  # 1MB chunks
+                    # chunk_size ya se determinó dinámicamente basado en el tamaño del archivo
                     
                     while True:
                         try:
@@ -776,8 +814,15 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                                     continue
                         
                         except Exception as e:
-                            logger.error(f"Error leyendo chunk: {e}")
-                            break
+                            error_msg = str(e).lower()
+                            if "frame requires too much memory" in error_msg or "memory" in error_msg:
+                                logger.error(f"❌ ERROR DE MEMORIA ZSTD: {e}")
+                                logger.error("🔧 El archivo requiere demasiada memoria para descomprimir")
+                                logger.error("💡 Solución: Usar herramienta externa zstd o archivo más pequeño")
+                                raise MemoryError(f"Archivo demasiado grande para descomprimir: {filepath}")
+                            else:
+                                logger.error(f"Error leyendo chunk: {e}")
+                                break
                     
                     # Procesar última línea si queda algo en el buffer
                     if buffer.strip():
