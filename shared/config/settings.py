@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Configuración para notificaciones de Telegram
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+    
+    # Configuración para BigQuery
+    GOOGLE_CLOUD_PROJECT_ID: str = ""
 
 # Instancia global compartida
 settings = Settings() 

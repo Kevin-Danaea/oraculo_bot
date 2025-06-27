@@ -2,13 +2,15 @@
 """
 Procesador de datos históricos de Reddit con análisis de sentimiento.
 Procesa archivos .zst masivos de Reddit y los enriquece con análisis usando Gemini.
+Guarda directamente en BigQuery para análisis masivo de datos históricos.
 
 Uso:
     python procesador_historico.py path/to/reddit_data.zst
 
 Características:
 - Procesamiento en streaming (línea por línea) para eficiencia de memoria
-- Inserción en lotes para eficiencia de base de datos
+- Inserción en lotes directa en BigQuery para análisis masivo
+- Fallback a SQLite local en caso de problemas con BigQuery
 - Manejo robusto de rate limits de API con exponential backoff
 - Barra de progreso visual con tqdm
 """
@@ -27,6 +29,8 @@ from urllib.parse import urlparse
 import psutil
 
 from google import genai
+import pandas as pd
+import pandas_gbq
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
@@ -124,30 +128,48 @@ def process_text_batch_parallel(analyzer: 'SentimentAnalyzer', tasks_to_process:
     
     return results
 
-def check_database_connection() -> bool:
+def check_bigquery_connection() -> bool:
     """
-    Verifica que la conexión a la base de datos de Neon funcione correctamente.
+    Verifica que la conexión a BigQuery funcione correctamente.
     
     Returns:
         True si la conexión es exitosa, False en caso contrario
     """
-    logger.info("[CHECK] Verificando conexión a la base de datos...")
+    logger.info("[CHECK] Verificando conexión a BigQuery...")
     try:
-        engine = create_engine(settings.DATABASE_URL)
-        with engine.connect() as connection:
-            # Ejecutar una consulta simple para verificar la conexión
-            result = connection.execute(text("SELECT 1 as test_connection"))
-            row = result.fetchone()
+        # Verificar variables de entorno necesarias
+        project_id = settings.GOOGLE_CLOUD_PROJECT_ID
+        if not project_id:
+            logger.error("[ERROR] GOOGLE_CLOUD_PROJECT_ID no está configurada")
+            return False
+        
+        # Ejecutar una consulta simple para verificar la conexión
+        test_query = f"SELECT 1 as test_connection"
+        df_test = pandas_gbq.read_gbq(test_query, project_id=project_id)
+        
+        if df_test is not None and len(df_test) > 0 and df_test.iat[0, 0] == 1:
+            logger.info("[OK] Conexión a BigQuery verificada exitosamente")
             
-            if row and row[0] == 1:
-                logger.info("[OK] Conexión a la base de datos verificada exitosamente")
+            # Verificar que existe la tabla de destino
+            table_check_query = f"""
+            SELECT COUNT(*) as table_exists
+            FROM `{project_id}.oraculo_data.INFORMATION_SCHEMA.TABLES`
+            WHERE table_name = 'noticias_historicas'
+            """
+            
+            df_table = pandas_gbq.read_gbq(table_check_query, project_id=project_id)
+            if df_table is not None and len(df_table) > 0 and df_table.iat[0, 0] > 0:
+                logger.info("[OK] Tabla 'noticias_historicas' encontrada en BigQuery")
                 return True
             else:
-                logger.error("[ERROR] La consulta de prueba no devolvió el resultado esperado")
+                logger.error("[ERROR] Tabla 'noticias_historicas' no encontrada en BigQuery")
                 return False
+        else:
+            logger.error("[ERROR] La consulta de prueba a BigQuery no devolvió el resultado esperado")
+            return False
                 
     except Exception as e:
-        logger.error(f"[ERROR] Error al conectar con la base de datos: {e}")
+        logger.error(f"[ERROR] Error al conectar con BigQuery: {e}")
         return False
 
 def check_gemini_api() -> bool:
@@ -648,18 +670,21 @@ class DatabaseManager:
     """Manejador de la base de datos con inserción en lotes y fallback a SQLite."""
     
     def __init__(self):
-        """Inicializa la conexión a la base de datos principal."""
+        """Inicializa la conexión a BigQuery y fallback SQLite."""
         try:
-            self.engine = create_engine(settings.DATABASE_URL)
-            Base.metadata.create_all(bind=self.engine)
-            Session = sessionmaker(bind=self.engine)
-            self.session = Session()
+            # Configurar BigQuery
+            self.project_id = settings.GOOGLE_CLOUD_PROJECT_ID
+            if not self.project_id:
+                raise ValueError("GOOGLE_CLOUD_PROJECT_ID no configurada")
+            
+            self.table_id = f"{self.project_id}.oraculo_data.noticias_historicas"
+            logger.info(f"[DATABASE] Configurado para BigQuery: {self.table_id}")
             
             # Inicializar base de datos SQLite de fallback
             self._init_fallback_db()
             
         except Exception as e:
-            logger.error(f"Error conectando a la base de datos principal: {e}")
+            logger.error(f"Error configurando DatabaseManager: {e}")
             raise
     
     def _init_fallback_db(self):
@@ -715,41 +740,47 @@ class DatabaseManager:
     
     def insert_batch(self, batch_data: List[Dict[str, Any]]) -> bool:
         """
-        Inserta un lote de datos en la base de datos con reintentos y fallback.
+        Inserta un lote de datos en BigQuery con reintentos y fallback.
         
         Args:
             batch_data: Lista de diccionarios con datos de posts
             
         Returns:
-            True si la inserción fue exitosa (en BD principal o fallback)
+            True si la inserción fue exitosa (en BigQuery o fallback)
         """
-        # Intentar inserción en base de datos principal con manejo de duplicados
+        # Intentar inserción en BigQuery
         for attempt in range(DB_INSERT_RETRIES):
             try:
-                # Usar raw SQL con ON CONFLICT para PostgreSQL
-                from sqlalchemy import text
+                # Convertir a DataFrame para pandas_gbq
+                df = pd.DataFrame(batch_data)
                 
-                insert_sql = """
-                INSERT INTO noticias (source, headline, url, published_at, sentiment_score, primary_emotion, news_category)
-                VALUES (:source, :headline, :url, :published_at, :sentiment_score, :primary_emotion, :news_category)
-                ON CONFLICT (url) DO UPDATE SET
-                    headline = CASE 
-                        WHEN LENGTH(EXCLUDED.headline) > LENGTH(noticias.headline) THEN EXCLUDED.headline
-                        ELSE noticias.headline
-                    END,
-                    sentiment_score = EXCLUDED.sentiment_score,
-                    primary_emotion = EXCLUDED.primary_emotion,
-                    news_category = EXCLUDED.news_category
-                """
+                # Renombrar columnas para que coincidan con BigQuery si es necesario
+                # BigQuery es sensible a mayúsculas/minúsculas
+                df = df.rename(columns={
+                    'source': 'source',
+                    'headline': 'headline', 
+                    'url': 'url',
+                    'published_at': 'published_at',
+                    'sentiment_score': 'sentiment_score',
+                    'primary_emotion': 'primary_emotion',
+                    'news_category': 'news_category'
+                })
                 
-                self.session.execute(text(insert_sql), batch_data)
-                self.session.commit()
-                logger.info(f"Lote de {len(batch_data)} registros insertado exitosamente en BD principal (duplicados actualizados si son mejores)")
+                # Insertar en BigQuery con manejo de duplicados
+                pandas_gbq.to_gbq(
+                    df,
+                    destination_table='oraculo_data.noticias_historicas',
+                    project_id=self.project_id,
+                    if_exists='append',  # Agregar nuevos registros
+                    progress_bar=False,
+                    chunksize=len(batch_data)  # Insertar todo el lote de una vez
+                )
+                
+                logger.info(f"Lote de {len(batch_data)} registros insertado exitosamente en BigQuery")
                 return True
                 
             except Exception as e:
-                logger.warning(f"Error en intento {attempt + 1}/{DB_INSERT_RETRIES} de inserción en BD principal: {e}")
-                self.session.rollback()
+                logger.warning(f"Error en intento {attempt + 1}/{DB_INSERT_RETRIES} de inserción en BigQuery: {e}")
                 
                 # Si no es el último intento, esperar antes de reintentar
                 if attempt < DB_INSERT_RETRIES - 1:
@@ -758,7 +789,7 @@ class DatabaseManager:
                     time.sleep(wait_time)
         
         # Si llegamos aquí, todos los intentos fallaron
-        logger.error(f"[ERROR] Falló la inserción en BD principal después de {DB_INSERT_RETRIES} intentos")
+        logger.error(f"[ERROR] Falló la inserción en BigQuery después de {DB_INSERT_RETRIES} intentos")
         
         # Intentar fallback a SQLite
         logger.warning("[RETRY] Intentando guardar en base de datos de fallback...")
@@ -770,9 +801,6 @@ class DatabaseManager:
     
     def close(self):
         """Cierra las conexiones a las bases de datos."""
-        if self.session:
-            self.session.close()
-            
         if hasattr(self, 'fallback_session') and self.fallback_session:
             self.fallback_session.close()
 
@@ -903,7 +931,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                                 if success:
                                     batch_insertions += 1
                                 else:
-                                    logger.error("Falló inserción de lote completamente")
+                                    logger.error("Falló inserción de lote en BigQuery y fallback")
                             
                             # Guardar progreso periódicamente
                             save_checkpoint(line_count)
@@ -971,7 +999,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
             if success:
                 batch_insertions += 1
             else:
-                logger.error("Falló inserción del lote final")
+                logger.error("Falló inserción del lote final en BigQuery y fallback")
         
         # Guardar URLs procesadas antes de limpiar
         save_processed_urls(processor.processed_urls)
@@ -1013,7 +1041,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
             logger.warning("[WARNING] ATENCIÓN: Se utilizó base de datos de fallback SQLite")
             logger.warning(f"   Archivo: {FALLBACK_DB_PATH}")
             logger.warning(f"   Tamaño: {file_size / (1024*1024):.2f} MB")
-            logger.warning("   Recuerda migrar estos datos a la BD principal cuando sea posible")
+            logger.warning("   Recuerda migrar estos datos a BigQuery cuando sea posible")
         else:
             logger.info("[OK] No se requirió usar la base de datos de fallback")
     else:
@@ -1149,8 +1177,8 @@ def main():
         logger.error("GOOGLE_API_KEY no configurada en el archivo .env")
         sys.exit(1)
     
-    if not settings.DATABASE_URL:
-        logger.error("DATABASE_URL no configurada en el archivo .env")
+    if not settings.GOOGLE_CLOUD_PROJECT_ID:
+        logger.error("GOOGLE_CLOUD_PROJECT_ID no configurada en el archivo .env")
         sys.exit(1)
     
     # CHEQUEOS PREVIOS AL INICIO (Pre-flight Checks)
@@ -1158,9 +1186,9 @@ def main():
     logger.info("REALIZANDO CHEQUEOS PREVIOS")
     logger.info("=" * 60)
     
-    # Chequeo 1: Verificar conexión a la base de datos
-    if not check_database_connection():
-        logger.error("[ERROR] Fallo en chequeo de base de datos. Terminando script.")
+    # Chequeo 1: Verificar conexión a BigQuery
+    if not check_bigquery_connection():
+        logger.error("[ERROR] Fallo en chequeo de BigQuery. Terminando script.")
         sys.exit(1)
     
     # Chequeo 2: Verificar API de Gemini
