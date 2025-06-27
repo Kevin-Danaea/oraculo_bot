@@ -1,5 +1,7 @@
 # 🔮 Oráculo Cripto Bot V2.5 - Sistema de Trading Inteligente
 
+> **🆕 ACTUALIZACIÓN V2.5**: News Service potenciado con 25 subreddits, posts de comunidad, 500 noticias/ciclo y filtros de calidad avanzados
+
 Un ecosistema avanzado de **microservicios** para **trading automatizado** con **Grid Bot inteligente**, **análisis de noticias crypto** y **control total desde Telegram**.
 
 ## 🎯 Características Principales
@@ -11,9 +13,13 @@ Un ecosistema avanzado de **microservicios** para **trading automatizado** con *
 - **⏸️ Modo Standby**: Inicio manual tras reinicio para mayor seguridad
 - **🎮 Control Total**: Gestión completa desde Telegram
 
-### 📰 **Análisis de Noticias Automático**
-- **Recolección**: 9 subreddits cada 4 horas
-- **IA Integrada**: Análisis de sentimientos con Google Gemini
+### 📰 **Análisis de Noticias Automático V2.5**
+- **Recolección Ampliada**: 25 subreddits cada hora (9x más cobertura)
+- **Contenido Dual**: Noticias externas + Posts de comunidad
+- **Filtros Inteligentes**: Engagement mínimo (score ≥6) para posts de calidad
+- **Dominios Confiables**: 25 fuentes de noticias verificadas
+- **IA Potenciada**: 500 noticias/ciclo con Google Gemini (8x más capacidad)
+- **Análisis Completo**: Sentiment score, emoción primaria y categorización
 - **Background Jobs**: Procesamiento automático 24/7
 
 ### 🎯 **Hype Radar - Detector de Tendencias**
@@ -118,6 +124,71 @@ Al Reiniciar: NO inicia trading automáticamente
 Limpia:       Órdenes huérfanas de sesiones anteriores  
 Notifica:     Estado y acciones tomadas
 Activación:   Solo manual con /start_bot
+```
+
+## 📰 News Service V2.5 - Funcionalidades
+
+### 🔍 **Recolección Inteligente de Contenido**
+
+#### 📱 Subreddits Monitoreados (25 total)
+```
+Principales: CryptoCurrency, Bitcoin, ethereum, ethtrader, defi
+Trading:     CryptoMarkets, CryptoCurrencyTrading, altcoin, btc  
+Comunidad:   dogecoin, litecoin, ripple, cardano, CryptoNews
+Exchanges:   binance, Coinbase, Crypto_com
+Trending:    CryptoMoonShots, cryptomoonshots, SatoshiStreetBets
+Variantes:   bitcoin, Ethereum, DeFi (case-sensitive coverage)
+```
+
+#### 🌐 Dominios de Noticias Confiables (25 total)
+```
+Crypto Tier 1: coindesk.com, cointelegraph.com, decrypt.co
+Finance Tier 1: bloomberg.com, reuters.com, wsj.com, ft.com
+Tech & News:    forbes.com, cnbc.com, techcrunch.com
+Exchanges:      coinbase.com, kraken.com, crypto.com, binance.com
+Specialized:    theblockcrypto.com, cryptoslate.com, beincrypto.com
+```
+
+### 🧠 **Filtros de Calidad Aplicados**
+
+#### 🚫 Pipeline de Filtros
+```
+1. Calidad Básica    → Elimina [deleted], [removed], stickied posts
+2. Engagement Mínimo → Score ≥ 6 (retención de audiencia)
+3. Contenido Válido  → Noticias: dominios confiables | Posts: >150 chars
+4. Anti-Duplicados   → Previene reprocesamiento de URLs
+```
+
+#### 📊 Tipos de Contenido Procesado
+```
+📰 Noticias Externas:
+   - Enlaces de dominios verificados
+   - Solo títulos (headlines)
+   - Fuente: "Reddit r/Bitcoin (coindesk.com)"
+
+💬 Posts de Comunidad:
+   - Self-posts con contenido sustancial (>150 chars)
+   - Título + contenido combinado para análisis
+   - Engagement mínimo validado
+   - Fuente: "Reddit r/CryptoCurrency (Community Post)"
+```
+
+### 🤖 **Análisis IA con Google Gemini**
+
+#### 📈 Capacidad de Procesamiento
+```
+Límite por Ciclo: 500 noticias (8x incremento vs V2.0)
+Frecuencia:       Cada 4 horas
+Rate Limiting:    2 segundos entre análisis
+Throughput:       ~2,000 noticias procesadas por día
+```
+
+#### 🧠 Análisis Multidimensional
+```
+Sentiment Score:   -1.0 a +1.0 (cuantitativo)
+Primary Emotion:   Euforia, Optimismo, Neutral, Incertidumbre, Miedo
+News Category:     Regulación, Tecnología/Adopción, Mercado/Trading, 
+                   Seguridad, Macroeconomía
 ```
 
 ## 🎮 Comandos de Telegram

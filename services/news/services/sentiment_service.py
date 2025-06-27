@@ -40,6 +40,8 @@ def analyze_sentiment_text(text: str) -> Dict[str, Any]:
         }
 
     prompt = f"""
+    Actúa como un analista cuantitativo de sentimiento, especializado en el mercado de criptomonedas. Tu tarea es evaluar el siguiente texto y devolver un análisis estructurado.
+
     Analiza el siguiente titular de noticias sobre criptomonedas y devuelve ÚNICAMENTE un JSON válido con la siguiente estructura:
     
     {{
@@ -160,7 +162,7 @@ def analyze_sentiment(db: Session) -> Dict[str, Any]:
         # Buscar noticias sin análisis de sentimiento
         noticias_sin_analizar = db.query(models.Noticia).filter(
             models.Noticia.sentiment_score == None
-        ).limit(60).all()  # Limitamos a 60 por ciclo para no exceder cuotas de API
+        ).limit(500).all()  # Procesamos hasta 500 noticias por ciclo para mayor throughput
         
         if not noticias_sin_analizar:
             return {
@@ -169,7 +171,7 @@ def analyze_sentiment(db: Session) -> Dict[str, Any]:
                 "analyzed_posts": 0
             }
 
-        logger.info(f"Analizando {len(noticias_sin_analizar)} noticias...")
+        logger.info(f"🧠 Iniciando análisis IA con Gemini: {len(noticias_sin_analizar)} noticias en cola (máx. 500/ciclo)...")
         analyzed_count = 0
         
         for noticia in noticias_sin_analizar:
@@ -183,7 +185,7 @@ def analyze_sentiment(db: Session) -> Dict[str, Any]:
                 noticia.news_category = analysis_result["news_category"]
                 
                 analyzed_count += 1
-                logger.info(f"📊 Análisis completado: '{noticia.headline[:50]}...' → Score: {analysis_result['sentiment_score']:.2f}, Emoción: {analysis_result['primary_emotion']}, Categoría: {analysis_result['news_category']}")
+                logger.info(f"📊 [{analyzed_count}/{len(noticias_sin_analizar)}] '{noticia.headline[:50]}...' → Score: {analysis_result['sentiment_score']:.2f}, Emoción: {analysis_result['primary_emotion']}, Categoría: {analysis_result['news_category']}")
                 
             except Exception as e:
                 logger.error(f"Error analizando noticia {noticia.id}: {e}")
@@ -193,7 +195,7 @@ def analyze_sentiment(db: Session) -> Dict[str, Any]:
         
         return {
             "success": True,
-            "message": f"Análisis de sentimiento completado. {analyzed_count} noticias procesadas.",
+            "message": f"✅ Análisis IA completado: {analyzed_count} noticias procesadas con Gemini (noticias + posts de comunidad).",
             "analyzed_posts": analyzed_count
         }
         
