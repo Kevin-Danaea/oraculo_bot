@@ -16,3 +16,5 @@ zstandard
 tqdm
 pandas
 psutil
+pandas-gbq
+google-cloud-bigquery
