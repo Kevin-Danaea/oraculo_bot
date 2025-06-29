@@ -140,7 +140,7 @@ def main():
     show_current_status()
     
     # Directorio de archivos
-    submissions_dir = r'C:\Users\USER\Downloads\reddit\submissions'
+    submissions_dir = r'C:\Users\USER\OneDrive\Documents\Proyectos\trading_crypto\Datasets\reddit\submissions'
     
     # Verificar que el directorio existe
     if not os.path.exists(submissions_dir):

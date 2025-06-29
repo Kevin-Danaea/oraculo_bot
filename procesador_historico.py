@@ -40,7 +40,7 @@ from shared.config.settings import settings
 from shared.database.models import Base
 
 # Configuración del script
-BATCH_SIZE = 500  # Tamaño del lote para inserción en BD
+BATCH_SIZE = 10000  # Tamaño del lote para inserción en BigQuery (optimizado para BigQuery)
 PARALLEL_BATCH_SIZE = 1000  # Tamaño del lote para procesamiento paralelo de IA
 MAX_WORKERS = 15  # Número máximo de hilos para procesamiento concurrente (ajustado para rate limit)
 MAX_RETRIES = 5   # Máximo número de reintentos para API
@@ -714,8 +714,6 @@ class DatabaseManager:
             
         try:
             # Usar raw SQL con INSERT OR IGNORE para SQLite
-            from sqlalchemy import text
-            
             insert_sql = """
             INSERT INTO noticias (source, headline, url, published_at, sentiment_score, primary_emotion, news_category)
             VALUES (:source, :headline, :url, :published_at, :sentiment_score, :primary_emotion, :news_category)
@@ -731,7 +729,7 @@ class DatabaseManager:
             
             self.fallback_session.execute(text(insert_sql), batch_data)
             self.fallback_session.commit()
-            logger.warning(f"[FALLBACK] Lote de {len(batch_data)} registros guardado en SQLite local (duplicados actualizados si son mejores)")
+            logger.warning(f"[FALLBACK] Lote de {len(batch_data):,} registros guardado en SQLite local (duplicados actualizados si son mejores)")
             return True
         except Exception as e:
             logger.error(f"Error insertando en base de datos de fallback: {e}")
@@ -772,11 +770,11 @@ class DatabaseManager:
                     destination_table='oraculo_data.noticias_historicas',
                     project_id=self.project_id,
                     if_exists='append',  # Agregar nuevos registros
-                    progress_bar=False,
-                    chunksize=len(batch_data)  # Insertar todo el lote de una vez
+                    progress_bar=False
+                    # chunksize removido: pandas_gbq usa automáticamente load_parquet para mejor rendimiento
                 )
                 
-                logger.info(f"Lote de {len(batch_data)} registros insertado exitosamente en BigQuery")
+                logger.info(f"✅ Lote de {len(batch_data):,} registros insertado exitosamente en BigQuery")
                 return True
                 
             except Exception as e:
@@ -833,6 +831,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
     logger.info(f"   Tamaño: {file_size_gb:.2f} GB")
     logger.info(f"   Estrategia: Comando externo zstd con streaming")
     logger.info(f"   Procesamiento: Línea por línea sin pre-carga")
+    logger.info(f"   Lote BigQuery: {BATCH_SIZE:,} registros (optimizado para BigQuery)")
     logger.info(f"   Parámetros: --long=31 (window hasta 2GB), --memory=2048MB")
     
     # Variables para procesamiento en lotes
@@ -930,8 +929,9 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
                                 success = db_manager.insert_batch(current_batch)
                                 if success:
                                     batch_insertions += 1
+                                    logger.info(f"📦 Lote #{batch_insertions} insertado: {len(current_batch):,} registros → BigQuery")
                                 else:
-                                    logger.error("Falló inserción de lote en BigQuery y fallback")
+                                    logger.error(f"❌ Falló inserción de lote #{batch_insertions + 1} ({len(current_batch):,} registros) en BigQuery y fallback")
                             
                             # Guardar progreso periódicamente
                             save_checkpoint(line_count)
@@ -998,8 +998,9 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
             success = db_manager.insert_batch(batch_data)
             if success:
                 batch_insertions += 1
+                logger.info(f"📦 Lote final #{batch_insertions} insertado: {len(batch_data):,} registros → BigQuery")
             else:
-                logger.error("Falló inserción del lote final en BigQuery y fallback")
+                logger.error(f"❌ Falló inserción del lote final ({len(batch_data):,} registros) en BigQuery y fallback")
         
         # Guardar URLs procesadas antes de limpiar
         save_processed_urls(processor.processed_urls)
@@ -1030,7 +1031,7 @@ def process_reddit_file(filepath: str) -> Dict[str, Any]:
     logger.info(f"Posts leídos: {stats['total_read']:,}")
     logger.info(f"Posts encolados para IA: {stats['queued_for_processing']:,}")
     logger.info(f"Posts completados: {stats['processed']:,}")
-    logger.info(f"Lotes insertados: {batch_insertions}")
+    logger.info(f"Lotes BigQuery: {batch_insertions} lotes de hasta {BATCH_SIZE:,} registros")
     logger.info(f"Errores: {stats['errors']:,}")
     logger.info("")
     
