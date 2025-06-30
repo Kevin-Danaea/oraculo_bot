@@ -26,7 +26,7 @@ def get_grid_bot_config():
     except ImportError as e:
         logger.warning(f"⚠️ No se pudo importar configuración dinámica: {e}")
         # Fallback a configuración por defecto según el modo
-        from services.grid.main import MODO_PRODUCTIVO
+        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
         
         if not MODO_PRODUCTIVO:
             # Configuración fija para sandbox
@@ -123,7 +123,7 @@ def check_cerebro_status():
     Esta función se ejecuta periódicamente para asegurar sincronización.
     """
     try:
-        from services.grid.main import estado_cerebro
+        from services.grid.core.cerebro_integration import estado_cerebro
         
         decision_actual = estado_cerebro.get('decision', 'No disponible')
         fuente = estado_cerebro.get('fuente', 'No disponible')

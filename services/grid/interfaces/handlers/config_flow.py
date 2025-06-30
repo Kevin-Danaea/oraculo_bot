@@ -89,7 +89,7 @@ class ConfigFlowHandler(BaseHandler):
             bot.set_conversation_state(chat_id, "config_capital_input", state['data'])
             
             # Mostrar siguiente paso
-            from services.grid.main import MODO_PRODUCTIVO
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
             
             if not MODO_PRODUCTIVO:  # Modo Sandbox
                 message = f"✅ <b>Par seleccionado:</b> {selected_pair}\n\n"
@@ -148,7 +148,7 @@ class ConfigFlowHandler(BaseHandler):
             optimal_config = self.calculate_optimal_config(pair, capital)
             
             # Mostrar configuración final con parámetros fijos
-            from services.grid.main import MODO_PRODUCTIVO
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
             
             if not MODO_PRODUCTIVO:  # Modo Sandbox
                 message = f"🟡 <b>MODO SANDBOX - CONFIGURACIÓN FINAL</b>\n\n"
@@ -210,7 +210,7 @@ class ConfigFlowHandler(BaseHandler):
                 if self.save_user_config(chat_id, config_data):
                     bot.clear_conversation_state(chat_id)
                     
-                    from services.grid.main import obtener_configuracion_trading
+                    from services.grid.core.cerebro_integration import obtener_configuracion_trading
                     trading_config = obtener_configuracion_trading()
                     
                     modo_icon = "🟡" if trading_config['modo'] == 'SANDBOX' else "🟢"

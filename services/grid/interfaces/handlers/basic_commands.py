@@ -73,7 +73,7 @@ Información del Cerebro:
 """
             
             # Verificar estado actual y modo
-            from services.grid.main import obtener_configuracion_trading
+            from services.grid.core.cerebro_integration import obtener_configuracion_trading
             trading_config = obtener_configuracion_trading()
             modo_icon = "🟡" if trading_config['modo'] == 'SANDBOX' else "🟢"
             
@@ -96,7 +96,8 @@ Información del Cerebro:
             message += "/config - Configurar bot (solo par + capital)\n"
             message += "/start_bot - Iniciar trading inteligente\n"
             message += "/stop_bot - Detener bot\n"
-            message += "/status - Estado completo (bot + cerebro)\n\n"
+            message += "/status - Estado completo (bot + cerebro)\n"
+            message += "/balance - Ver balance actual y P&L\n\n"
             message += "🔄 Control de modo trading:\n"
             message += "/modo_productivo - Cambiar a dinero real ⚠️\n"
             message += "/modo_sandbox - Cambiar a simulación ✅\n"
@@ -144,7 +145,7 @@ Información del Cerebro:
                     bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
                     
                     try:
-                        from services.grid.main import consultar_estado_inicial_cerebro
+                        from services.grid.core.cerebro_integration import consultar_estado_inicial_cerebro
                         import asyncio
                         
                         # Crear event loop para la consulta asíncrona
@@ -315,7 +316,7 @@ Información del Cerebro:
             
             # Obtener estado del cerebro y modo de trading
             try:
-                from services.grid.main import estado_cerebro, obtener_configuracion_trading
+                from services.grid.core.cerebro_integration import estado_cerebro, obtener_configuracion_trading
                 cerebro_estado = estado_cerebro
                 config_trading = obtener_configuracion_trading()
             except ImportError:
@@ -413,7 +414,7 @@ Usa /config para configurar el bot
         Comando /modo_productivo: Cambia a modo productivo (trading real)
         """
         try:
-            from services.grid.main import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
             from services.grid.schedulers.grid_scheduler import get_grid_bot_status, stop_grid_bot_manual, start_grid_bot_manual
 
             bot_status = get_grid_bot_status()
@@ -467,7 +468,7 @@ Todas las operaciones afectarán tu cuenta real.
                     bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
                     
                     try:
-                        from services.grid.main import consultar_estado_inicial_cerebro
+                        from services.grid.core.cerebro_integration import consultar_estado_inicial_cerebro
                         import asyncio
                         
                         # Crear event loop para la consulta asíncrona
@@ -566,7 +567,7 @@ Todas las operaciones afectarán tu cuenta real.
         Comando /modo_sandbox: Cambia a modo sandbox (paper trading)
         """
         try:
-            from services.grid.main import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
             from services.grid.schedulers.grid_scheduler import get_grid_bot_status, stop_grid_bot_manual, start_grid_bot_manual
 
             bot_status = get_grid_bot_status()
@@ -620,7 +621,7 @@ No se usa dinero real.
                     bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
                     
                     try:
-                        from services.grid.main import consultar_estado_inicial_cerebro
+                        from services.grid.core.cerebro_integration import consultar_estado_inicial_cerebro
                         import asyncio
                         
                         # Crear event loop para la consulta asíncrona
@@ -711,7 +712,7 @@ No se usa dinero real.
         Comando /estado_cerebro: Muestra estado detallado del cerebro
         """
         try:
-            from services.grid.main import estado_cerebro
+            from services.grid.core.cerebro_integration import estado_cerebro
             
             message = f"""
 🧠 ESTADO DETALLADO DEL CEREBRO
@@ -744,7 +745,7 @@ No se usa dinero real.
         Comando /modo_actual: Muestra el modo de trading actual
         """
         try:
-            from services.grid.main import obtener_configuracion_trading
+            from services.grid.core.cerebro_integration import obtener_configuracion_trading
             
             config = obtener_configuracion_trading()
             modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
@@ -775,7 +776,7 @@ No se usa dinero real.
         Comando /info_config: Muestra información sobre la configuración optimizada
         """
         try:
-            from services.grid.main import obtener_configuracion_trading
+            from services.grid.core.cerebro_integration import obtener_configuracion_trading
             
             config = obtener_configuracion_trading()
             modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
@@ -800,7 +801,7 @@ No se usa dinero real.
 
 {modo_icon} Modo actual: {config['modo']}
 
-💰 ¿Por qué ${capital_minimo} USDT mínimo?
+💰 ¿Por qué ${capital_minimo} USD
 • 30 niveles requieren diversificación
 • ~$25 USDT por nivel para cubrir comisiones
 • Comisiones Binance: 0.1% por trade
@@ -836,4 +837,81 @@ No se usa dinero real.
         except Exception as e:
             error_message = f"❌ Error al obtener info configuración: {str(e)}"
             bot.send_message(chat_id, error_message)
-            logger.error(f"❌ Error en handle_info_config_command: {e}") 
+            logger.error(f"❌ Error en handle_info_config_command: {e}")
+
+    def handle_balance_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /balance: Muestra el balance actual de la cuenta
+        """
+        try:
+            # Verificar configuración del usuario
+            user_config = self.get_user_config(chat_id)
+            if not user_config:
+                bot.send_message(chat_id, "⚠️ No tienes configuración guardada\n\nUsa /config para configurar el bot primero.")
+                return
+            
+            # Verificar que el bot esté ejecutándose para obtener balance real
+            from services.grid.schedulers.grid_scheduler import get_grid_bot_status
+            bot_status = get_grid_bot_status()
+            
+            if not bot_status['bot_running']:
+                bot.send_message(chat_id, "⚠️ El bot no está ejecutándose\n\nUsa /start_bot para iniciar el trading y poder ver el balance actual.")
+                return
+            
+            def get_balance_async():
+                try:
+                    # Obtener conexión al exchange
+                    from services.grid.core.config_manager import get_exchange_connection
+                    exchange = get_exchange_connection()
+                    
+                    # Obtener balance actual
+                    from shared.services.telegram_service import get_current_balance
+                    balance = get_current_balance(exchange, str(user_config.pair))
+                    
+                    # Calcular P&L
+                    initial_capital = user_config.total_capital
+                    total_pnl = balance['total_value'] - initial_capital
+                    
+                    try:
+                        total_pnl_percentage = (total_pnl / initial_capital) * 100
+                    except (TypeError, ZeroDivisionError):
+                        total_pnl_percentage = 0
+                    
+                    pnl_icon = "📈" if total_pnl >= 0 else "📉"
+                    
+                    # Crear mensaje
+                    message = f"""
+💰 <b>BALANCE ACTUAL</b>
+
+📊 <b>Par:</b> {user_config.pair}
+💵 <b>Capital inicial:</b> ${initial_capital:,.2f}
+
+💵 <b>USDT disponible:</b> ${balance['usdt']:.2f}
+🪙 <b>{balance['crypto_symbol']} disponible:</b> {balance['crypto']:.6f}
+💎 <b>Valor {balance['crypto_symbol']}:</b> ${balance['crypto_value']:.2f}
+📊 <b>Total actual:</b> ${balance['total_value']:.2f}
+
+{pnl_icon} <b>P&L Total:</b> ${total_pnl:.2f} ({total_pnl_percentage:.2f}%)
+
+💹 <b>Precio actual:</b> ${balance['current_price']:.2f}
+
+⏰ <i>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</i>
+"""
+                    
+                    bot.send_message(chat_id, message)
+                    logger.info(f"✅ Balance enviado a chat {chat_id}")
+                    
+                except Exception as e:
+                    error_message = f"❌ Error obteniendo balance: {str(e)}"
+                    bot.send_message(chat_id, error_message)
+                    logger.error(f"❌ Error en get_balance_async: {e}")
+            
+            # Ejecutar en hilo separado para no bloquear
+            import threading
+            threading.Thread(target=get_balance_async, daemon=True).start()
+            bot.send_message(chat_id, "⏳ Obteniendo balance actual...")
+            
+        except Exception as e:
+            error_message = f"❌ Error al obtener balance: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_balance_command: {e}") 

@@ -53,6 +53,7 @@ class GridTelegramInterface:
         self.bot.register_command("estado_cerebro", self.basic_handler.handle_estado_cerebro_command)
         self.bot.register_command("modo_actual", self.basic_handler.handle_modo_actual_command)
         self.bot.register_command("info_config", self.basic_handler.handle_info_config_command)
+        self.bot.register_command("balance", self.basic_handler.handle_balance_command)
         
         # Comandos de configuración
         self.bot.register_command("config", self.config_handler.handle_config_command)
@@ -159,6 +160,14 @@ class GridTelegramInterface:
     def handle_protections_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
         return self.advanced_handler.handle_protections_command(chat_id, message_text, bot)
+    
+    def handle_info_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Método legacy - delegado al handler correspondiente"""
+        return self.basic_handler.handle_info_config_command(chat_id, message_text, bot)
+    
+    def handle_balance_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+        """Método legacy - delegado al handler correspondiente"""
+        return self.basic_handler.handle_balance_command(chat_id, message_text, bot)
 
 
 def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
@@ -169,7 +178,7 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
     - SANDBOX: Configuración fija (1000 USDT, ETH/USDT, etc.) - NO consulta BD
     - PRODUCTIVO: Configuración personalizada desde la base de datos. Si no hay, la crea con mínimos.
     """
-    from services.grid.main import MODO_PRODUCTIVO
+    from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
     
     # CONFIGURACIÓN FIJA PARA MODO SANDBOX
     if not MODO_PRODUCTIVO:

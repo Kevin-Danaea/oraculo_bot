@@ -105,7 +105,7 @@ class BaseHandler:
         - Stop loss activo (trailing desactivado porque cerebro decide cuándo operar)
         - Capital mínimo considerando comisiones y seguridad
         """
-        from services.grid.main import MODO_PRODUCTIVO
+        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
         
         # PARÁMETROS ÓPTIMOS DEL BACKTESTING (FIJOS)
         grid_levels = 30  # Validado en backtesting

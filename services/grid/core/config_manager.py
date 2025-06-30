@@ -41,7 +41,7 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         # Importar aquí para evitar dependencia circular
-        from services.grid.main import MODO_PRODUCTIVO
+        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
         
         # Validar campos requeridos
         required_fields = ['pair', 'total_capital']
@@ -130,7 +130,7 @@ def get_exchange_connection() -> ccxt.Exchange:
     """
     try:
         # Importar aquí para evitar dependencia circular
-        from services.grid.main import MODO_PRODUCTIVO
+        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
         
         if MODO_PRODUCTIVO:
             # Modo productivo - usar credenciales reales

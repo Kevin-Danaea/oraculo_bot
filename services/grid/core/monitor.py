@@ -72,7 +72,7 @@ def check_and_process_filled_orders(exchange: ccxt.Exchange, active_orders: List
                 logger.info(f"✅ Trade ejecutado: {order_info['type']} {order_info['quantity']:.6f} a ${order_info['price']}")
                 
                 # Enviar notificación
-                send_grid_trade_notification(order_info, config)
+                send_grid_trade_notification(order_info, config, exchange)
                 
                 if order_info['type'] == 'buy':
                     # Crear orden de venta correspondiente
@@ -136,7 +136,7 @@ def monitor_grid_orders(exchange: ccxt.Exchange, active_orders: List[Dict[str, A
                 # Enviar resumen periódico
                 if cycle_count >= STATUS_REPORT_CYCLES:
                     if trades_in_period > 0:
-                        send_grid_hourly_summary(active_orders, config, trades_in_period)
+                        send_grid_hourly_summary(active_orders, config, trades_in_period, exchange)
                         logger.info(f"📊 Resumen enviado - Trades: {trades_in_period}, Órdenes activas: {len(active_orders)}")
                     
                     cycle_count = 0
