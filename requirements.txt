@@ -1,18 +1,55 @@
+# Dependencias core
 fastapi
 uvicorn[standard]
-SQLAlchemy
-APScheduler
 pydantic
 pydantic-settings
 python-dotenv
+python-multipart
+
+# Base de datos
+sqlalchemy
+psycopg2-binary
+alembic
+
+# HTTP cliente asíncrono para comunicación entre servicios
+httpx
 requests
 aiohttp
+
+# Criptografía y APIs
+ccxt
+
+# Telegram
+python-telegram-bot[all]
+
+# Análisis de datos
+pandas
+numpy
+
+# Scheduling y tareas
+schedule
+apscheduler
+
+# Logging y monitoreo
+colorama
+psutil
+tqdm
+
+# Dependencias para indicadores técnicos
+TA-Lib
+
+# Dependencias para backtesting y BigQuery
+pandas-gbq
+
+# Dependencias adicionales
 google-genai
 praw
-ccxt
 pytz
-psycopg2-binary
 zstandard
-tqdm
-pandas
-psutil
+
+# Herramientas de desarrollo
+ruff
+pylint
+
+matplotlib
+seaborn

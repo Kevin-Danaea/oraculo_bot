@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     DATABASE_URL: str = "sqlite:///./oraculo.db"  # Fallback por defecto
     
+    # Configuración de BigQuery
+    GOOGLE_CLOUD_PROJECT_ID: str = ""
+    
     # Configuración de Reddit API
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""
