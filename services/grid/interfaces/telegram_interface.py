@@ -190,7 +190,7 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
             'price_range_percent': 10.0,  # Validado en backtesting
             'stop_loss_percent': 5.0,
             'enable_stop_loss': True,
-            'enable_trailing_up': False,  # Desactivado: Cerebro decide cuándo operar
+            'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
             'modo': 'SANDBOX'
         }
     
@@ -262,7 +262,7 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
                 'price_range_percent': 10.0,  # Validado en backtesting
                 'stop_loss_percent': 5.0,
                 'enable_stop_loss': True,
-                'enable_trailing_up': False,  # Desactivado: Cerebro decide cuándo operar
+                'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
                 'modo': 'PRODUCTIVO'
             }
             
@@ -276,6 +276,6 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
             'price_range_percent': 10.0,  # Validado en backtesting
             'stop_loss_percent': 5.0,
             'enable_stop_loss': True,
-            'enable_trailing_up': False,  # Desactivado: Cerebro decide cuándo operar
+            'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
             'modo': 'PRODUCTIVO'
         } 

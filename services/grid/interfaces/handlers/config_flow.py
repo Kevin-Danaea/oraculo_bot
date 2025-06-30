@@ -174,7 +174,7 @@ class ConfigFlowHandler(BaseHandler):
             message += f"• <b>Niveles de grid:</b> 30 (optimizado por backtesting)\n"
             message += f"• <b>Rango de precios:</b> 10% (optimizado por backtesting)\n"
             message += f"• <b>Stop Loss:</b> {optimal_config['stop_loss_percent']}% (activo)\n"
-            message += f"• <b>Trailing Up:</b> Desactivado (Cerebro decide)\n\n"
+            message += f"• <b>Trailing Up:</b> ✅ Activo (Optimiza ganancias)\n\n"
             
             message += "🧠 <b>Integración con Cerebro:</b>\n"
             message += "• El cerebro decide cuándo operar (ADX + Volatilidad)\n"
@@ -223,7 +223,7 @@ class ConfigFlowHandler(BaseHandler):
                     message += f"• <b>Niveles:</b> {config_data['grid_levels']} (fijo, optimizado)\n"
                     message += f"• <b>Rango:</b> ±{config_data['price_range_percent']}% (fijo, optimizado)\n"
                     message += f"• <b>Stop Loss:</b> {config_data['stop_loss_percent']}% ✅\n"
-                    message += f"• <b>Trailing Up:</b> Desactivado (Cerebro decide) 🧠\n\n"
+                    message += f"• <b>Trailing Up:</b> ✅ Activo (Optimiza ganancias) 🧠\n\n"
                     
                     if trading_config['modo'] == 'SANDBOX':
                         message += "🟡 <b>Modo Sandbox:</b> Operaciones simuladas, sin riesgo\n"

@@ -234,7 +234,7 @@ Información del Cerebro:
                             message += f"📊 Rango: ±10% (óptimo validado)\n\n"
                             message += f"🛡️ Protecciones V2:\n"
                             message += f"• Stop-Loss: ✅ (5.0%)\n"
-                            message += f"• Trailing Up: ❌ (Cerebro decide)\n\n"
+                            message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
                             message += f"📈 Usa /status para monitorear el progreso."
                         bot.send_message(chat_id, message)
                     else:
@@ -414,7 +414,7 @@ Usa /config para configurar el bot
 
 ⚡ Protecciones Avanzadas:
 • Stop Loss: 🟢 Activo (5.0%)
-• Trailing Up: 🔴 Inactivo (Cerebro decide)
+• Trailing Up: 🟢 Activo (Optimiza ganancias)
 """
             
             # Agregar comandos disponibles
@@ -845,7 +845,7 @@ No se usa dinero real.
 • ADX < 30: Condiciones favorables
 • Volatilidad > 4%: Mercado activo
 • Stop-loss automático: 5% por defecto
-• Trailing: Desactivado (Cerebro decide)
+• Trailing Up: 🟢 Activo (Optimiza ganancias)
 
 {modo_icon} Modo actual: {config['modo']}
 

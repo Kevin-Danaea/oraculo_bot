@@ -102,7 +102,7 @@ class BaseHandler:
         PARÁMETROS ÓPTIMOS VALIDADOS:
         - 30 niveles de grid
         - 10% de rango de precios
-        - Stop loss activo (trailing desactivado porque cerebro decide cuándo operar)
+        - Stop loss activo (trailing activo para optimizar ganancias durante operación)
         - Capital mínimo considerando comisiones y seguridad
         """
         from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
@@ -142,7 +142,7 @@ class BaseHandler:
             'price_range_percent': price_range,
             'stop_loss_percent': stop_loss,
             'enable_stop_loss': True,  # Siempre activado por defecto
-            'enable_trailing_up': False,  # DESACTIVADO: Cerebro decide cuándo operar
+            'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
             'capital_minimo_sugerido': min_capital_required if MODO_PRODUCTIVO else None,
             'capital_minimo_por_nivel': capital_minimo_por_nivel,
             'modo_trading': 'SANDBOX' if not MODO_PRODUCTIVO else 'PRODUCTIVO'
