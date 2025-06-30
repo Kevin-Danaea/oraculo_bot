@@ -31,41 +31,41 @@ class BasicCommandsHandler(BaseHandler):
             bot.clear_conversation_state(chat_id)
             
             message = """
-🤖 **GRID BOT V3.0 - MODO AUTÓNOMO**
+🤖 GRID BOT V3.0 - MODO AUTÓNOMO
 
-🧠 **Nueva Arquitectura Inteligente:**
+🧠 Nueva Arquitectura Inteligente:
 • El Grid responde automáticamente a las decisiones del Cerebro
 • Monitoreo continuo cada 10 minutos
 • Activación/desactivación automática según condiciones del mercado
 
-📱 **Comandos Disponibles:**
+📱 Comandos Disponibles:
 
-**Configuración:**
+Configuración:
 • /config - Configurar parámetros del bot
 • /info_config - Ver configuración actual
 • /delete_config - Eliminar configuración
 
-**Control Manual:**
+Control Manual:
 • /start_bot - Iniciar trading manualmente (consulta al cerebro)
 • /stop_bot - Detener trading manualmente
 • /restart_bot - Reiniciar bot
 • /status - Estado actual del sistema
 
-**Modo de Trading:**
+Modo de Trading:
 • /modo_productivo - Cambiar a trading real
 • /modo_sandbox - Cambiar a paper trading
 • /modo_actual - Ver modo actual
 
-**Información del Cerebro:**
+Información del Cerebro:
 • /estado_cerebro - Ver análisis detallado del cerebro
 
-🔄 **Funcionamiento Autónomo:**
+🔄 Funcionamiento Autónomo:
 • El Cerebro analiza el mercado cada 2 horas
 • Si autoriza trading → Grid se activa automáticamente
 • Si recomienda pausar → Grid se detiene automáticamente
 • Notificaciones automáticas por Telegram
 
-💡 **Uso Recomendado:**
+💡 Uso Recomendado:
 1. Configura con /config
 2. El sistema funciona automáticamente
 3. Usa /status para monitorear
@@ -79,34 +79,34 @@ class BasicCommandsHandler(BaseHandler):
             
             scheduler = get_grid_scheduler()
             if scheduler and scheduler.running:
-                message += "🟢 <b>Estado Bot:</b> Ejecutándose\n"
+                message += "🟢 Estado Bot: Ejecutándose\n"
             else:
-                message += "🔴 <b>Estado Bot:</b> Detenido\n"
+                message += "🔴 Estado Bot: Detenido\n"
             
-            message += f"{modo_icon} <b>Modo Trading:</b> {trading_config['modo']}\n"
+            message += f"{modo_icon} Modo Trading: {trading_config['modo']}\n"
             
             # Verificar si tiene configuración guardada
             user_config = self.get_user_config(chat_id)
             if user_config:
-                message += f"⚙️ <b>Configuración:</b> {user_config.pair} con ${user_config.total_capital}\n"
+                message += f"⚙️ Configuración: {user_config.pair} con ${user_config.total_capital}\n"
             else:
-                message += "⚙️ <b>Configuración:</b> No configurado\n"
+                message += "⚙️ Configuración: No configurado\n"
             
-            message += "\n📋 <b>Comandos principales:</b>\n"
+            message += "\n📋 Comandos principales:\n"
             message += "/config - Configurar bot (solo par + capital)\n"
             message += "/start_bot - Iniciar trading inteligente\n"
             message += "/stop_bot - Detener bot\n"
             message += "/status - Estado completo (bot + cerebro)\n\n"
-            message += "🔄 <b>Control de modo trading:</b>\n"
+            message += "🔄 Control de modo trading:\n"
             message += "/modo_productivo - Cambiar a dinero real ⚠️\n"
             message += "/modo_sandbox - Cambiar a simulación ✅\n"
             message += "/modo_actual - Ver modo activo\n\n"
-            message += "🧠 <b>Estado del cerebro:</b>\n"
+            message += "🧠 Estado del cerebro:\n"
             message += "/estado_cerebro - Ver análisis del cerebro\n\n"
-            message += "🛡️ <b>Protecciones:</b>\n"
+            message += "🛡️ Protecciones:\n"
             message += "/protections - Ver estado stop-loss\n"
             message += "/set_stop_loss X - Configurar % stop-loss\n\n"
-            message += "📊 <b>Información:</b>\n"
+            message += "📊 Información:\n"
             message += "/info_config - Info sobre configuración optimizada\n"
             
             bot.send_message(chat_id, message)
@@ -120,7 +120,7 @@ class BasicCommandsHandler(BaseHandler):
             # Verificar configuración
             user_config = self.get_user_config(chat_id)
             if not user_config:
-                message = "⚠️ <b>No tienes configuración guardada</b>\n\n"
+                message = "⚠️ No tienes configuración guardada\n\n"
                 message += "Usa /config para configurar el bot primero."
                 bot.send_message(chat_id, message)
                 return
@@ -132,7 +132,7 @@ class BasicCommandsHandler(BaseHandler):
                 return
             
             if not bot_status['ready_to_start']:
-                message = "⚠️ <b>Servicio no está listo</b>\n\n"
+                message = "⚠️ Servicio no está listo\n\n"
                 message += "El scheduler no está activo. Contacta al administrador."
                 bot.send_message(chat_id, message)
                 return
@@ -168,7 +168,7 @@ class BasicCommandsHandler(BaseHandler):
                                 # Mostrar resultado del cerebro
                                 bot.send_message(
                                     chat_id, 
-                                    f"🧠 <b>Estado del Cerebro:</b>\n"
+                                    f"🧠 Estado del Cerebro:\n"
                                     f"• Decisión: {decision_cerebro}\n"
                                     f"• Razón: {resultado_cerebro.get('razon', 'No disponible')}\n"
                                     f"• {mensaje_cerebro}"
@@ -178,7 +178,7 @@ class BasicCommandsHandler(BaseHandler):
                                 if not resultado_cerebro.get('puede_operar', False):
                                     bot.send_message(
                                         chat_id,
-                                        "⚠️ <b>El Cerebro recomienda pausar el trading</b>\n\n"
+                                        "⚠️ El Cerebro recomienda pausar el trading\n\n"
                                         "¿Deseas continuar de todas formas?\n"
                                         "Responde 'SI' para continuar o 'NO' para cancelar."
                                     )
@@ -188,7 +188,7 @@ class BasicCommandsHandler(BaseHandler):
                             else:
                                 bot.send_message(
                                     chat_id,
-                                    f"⚠️ <b>Respuesta inesperada del Cerebro:</b> {resultado_cerebro}\n"
+                                    f"⚠️ Respuesta inesperada del Cerebro: {resultado_cerebro}\n"
                                     f"Continuando en modo standalone..."
                                 )
                             
@@ -198,7 +198,7 @@ class BasicCommandsHandler(BaseHandler):
                     except Exception as e:
                         bot.send_message(
                             chat_id,
-                            f"⚠️ <b>No se pudo consultar al Cerebro:</b> {str(e)}\n"
+                            f"⚠️ No se pudo consultar al Cerebro: {str(e)}\n"
                             f"Continuando en modo standalone..."
                         )
                     
@@ -207,18 +207,18 @@ class BasicCommandsHandler(BaseHandler):
                     success, result_message = start_grid_bot_manual()
                     
                     if success:
-                        message = f"🚀 <b>¡Grid Bot iniciado exitosamente!</b>\n\n"
-                        message += f"📊 <b>Trading:</b> {user_config.pair}\n"
-                        message += f"💰 <b>Capital:</b> ${user_config.total_capital} USDT\n"
-                        message += f"🎚️ <b>Niveles:</b> {user_config.grid_levels}\n"
-                        message += f"📊 <b>Rango:</b> ±{user_config.price_range_percent}%\n\n"
-                        message += f"🛡️ <b>Protecciones V2:</b>\n"
+                        message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
+                        message += f"📊 Trading: {user_config.pair}\n"
+                        message += f"💰 Capital: ${user_config.total_capital} USDT\n"
+                        message += f"🎚️ Niveles: {user_config.grid_levels}\n"
+                        message += f"📊 Rango: ±{user_config.price_range_percent}%\n\n"
+                        message += f"🛡️ Protecciones V2:\n"
                         message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
                         message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n\n"
                         message += f"📈 Usa /status para monitorear el progreso."
                         bot.send_message(chat_id, message)
                     else:
-                        bot.send_message(chat_id, f"❌ <b>Error iniciando bot:</b> {result_message}")
+                        bot.send_message(chat_id, f"❌ Error iniciando bot: {result_message}")
                         
                 except Exception as e:
                     self.send_error_message(bot, chat_id, "start_bot_async", e)
@@ -325,25 +325,25 @@ class BasicCommandsHandler(BaseHandler):
             # Crear mensaje de estado completo
             if user_config:
                 status_message = f"""
-🤖 **ESTADO DEL GRID BOT**
+🤖 ESTADO DEL GRID BOT
 
-📊 **Configuración Activa:**
+📊 Configuración Activa:
 • Par: {user_config.pair}
 • Capital: ${user_config.total_capital:,.2f}
 • Niveles: {user_config.grid_levels}
 • Rango: {user_config.price_range_percent}%
 
-🔄 **Estado del Sistema:**
+🔄 Estado del Sistema:
 • Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
 • Modo Trading: {config_trading.get('modo', 'No disponible')}
-• **Modo Operación: 🧠 AUTÓNOMO** (Responde a decisiones del Cerebro)
+• Modo Operación: 🧠 AUTÓNOMO (Responde a decisiones del Cerebro)
 
-🧠 **Estado del Cerebro:**
+🧠 Estado del Cerebro:
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
 • Fuente: {cerebro_estado.get('fuente', 'No disponible')}
 • Última actualización: {cerebro_estado.get('ultima_actualizacion', 'No disponible')}
 
-⚡ **Protecciones Avanzadas:**
+⚡ Protecciones Avanzadas:
 • Stop Loss: {'🟢 Activo' if getattr(user_config, 'enable_stop_loss', False) else '🔴 Inactivo'}
 • Trailing Up: {'🟢 Activo' if getattr(user_config, 'enable_trailing_up', False) else '🔴 Inactivo'}
 """
@@ -352,17 +352,17 @@ class BasicCommandsHandler(BaseHandler):
                     status_message += f"• Stop Loss %: {getattr(user_config, 'stop_loss_percent', 5.0)}%\n"
             else:
                 status_message = f"""
-🤖 **ESTADO DEL GRID BOT**
+🤖 ESTADO DEL GRID BOT
 
-⚠️ **Sin configuración activa**
+⚠️ Sin configuración activa
 Usa /config para configurar el bot
 
-🔄 **Estado del Sistema:**
+🔄 Estado del Sistema:
 • Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
 • Modo Trading: {config_trading.get('modo', 'No disponible')}
-• **Modo Operación: 🧠 AUTÓNOMO** (Responde a decisiones del Cerebro)
+• Modo Operación: 🧠 AUTÓNOMO (Responde a decisiones del Cerebro)
 
-🧠 **Estado del Cerebro:**
+🧠 Estado del Cerebro:
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
 • Fuente: {cerebro_estado.get('fuente', 'No disponible')}
 • Última actualización: {cerebro_estado.get('ultima_actualizacion', 'No disponible')}
@@ -371,7 +371,7 @@ Usa /config para configurar el bot
             # Agregar comandos disponibles
             status_message += """
 
-📝 **Comandos Nuevos:**
+📝 Comandos Nuevos:
 • /modo_productivo - Cambiar a trading real
 • /modo_sandbox - Cambiar a paper trading
 • /estado_cerebro - Ver estado detallado del cerebro
@@ -420,13 +420,13 @@ Usa /config para configurar el bot
             if MODO_PRODUCTIVO:
                 config = obtener_configuracion_trading()
                 message = f"""
-🟢 **YA EN MODO PRODUCTIVO**
+🟢 YA EN MODO PRODUCTIVO
 
 • Modo actual: {config['modo']}
 • Descripción: {config['descripcion']}
 • Estado: Activo
 
-⚠️ **ADVERTENCIA**: Trading con dinero real
+⚠️ ADVERTENCIA: Trading con dinero real
 """
                 bot.send_message(chat_id, message)
                 return
@@ -443,12 +443,12 @@ Usa /config para configurar el bot
             # Cambiar a modo productivo
             config = alternar_modo_trading()
             message = f"""
-🟢 **CAMBIADO A MODO PRODUCTIVO**
+🟢 CAMBIADO A MODO PRODUCTIVO
 
 • Nuevo modo: {config['modo']}
 • Descripción: {config['descripcion']}
 
-⚠️ **ADVERTENCIA IMPORTANTE**:
+⚠️ ADVERTENCIA IMPORTANTE:
 Ahora estás operando con DINERO REAL en Binance.
 Todas las operaciones afectarán tu cuenta real.
 
@@ -482,13 +482,13 @@ Todas las operaciones afectarán tu cuenta real.
             if not MODO_PRODUCTIVO:
                 config = obtener_configuracion_trading()
                 message = f"""
-🟡 **YA EN MODO SANDBOX**
+🟡 YA EN MODO SANDBOX
 
 • Modo actual: {config['modo']}
 • Descripción: {config['descripcion']}
 • Estado: Activo
 
-✅ **SEGURO**: Paper trading sin riesgo
+✅ SEGURO: Paper trading sin riesgo
 """
                 bot.send_message(chat_id, message)
                 return
@@ -505,12 +505,12 @@ Todas las operaciones afectarán tu cuenta real.
             # Cambiar a modo sandbox
             config = alternar_modo_trading()
             message = f"""
-🟡 **CAMBIADO A MODO SANDBOX**
+🟡 CAMBIADO A MODO SANDBOX
 
 • Nuevo modo: {config['modo']}
 • Descripción: {config['descripcion']}
 
-✅ **MODO SEGURO ACTIVADO**:
+✅ MODO SEGURO ACTIVADO:
 Todas las operaciones son simuladas.
 No se usa dinero real.
 
@@ -540,18 +540,18 @@ No se usa dinero real.
             from services.grid.main import estado_cerebro
             
             message = f"""
-🧠 **ESTADO DETALLADO DEL CEREBRO**
+🧠 ESTADO DETALLADO DEL CEREBRO
 
-📊 **Decisión Actual:**
+📊 Decisión Actual:
 • Acción: {estado_cerebro.get('decision', 'No disponible')}
 • Fuente: {estado_cerebro.get('fuente', 'No disponible')}
 • Última actualización: {estado_cerebro.get('ultima_actualizacion', 'No disponible')}
 
-🔄 **Significado de las decisiones:**
+🔄 Significado de las decisiones:
 • OPERAR_GRID: Condiciones favorables para trading
 • PAUSAR_GRID: Condiciones desfavorables, pausa recomendada
 
-📡 **Integración:**
+📡 Integración:
 • Cerebro monitorea mercado cada 2 horas
 • Notifica automáticamente al Grid
 • Análisis basado en ADX y volatilidad
@@ -576,12 +576,12 @@ No se usa dinero real.
             modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
             
             message = f"""
-{modo_icon} **MODO DE TRADING ACTUAL**
+{modo_icon} MODO DE TRADING ACTUAL
 
 • Modo: {config['modo']}
 • Descripción: {config['descripcion']}
 
-💡 **Comandos disponibles:**
+💡 Comandos disponibles:
 • /modo_productivo - Cambiar a trading real
 • /modo_sandbox - Cambiar a paper trading
 • /status - Estado completo del sistema
@@ -610,23 +610,23 @@ No se usa dinero real.
             capital_minimo = 30 * 25  # 750 USDT
             
             message = f"""
-📊 **CONFIGURACIÓN OPTIMIZADA v3.0**
+📊 CONFIGURACIÓN OPTIMIZADA v3.0
 
-🎯 **Parámetros actuales (FIJOS):**
+🎯 Parámetros actuales (FIJOS):
 • Niveles de grid: 30 (óptimo validado)
 • Rango de precios: 10% (óptimo validado)
 • Capital sandbox: $1000 USDT (fijo)
 • Capital productivo mínimo: ${capital_minimo} USDT
 
-🧠 **Integración con Cerebro:**
+🧠 Integración con Cerebro:
 • ADX < 30: Condiciones favorables
 • Volatilidad > 4%: Mercado activo
 • Stop-loss automático: 5% por defecto
 • Trailing: Desactivado (Cerebro decide)
 
-{modo_icon} **Modo actual: {config['modo']}**
+{modo_icon} Modo actual: {config['modo']}
 
-💰 **¿Por qué ${capital_minimo} USDT mínimo?**
+💰 ¿Por qué ${capital_minimo} USDT mínimo?
 • 30 niveles requieren diversificación
 • ~$25 USDT por nivel para cubrir comisiones
 • Comisiones Binance: 0.1% por trade
@@ -634,20 +634,20 @@ No se usa dinero real.
 • Fluctuaciones del 10% de rango
 • Liquidez para recompras
 
-🔄 **Evolución del sistema:**
+🔄 Evolución del sistema:
 
-📈 **VERSIÓN ACTUAL (v3.0):**
+📈 VERSIÓN ACTUAL (v3.0):
 • Parámetros fijos: 30 niveles, 10% rango
 • Cerebro decide: ¿Cuándo operar?
 • Configuración: Solo par + capital
 
-🚀 **VERSIÓN FUTURA (v4.0):**
+🚀 VERSIÓN FUTURA (v4.0):
 • Cerebro decide: ¿Cuándo operar?
 • Cerebro decide: ¿Cuántos niveles? (dinámico)
 • Cerebro decide: ¿Qué rango usar? (dinámico)
 • Configuración: Solo par + capital mínimo
 
-🧠 **Cerebro Inteligente Futuro:**
+🧠 Cerebro Inteligente Futuro:
 • Análisis de mercado en tiempo real
 • Selección dinámica de parámetros
 • Adaptación automática a condiciones

@@ -28,7 +28,7 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
     PARÁMETROS FIJOS (validados por backtesting):
     - 30 niveles de grid
     - 10% de rango de precios
-    - Solo se valida el capital mínimo necesario
+    - Solo se valida el capital mínimo necesario en modo productivo
     
     Args:
         config: Configuración cruda del bot
@@ -40,6 +40,9 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         ValueError: Si la configuración es inválida
     """
     try:
+        # Importar aquí para evitar dependencia circular
+        from services.grid.main import MODO_PRODUCTIVO
+        
         # Validar campos requeridos
         required_fields = ['pair', 'total_capital']
         for field in required_fields:
@@ -54,25 +57,31 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         grid_levels = 30  # Validado por backtesting
         price_range_percent = 10.0  # Validado por backtesting
         
-        # Validar capital mínimo necesario
+        # Validar capital mínimo necesario SOLO en modo productivo
         if total_capital <= 0:
             raise ValueError("El capital total debe ser mayor a 0")
         
-        # Calcular capital mínimo considerando comisiones y seguridad
-        # Estimación: cada nivel necesita ~$25-30 USDT para cubrir:
-        # - Comisiones de Binance (0.1% por trade)
-        # - Spread entre compra/venta
-        # - Fluctuaciones del 10% de rango
-        # - Liquidez para recompras
-        capital_minimo_por_nivel = 25  # USDT por nivel
-        capital_minimo_requerido = grid_levels * capital_minimo_por_nivel  # 30 * 25 = $750
-        
-        if total_capital < capital_minimo_requerido:
-            raise ValueError(
-                f"Capital insuficiente. Para {grid_levels} niveles con {price_range_percent}% de rango "
-                f"se requiere mínimo ${capital_minimo_requerido} USDT. "
-                f"Capital actual: ${total_capital} USDT"
-            )
+        if MODO_PRODUCTIVO:
+            # Calcular capital mínimo considerando comisiones y seguridad
+            # Estimación: cada nivel necesita ~$25-30 USDT para cubrir:
+            # - Comisiones de Binance (0.1% por trade)
+            # - Spread entre compra/venta
+            # - Fluctuaciones del 10% de rango
+            # - Liquidez para recompras
+            capital_minimo_por_nivel = 25  # USDT por nivel
+            capital_minimo_requerido = grid_levels * capital_minimo_por_nivel  # 30 * 25 = $750
+            
+            if total_capital < capital_minimo_requerido:
+                raise ValueError(
+                    f"Capital insuficiente. Para {grid_levels} niveles con {price_range_percent}% de rango "
+                    f"se requiere mínimo ${capital_minimo_requerido} USDT. "
+                    f"Capital actual: ${total_capital} USDT"
+                )
+        else:
+            # Modo sandbox - usar valores fijos
+            capital_minimo_por_nivel = 25  # Para cálculos internos
+            capital_minimo_requerido = 1000.0  # Capital fijo para sandbox
+            logger.info("🟡 Modo SANDBOX: Usando capital fijo de $1000 USDT")
         
         # Configuración temporal para calcular profit
         temp_config = {
@@ -94,7 +103,8 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
             'capital_minimo_requerido': capital_minimo_requerido
         }
         
-        logger.info(f"✅ Configuración validada con parámetros fijos:")
+        modo_desc = "PRODUCTIVO" if MODO_PRODUCTIVO else "SANDBOX"
+        logger.info(f"✅ Configuración validada con parámetros fijos ({modo_desc}):")
         logger.info(f"   📊 Par: {pair}")
         logger.info(f"   💰 Capital: ${total_capital} USDT")
         logger.info(f"   🎯 Niveles: {grid_levels} (fijo)")
@@ -110,7 +120,7 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_exchange_connection() -> ccxt.Exchange:
     """
-    Crea y valida conexión con Binance
+    Crea y valida conexión con Binance (productivo o sandbox según modo)
     
     Returns:
         Instancia configurada del exchange
@@ -119,18 +129,30 @@ def get_exchange_connection() -> ccxt.Exchange:
         ConnectionError: Si no se puede conectar
     """
     try:
-        # Validar credenciales
-        api_key = settings.BINANCE_API_KEY
-        api_secret = settings.BINANCE_API_SECRET
+        # Importar aquí para evitar dependencia circular
+        from services.grid.main import MODO_PRODUCTIVO
+        
+        if MODO_PRODUCTIVO:
+            # Modo productivo - usar credenciales reales
+            api_key = settings.BINANCE_API_KEY
+            api_secret = settings.BINANCE_API_SECRET
+            sandbox_mode = False
+            modo_desc = "PRODUCTIVO (dinero real)"
+        else:
+            # Modo sandbox - usar credenciales de paper trading
+            api_key = settings.PAPER_TRADING_API_KEY
+            api_secret = settings.PAPER_TRADING_SECRET_KEY
+            sandbox_mode = True
+            modo_desc = "SANDBOX (paper trading)"
         
         if not api_key or not api_secret:
-            raise ConnectionError("Las claves API de Binance no están configuradas")
+            raise ConnectionError(f"Las claves API de Binance para modo {modo_desc} no están configuradas")
         
         # Configurar exchange
         exchange = ccxt.binance({
             'apiKey': api_key,
             'secret': api_secret,
-            'sandbox': False,
+            'sandbox': sandbox_mode,
             'enableRateLimit': True,
             'timeout': 30000,  # 30 segundos timeout
             'rateLimit': 1200,  # ms entre requests
@@ -140,7 +162,7 @@ def get_exchange_connection() -> ccxt.Exchange:
         balance = exchange.fetch_balance()
         usdt_balance = balance.get('USDT', {}).get('free', 0)
         
-        logger.info(f"✅ Conexión con Binance establecida")
+        logger.info(f"✅ Conexión con Binance establecida - {modo_desc}")
         logger.info(f"💵 Balance USDT disponible: ${usdt_balance:.2f}")
         
         return exchange
