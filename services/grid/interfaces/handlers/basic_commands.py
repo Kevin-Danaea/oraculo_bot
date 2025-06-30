@@ -118,13 +118,20 @@ Información del Cerebro:
     def handle_start_bot_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /start_bot - V2 con modo manual"""
         try:
-            # Verificar configuración
-            user_config = self.get_user_config(chat_id)
-            if not user_config:
-                message = "⚠️ No tienes configuración guardada\n\n"
-                message += "Usa /config para configurar el bot primero."
-                bot.send_message(chat_id, message)
-                return
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+            
+            # LÓGICA DIFERENTE SEGÚN MODO
+            if MODO_PRODUCTIVO:
+                # MODO PRODUCTIVO: Requiere configuración guardada
+                user_config = self.get_user_config(chat_id)
+                if not user_config:
+                    message = "⚠️ No tienes configuración guardada\n\n"
+                    message += "Usa /config para configurar el bot primero."
+                    bot.send_message(chat_id, message)
+                    return
+            else:
+                # MODO SANDBOX: Usar configuración fija
+                user_config = None  # No necesitamos config de BD en sandbox
             
             # Verificar estado del bot
             bot_status = get_grid_bot_status()
@@ -208,15 +215,27 @@ Información del Cerebro:
                     success, result_message = start_grid_bot_manual()
                     
                     if success:
-                        message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
-                        message += f"📊 Trading: {user_config.pair}\n"
-                        message += f"💰 Capital: ${user_config.total_capital} USDT\n"
-                        message += f"🎚️ Niveles: {user_config.grid_levels}\n"
-                        message += f"📊 Rango: ±{user_config.price_range_percent}%\n\n"
-                        message += f"🛡️ Protecciones V2:\n"
-                        message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
-                        message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n\n"
-                        message += f"📈 Usa /status para monitorear el progreso."
+                        if MODO_PRODUCTIVO and user_config:
+                            message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
+                            message += f"📊 Trading: {user_config.pair}\n"
+                            message += f"💰 Capital: ${user_config.total_capital} USDT\n"
+                            message += f"🎚️ Niveles: {user_config.grid_levels}\n"
+                            message += f"📊 Rango: ±{user_config.price_range_percent}%\n\n"
+                            message += f"🛡️ Protecciones V2:\n"
+                            message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
+                            message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n\n"
+                            message += f"📈 Usa /status para monitorear el progreso."
+                        else:
+                            message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
+                            message += f"🟡 MODO SANDBOX (Paper Trading)\n\n"
+                            message += f"📊 Trading: ETH/USDT\n"
+                            message += f"💰 Capital: $1,000.00 USDT (fijo)\n"
+                            message += f"🎚️ Niveles: 30 (óptimo validado)\n"
+                            message += f"📊 Rango: ±10% (óptimo validado)\n\n"
+                            message += f"🛡️ Protecciones V2:\n"
+                            message += f"• Stop-Loss: ✅ (5.0%)\n"
+                            message += f"• Trailing Up: ❌ (Cerebro decide)\n\n"
+                            message += f"📈 Usa /status para monitorear el progreso."
                         bot.send_message(chat_id, message)
                     else:
                         bot.send_message(chat_id, f"❌ Error iniciando bot: {result_message}")
@@ -307,8 +326,7 @@ Información del Cerebro:
         Comando /status: Muestra estado del grid bot con integración Cerebro
         """
         try:
-            # Obtener configuración del usuario
-            user_config = self.get_user_config(chat_id)
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO, estado_cerebro, obtener_configuracion_trading
             
             # Obtener estado del scheduler
             scheduler = get_grid_scheduler()
@@ -316,16 +334,19 @@ Información del Cerebro:
             
             # Obtener estado del cerebro y modo de trading
             try:
-                from services.grid.core.cerebro_integration import estado_cerebro, obtener_configuracion_trading
                 cerebro_estado = estado_cerebro
                 config_trading = obtener_configuracion_trading()
             except ImportError:
                 cerebro_estado = {"decision": "No disponible", "fuente": "error"}
                 config_trading = {"modo": "No disponible"}
             
-            # Crear mensaje de estado completo
-            if user_config:
-                status_message = f"""
+            # LÓGICA DIFERENTE SEGÚN MODO
+            if MODO_PRODUCTIVO:
+                # MODO PRODUCTIVO: Requiere configuración guardada
+                user_config = self.get_user_config(chat_id)
+                
+                if user_config:
+                    status_message = f"""
 🤖 ESTADO DEL GRID BOT
 
 📊 Configuración Activa:
@@ -348,11 +369,11 @@ Información del Cerebro:
 • Stop Loss: {'🟢 Activo' if getattr(user_config, 'enable_stop_loss', False) else '🔴 Inactivo'}
 • Trailing Up: {'🟢 Activo' if getattr(user_config, 'enable_trailing_up', False) else '🔴 Inactivo'}
 """
-                
-                if hasattr(user_config, 'enable_stop_loss') and getattr(user_config, 'enable_stop_loss', False):
-                    status_message += f"• Stop Loss %: {getattr(user_config, 'stop_loss_percent', 5.0)}%\n"
-            else:
-                status_message = f"""
+                    
+                    if hasattr(user_config, 'enable_stop_loss') and getattr(user_config, 'enable_stop_loss', False):
+                        status_message += f"• Stop Loss %: {getattr(user_config, 'stop_loss_percent', 5.0)}%\n"
+                else:
+                    status_message = f"""
 🤖 ESTADO DEL GRID BOT
 
 ⚠️ Sin configuración activa
@@ -367,6 +388,33 @@ Usa /config para configurar el bot
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
 • Fuente: {cerebro_estado.get('fuente', 'No disponible')}
 • Última actualización: {cerebro_estado.get('ultima_actualizacion', 'No disponible')}
+"""
+            else:
+                # MODO SANDBOX: Usar configuración fija
+                status_message = f"""
+🤖 ESTADO DEL GRID BOT
+
+🟡 MODO SANDBOX (Paper Trading)
+
+📊 Configuración Fija:
+• Par: ETH/USDT
+• Capital: $1,000.00 USDT (fijo)
+• Niveles: 30 (óptimo validado)
+• Rango: 10% (óptimo validado)
+
+🔄 Estado del Sistema:
+• Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
+• Modo Trading: {config_trading.get('modo', 'No disponible')}
+• Modo Operación: 🧠 AUTÓNOMO (Responde a decisiones del Cerebro)
+
+🧠 Estado del Cerebro:
+• Decisión: {cerebro_estado.get('decision', 'No disponible')}
+• Fuente: {cerebro_estado.get('fuente', 'No disponible')}
+• Última actualización: {cerebro_estado.get('ultima_actualizacion', 'No disponible')}
+
+⚡ Protecciones Avanzadas:
+• Stop Loss: 🟢 Activo (5.0%)
+• Trailing Up: 🔴 Inactivo (Cerebro decide)
 """
             
             # Agregar comandos disponibles
@@ -844,19 +892,34 @@ No se usa dinero real.
         Comando /balance: Muestra el balance actual de la cuenta
         """
         try:
-            # Verificar configuración del usuario
-            user_config = self.get_user_config(chat_id)
-            if not user_config:
-                bot.send_message(chat_id, "⚠️ No tienes configuración guardada\n\nUsa /config para configurar el bot primero.")
-                return
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
             
-            # Verificar que el bot esté ejecutándose para obtener balance real
-            from services.grid.schedulers.grid_scheduler import get_grid_bot_status
-            bot_status = get_grid_bot_status()
-            
-            if not bot_status['bot_running']:
-                bot.send_message(chat_id, "⚠️ El bot no está ejecutándose\n\nUsa /start_bot para iniciar el trading y poder ver el balance actual.")
-                return
+            # LÓGICA DIFERENTE SEGÚN MODO
+            if MODO_PRODUCTIVO:
+                # MODO PRODUCTIVO: Requiere configuración guardada
+                user_config = self.get_user_config(chat_id)
+                if not user_config:
+                    bot.send_message(chat_id, "⚠️ No tienes configuración guardada\n\nUsa /config para configurar el bot primero.")
+                    return
+                
+                # Verificar que el bot esté ejecutándose para obtener balance real
+                from services.grid.schedulers.grid_scheduler import get_grid_bot_status
+                bot_status = get_grid_bot_status()
+                
+                if not bot_status['bot_running']:
+                    bot.send_message(chat_id, "⚠️ El bot no está ejecutándose\n\nUsa /start_bot para iniciar el trading y poder ver el balance actual.")
+                    return
+                
+                pair = str(user_config.pair)
+                initial_capital = user_config.total_capital
+                
+            else:
+                # MODO SANDBOX: Usar configuración fija
+                pair = 'ETH/USDT'
+                initial_capital = 1000.0  # Capital fijo para sandbox
+                
+                # En sandbox, no necesitamos verificar si el bot está corriendo
+                # porque siempre podemos consultar el balance de paper trading
             
             def get_balance_async():
                 try:
@@ -866,10 +929,9 @@ No se usa dinero real.
                     
                     # Obtener balance actual
                     from shared.services.telegram_service import get_current_balance
-                    balance = get_current_balance(exchange, str(user_config.pair))
+                    balance = get_current_balance(exchange, pair)
                     
                     # Calcular P&L
-                    initial_capital = user_config.total_capital
                     total_pnl = balance['total_value'] - initial_capital
                     
                     try:
@@ -879,11 +941,15 @@ No se usa dinero real.
                     
                     pnl_icon = "📈" if total_pnl >= 0 else "📉"
                     
-                    # Crear mensaje
+                    # Crear mensaje con información del modo
+                    modo_info = "🟢 PRODUCTIVO" if MODO_PRODUCTIVO else "🟡 SANDBOX (Paper Trading)"
+                    
                     message = f"""
 💰 <b>BALANCE ACTUAL</b>
 
-📊 <b>Par:</b> {user_config.pair}
+{modo_info}
+
+📊 <b>Par:</b> {pair}
 💵 <b>Capital inicial:</b> ${initial_capital:,.2f}
 
 💵 <b>USDT disponible:</b> ${balance['usdt']:.2f}
@@ -899,7 +965,7 @@ No se usa dinero real.
 """
                     
                     bot.send_message(chat_id, message)
-                    logger.info(f"✅ Balance enviado a chat {chat_id}")
+                    logger.info(f"✅ Balance enviado a chat {chat_id} (modo: {'PRODUCTIVO' if MODO_PRODUCTIVO else 'SANDBOX'})")
                     
                 except Exception as e:
                     error_message = f"❌ Error obteniendo balance: {str(e)}"
