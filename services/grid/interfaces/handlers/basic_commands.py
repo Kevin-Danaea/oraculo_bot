@@ -739,7 +739,7 @@ No se usa dinero real.
                         message += f"📊 Rango: ±10% (fijo)\n\n"
                         message += f"🛡️ Protecciones:\n"
                         message += f"• Stop-Loss: ✅ (5%)\n"
-                        message += f"• Trailing Up: ❌ (Cerebro decide)\n\n"
+                        message += f"• Trailing Up: ✅ Activo (Optimiza ganancias)\n\n"
                         message += f"📈 Usa /status para monitorear el progreso."
                         bot.send_message(chat_id, message)
                     else:
