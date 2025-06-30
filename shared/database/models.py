@@ -161,6 +161,7 @@ class EstrategiaStatus(Base):
     # Umbrales utilizados
     umbral_adx = Column(Float, nullable=True)
     umbral_volatilidad = Column(Float, nullable=True)
+    umbral_sentimiento = Column(Float, nullable=True)
     
     # Timestamps
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -180,6 +181,7 @@ class EstrategiaStatus(Base):
             'sentiment_promedio': self.sentiment_promedio,
             'umbral_adx': self.umbral_adx,
             'umbral_volatilidad': self.umbral_volatilidad,
+            'umbral_sentimiento': self.umbral_sentimiento,
             'timestamp': self.timestamp.isoformat() if self.timestamp is not None else None,
             'created_at': self.created_at.isoformat() if self.created_at is not None else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at is not None else None

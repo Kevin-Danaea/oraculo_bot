@@ -24,8 +24,11 @@ load_dotenv()
 
 CONFIGURACIONES_OPTIMAS: Dict[str, Dict[str, Any]] = {
     "ETH/USDT": {
-        "UMBRAL_ADX": 30,
-        "UMBRAL_VOLATILIDAD": 0.040
+        "UMBRAL_ADX": 30,                    # ADX debe ser menor a 30
+        "UMBRAL_VOLATILIDAD": 0.035,         # Ancho de Banda de Bollinger debe ser mayor a 0.035
+        "UMBRAL_SENTIMIENTO": -0.20,         # Media Móvil de Sentimiento (7d) debe ser mayor a -0.20
+        "GRID_RANGO": 10.0,                  # Rango de precios: 10.0%
+        "GRID_NIVELES": 30                   # Niveles de grid: 30
     }
 }
 

@@ -83,10 +83,10 @@ def fetch_and_prepare_data(
         # Calcular indicadores técnicos
         df = calculate_technical_indicators(df)
         
-        # Simular sentiment_score (promedio de 7 días)
-        # En producción, esto vendría de la base de datos de noticias
-        df['sentiment_score'] = generate_mock_sentiment(len(df))
-        df['sentiment_ma7'] = df['sentiment_score'].rolling(window=7).mean()
+        # Obtener datos reales de sentimiento de la base de datos
+        df = fetch_sentiment_data(df)
+        
+        logger.info(f"✅ Indicadores calculados para {symbol}")
         
         logger.info(f"✅ Indicadores calculados para {symbol}")
         
@@ -139,6 +139,109 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         logger.error(f"Error calculando indicadores técnicos: {e}")
         return df
+
+def fetch_sentiment_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Obtiene datos reales de sentimiento de la base de datos de Neon.
+    
+    Args:
+        df: DataFrame con datos de precios
+        
+    Returns:
+        DataFrame con datos de sentimiento agregados
+    """
+    try:
+        from shared.database.session import SessionLocal
+        from sqlalchemy import text
+        
+        logger.info("📰 Obteniendo datos de sentimiento de la base de datos...")
+        
+        # Crear sesión de base de datos
+        db = SessionLocal()
+        
+        try:
+            # Obtener fechas de inicio y fin del DataFrame
+            start_date = df.index.min()
+            end_date = df.index.max()
+            
+            # Query para obtener datos de sentimiento
+            query = text("""
+                SELECT 
+                    DATE(CAST(published_at AS TIMESTAMP)) as fecha,
+                    AVG(sentiment_score) as sentiment_daily,
+                    COUNT(*) as num_noticias
+                FROM noticias 
+                WHERE CAST(published_at AS TIMESTAMP) BETWEEN :start_date AND :end_date
+                GROUP BY DATE(CAST(published_at AS TIMESTAMP))
+                ORDER BY fecha
+            """)
+            
+            result = db.execute(query, {
+                'start_date': start_date,
+                'end_date': end_date
+            })
+            
+            sentiment_data = result.fetchall()
+            
+            if sentiment_data:
+                # Crear DataFrame de sentimiento
+                sentiment_df = pd.DataFrame(sentiment_data, columns=['fecha', 'sentiment_daily', 'num_noticias'])  # type: ignore
+                sentiment_df['fecha'] = pd.to_datetime(sentiment_df['fecha'])
+                sentiment_df['date_only'] = sentiment_df['fecha'].dt.date
+                
+                # Preparar DataFrame de precios con columna auxiliar de fecha
+                df_reset = df.reset_index()
+                df_reset['date_only'] = df_reset['timestamp'].dt.date if 'timestamp' in df_reset.columns else df_reset['index'].dt.date
+                
+                # Hacer merge por fecha (date_only)
+                df_merged = pd.merge(
+                    df_reset,
+                    sentiment_df[['date_only', 'sentiment_daily', 'num_noticias']],
+                    on='date_only',
+                    how='left'
+                )
+                
+                # Rellenar valores faltantes
+                df_merged['sentiment_daily'] = df_merged['sentiment_daily'].fillna(0.0)
+                df_merged['num_noticias'] = df_merged['num_noticias'].fillna(0)
+                
+                # Calcular media móvil de 7 días
+                df_merged['sentiment_ma7'] = df_merged['sentiment_daily'].rolling(window=7, min_periods=1).mean()
+                df_merged['sentiment_ma7'] = df_merged['sentiment_ma7'].fillna(0.0)
+                
+                # Restaurar índice original de precios
+                if 'timestamp' in df_merged.columns:
+                    df_merged.set_index('timestamp', inplace=True)
+                elif 'index' in df_merged.columns:
+                    df_merged.set_index('index', inplace=True)
+                # Eliminar columna auxiliar
+                if 'date_only' in df_merged.columns:
+                    df_merged.drop(['date_only'], axis=1, inplace=True)
+                
+                logger.info(f"✅ Datos de sentimiento obtenidos: {len(sentiment_data)} días con noticias")
+                logger.info(f"📊 Rango de sentimiento: {df_merged['sentiment_daily'].min():.3f} a {df_merged['sentiment_daily'].max():.3f}")
+                logger.info(f"📈 Media móvil actual: {df_merged['sentiment_ma7'].iloc[-1]:.3f}")
+                
+                return df_merged
+            else:
+                logger.warning("⚠️ No se encontraron datos de sentimiento en la base de datos")
+                # Crear columnas vacías
+                df['sentiment_daily'] = 0.0
+                df['sentiment_ma7'] = 0.0
+                df['num_noticias'] = 0
+                return df
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo datos de sentimiento: {e}")
+        # En caso de error, crear columnas con valores por defecto
+        df['sentiment_daily'] = 0.0
+        df['sentiment_ma7'] = 0.0
+        df['num_noticias'] = 0
+        return df
+
 
 def generate_mock_sentiment(length: int) -> pd.Series:
     """

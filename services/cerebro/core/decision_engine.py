@@ -87,6 +87,7 @@ class DecisionEngine:
             decision = self._tomar_decision(
                 adx_actual=adx_actual,
                 volatilidad_actual=volatilidad_actual,
+                sentiment_promedio=sentiment_promedio,
                 config=config
             )
             
@@ -95,6 +96,7 @@ class DecisionEngine:
                 decision=decision,
                 adx_actual=adx_actual,
                 volatilidad_actual=volatilidad_actual,
+                sentiment_promedio=sentiment_promedio,
                 config=config
             )
             
@@ -141,14 +143,16 @@ class DecisionEngine:
         self, 
         adx_actual: float, 
         volatilidad_actual: float, 
+        sentiment_promedio: Optional[float],
         config: Dict[str, Any]
     ) -> str:
         """
-        Aplica la lógica de decisión basada en los umbrales.
+        Aplica la lógica de decisión basada en los umbrales (Receta Maestra).
         
         Args:
             adx_actual: Valor actual del ADX
             volatilidad_actual: Valor actual de la volatilidad (bb_width)
+            sentiment_promedio: Valor actual de la media móvil de sentimiento (7d)
             config: Configuración del par
             
         Returns:
@@ -156,12 +160,21 @@ class DecisionEngine:
         """
         umbral_adx = config['UMBRAL_ADX']
         umbral_volatilidad = config['UMBRAL_VOLATILIDAD']
+        umbral_sentimiento = config['UMBRAL_SENTIMIENTO']
         
-        # Lógica de decisión: AMBAS condiciones deben cumplirse
+        # Lógica de decisión: TODAS las condiciones deben cumplirse
         condicion_adx = adx_actual < umbral_adx
         condicion_volatilidad = volatilidad_actual > umbral_volatilidad
         
-        if condicion_adx and condicion_volatilidad:
+        # Manejar caso donde no hay datos de sentimiento
+        if sentiment_promedio is not None:
+            condicion_sentimiento = sentiment_promedio > umbral_sentimiento
+        else:
+            # Si no hay datos de sentimiento, usar valor por defecto neutro
+            condicion_sentimiento = True
+            logger.warning("⚠️ No hay datos de sentimiento disponibles, usando valor por defecto")
+        
+        if condicion_adx and condicion_volatilidad and condicion_sentimiento:
             return "OPERAR_GRID"
         else:
             return "PAUSAR_GRID"
@@ -171,6 +184,7 @@ class DecisionEngine:
         decision: str, 
         adx_actual: float, 
         volatilidad_actual: float, 
+        sentiment_promedio: Optional[float],
         config: Dict[str, Any]
     ) -> str:
         """
@@ -180,6 +194,7 @@ class DecisionEngine:
             decision: Decisión tomada
             adx_actual: Valor actual del ADX
             volatilidad_actual: Valor actual de la volatilidad
+            sentiment_promedio: Valor actual de la media móvil de sentimiento
             config: Configuración del par
             
         Returns:
@@ -187,18 +202,29 @@ class DecisionEngine:
         """
         umbral_adx = config['UMBRAL_ADX']
         umbral_volatilidad = config['UMBRAL_VOLATILIDAD']
+        umbral_sentimiento = config['UMBRAL_SENTIMIENTO']
         
         condicion_adx = adx_actual < umbral_adx
         condicion_volatilidad = volatilidad_actual > umbral_volatilidad
         
+        # Manejar sentimiento
+        if sentiment_promedio is not None:
+            condicion_sentimiento = sentiment_promedio > umbral_sentimiento
+            sentiment_text = f"Sentimiento ({sentiment_promedio:.3f}) > {umbral_sentimiento}"
+        else:
+            condicion_sentimiento = True
+            sentiment_text = "Sentimiento (N/A) - usando valor por defecto"
+        
         if decision == "OPERAR_GRID":
-            return f"ADX ({adx_actual:.1f}) < {umbral_adx} Y Volatilidad ({volatilidad_actual:.3f}) > {umbral_volatilidad}"
+            return f"ADX ({adx_actual:.1f}) < {umbral_adx} Y Volatilidad ({volatilidad_actual:.3f}) > {umbral_volatilidad} Y {sentiment_text}"
         else:
             razones = []
             if not condicion_adx:
                 razones.append(f"ADX ({adx_actual:.1f}) >= {umbral_adx}")
             if not condicion_volatilidad:
                 razones.append(f"Volatilidad ({volatilidad_actual:.3f}) <= {umbral_volatilidad}")
+            if not condicion_sentimiento:
+                razones.append(f"Sentimiento ({sentiment_promedio:.3f}) <= {umbral_sentimiento}")
             
             return "Condiciones no cumplidas: " + " Y ".join(razones)
     
@@ -245,6 +271,7 @@ class DecisionEngine:
                 existing.sentiment_promedio = sentiment_promedio  # type: ignore
                 existing.umbral_adx = config['UMBRAL_ADX']  # type: ignore
                 existing.umbral_volatilidad = config['UMBRAL_VOLATILIDAD']  # type: ignore
+                existing.umbral_sentimiento = config['UMBRAL_SENTIMIENTO']  # type: ignore
                 existing.timestamp = timestamp_now  # type: ignore
                 existing.updated_at = timestamp_now  # type: ignore
                 
@@ -261,6 +288,7 @@ class DecisionEngine:
                     sentiment_promedio=sentiment_promedio,
                     umbral_adx=config['UMBRAL_ADX'],
                     umbral_volatilidad=config['UMBRAL_VOLATILIDAD'],
+                    umbral_sentimiento=config['UMBRAL_SENTIMIENTO'],
                     timestamp=timestamp_now
                 )
                 db.add(nuevo_estado)
