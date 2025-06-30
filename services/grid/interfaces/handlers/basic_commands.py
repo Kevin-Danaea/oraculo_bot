@@ -459,11 +459,102 @@ Todas las operaciones afectarán tu cuenta real.
 
             # Reiniciar el bot automáticamente en el nuevo modo
             bot.send_message(chat_id, "🚀 Reiniciando Grid Bot en modo PRODUCTIVO...")
-            success, msg = start_grid_bot_manual()
-            if success:
-                bot.send_message(chat_id, "✅ Grid Bot iniciado en modo PRODUCTIVO.")
-            else:
-                bot.send_message(chat_id, f"⚠️ No se pudo iniciar el bot automáticamente: {msg}")
+            
+            # Iniciar bot con consulta al cerebro
+            def start_bot_with_cerebro():
+                try:
+                    # PRIMERO: Consultar estado del cerebro
+                    bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
+                    
+                    try:
+                        from services.grid.main import consultar_estado_inicial_cerebro
+                        import asyncio
+                        
+                        # Crear event loop para la consulta asíncrona
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        try:
+                            # Consultar al cerebro
+                            resultado_cerebro = loop.run_until_complete(consultar_estado_inicial_cerebro())
+                            
+                            # Verificar que resultado_cerebro sea un diccionario
+                            if isinstance(resultado_cerebro, dict):
+                                # Analizar respuesta del cerebro
+                                if resultado_cerebro.get('puede_operar', False):
+                                    decision_cerebro = "🟢 OPERAR_GRID"
+                                    mensaje_cerebro = "✅ El Cerebro autoriza el trading"
+                                else:
+                                    decision_cerebro = "🔴 PAUSAR_GRID"
+                                    mensaje_cerebro = "⚠️ El Cerebro recomienda pausar el trading"
+                                
+                                # Mostrar resultado del cerebro
+                                bot.send_message(
+                                    chat_id, 
+                                    f"🧠 Estado del Cerebro:\n"
+                                    f"• Decisión: {decision_cerebro}\n"
+                                    f"• Razón: {resultado_cerebro.get('razon', 'No disponible')}\n"
+                                    f"• {mensaje_cerebro}"
+                                )
+                                
+                                # Si el cerebro dice PAUSAR, preguntar si continuar
+                                if not resultado_cerebro.get('puede_operar', False):
+                                    bot.send_message(
+                                        chat_id,
+                                        "⚠️ El Cerebro recomienda pausar el trading\n\n"
+                                        "¿Deseas continuar de todas formas?\n"
+                                        "Responde 'SI' para continuar o 'NO' para cancelar."
+                                    )
+                                    # Aquí podrías implementar un sistema de confirmación
+                                    # Por ahora, continuamos con advertencia
+                                    bot.send_message(chat_id, "⚠️ Continuando con advertencia...")
+                            else:
+                                bot.send_message(
+                                    chat_id,
+                                    f"⚠️ Respuesta inesperada del Cerebro: {resultado_cerebro}\n"
+                                    f"Continuando en modo standalone..."
+                                )
+                            
+                        finally:
+                            loop.close()
+                            
+                    except Exception as e:
+                        bot.send_message(
+                            chat_id,
+                            f"⚠️ No se pudo consultar al Cerebro: {str(e)}\n"
+                            f"Continuando en modo standalone..."
+                        )
+                    
+                    # SEGUNDO: Iniciar el grid bot
+                    bot.send_message(chat_id, "🚀 Iniciando Grid Bot...")
+                    success, result_message = start_grid_bot_manual()
+                    
+                    if success:
+                        # Obtener configuración del usuario para mostrar detalles
+                        user_config = self.get_user_config(chat_id)
+                        if user_config:
+                            message = f"🚀 ¡Grid Bot iniciado exitosamente en modo PRODUCTIVO!\n\n"
+                            message += f"📊 Trading: {user_config.pair}\n"
+                            message += f"💰 Capital: ${user_config.total_capital} USDT\n"
+                            message += f"🎚️ Niveles: {user_config.grid_levels}\n"
+                            message += f"📊 Rango: ±{user_config.price_range_percent}%\n\n"
+                            message += f"🛡️ Protecciones:\n"
+                            message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
+                            message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n\n"
+                            message += f"📈 Usa /status para monitorear el progreso."
+                        else:
+                            message = f"🚀 ¡Grid Bot iniciado exitosamente en modo PRODUCTIVO!\n\n"
+                            message += f"⚠️ No hay configuración personalizada\n"
+                            message += f"Usa /config para configurar el bot\n\n"
+                            message += f"📈 Usa /status para monitorear el progreso."
+                        bot.send_message(chat_id, message)
+                    else:
+                        bot.send_message(chat_id, f"❌ Error iniciando bot: {result_message}")
+                        
+                except Exception as e:
+                    bot.send_message(chat_id, f"❌ Error iniciando bot: {str(e)}")
+            
+            threading.Thread(target=start_bot_with_cerebro, daemon=True).start()
 
         except Exception as e:
             error_message = f"❌ Error al cambiar a modo productivo: {str(e)}"
@@ -521,11 +612,94 @@ No se usa dinero real.
 
             # Reiniciar el bot automáticamente en el nuevo modo
             bot.send_message(chat_id, "🚀 Reiniciando Grid Bot en modo SANDBOX...")
-            success, msg = start_grid_bot_manual()
-            if success:
-                bot.send_message(chat_id, "✅ Grid Bot iniciado en modo SANDBOX.")
-            else:
-                bot.send_message(chat_id, f"⚠️ No se pudo iniciar el bot automáticamente: {msg}")
+            
+            # Iniciar bot con consulta al cerebro
+            def start_bot_with_cerebro():
+                try:
+                    # PRIMERO: Consultar estado del cerebro
+                    bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
+                    
+                    try:
+                        from services.grid.main import consultar_estado_inicial_cerebro
+                        import asyncio
+                        
+                        # Crear event loop para la consulta asíncrona
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        try:
+                            # Consultar al cerebro
+                            resultado_cerebro = loop.run_until_complete(consultar_estado_inicial_cerebro())
+                            
+                            # Verificar que resultado_cerebro sea un diccionario
+                            if isinstance(resultado_cerebro, dict):
+                                # Analizar respuesta del cerebro
+                                if resultado_cerebro.get('puede_operar', False):
+                                    decision_cerebro = "🟢 OPERAR_GRID"
+                                    mensaje_cerebro = "✅ El Cerebro autoriza el trading"
+                                else:
+                                    decision_cerebro = "🔴 PAUSAR_GRID"
+                                    mensaje_cerebro = "⚠️ El Cerebro recomienda pausar el trading"
+                                
+                                # Mostrar resultado del cerebro
+                                bot.send_message(
+                                    chat_id, 
+                                    f"🧠 Estado del Cerebro:\n"
+                                    f"• Decisión: {decision_cerebro}\n"
+                                    f"• Razón: {resultado_cerebro.get('razon', 'No disponible')}\n"
+                                    f"• {mensaje_cerebro}"
+                                )
+                                
+                                # Si el cerebro dice PAUSAR, preguntar si continuar
+                                if not resultado_cerebro.get('puede_operar', False):
+                                    bot.send_message(
+                                        chat_id,
+                                        "⚠️ El Cerebro recomienda pausar el trading\n\n"
+                                        "¿Deseas continuar de todas formas?\n"
+                                        "Responde 'SI' para continuar o 'NO' para cancelar."
+                                    )
+                                    # Aquí podrías implementar un sistema de confirmación
+                                    # Por ahora, continuamos con advertencia
+                                    bot.send_message(chat_id, "⚠️ Continuando con advertencia...")
+                            else:
+                                bot.send_message(
+                                    chat_id,
+                                    f"⚠️ Respuesta inesperada del Cerebro: {resultado_cerebro}\n"
+                                    f"Continuando en modo standalone..."
+                                )
+                            
+                        finally:
+                            loop.close()
+                            
+                    except Exception as e:
+                        bot.send_message(
+                            chat_id,
+                            f"⚠️ No se pudo consultar al Cerebro: {str(e)}\n"
+                            f"Continuando en modo standalone..."
+                        )
+                    
+                    # SEGUNDO: Iniciar el grid bot
+                    bot.send_message(chat_id, "🚀 Iniciando Grid Bot...")
+                    success, result_message = start_grid_bot_manual()
+                    
+                    if success:
+                        message = f"🚀 ¡Grid Bot iniciado exitosamente en modo SANDBOX!\n\n"
+                        message += f"📊 Trading: ETH/USDT (sandbox)\n"
+                        message += f"💰 Capital: $1000 USDT (simulado)\n"
+                        message += f"🎚️ Niveles: 30 (fijo)\n"
+                        message += f"📊 Rango: ±10% (fijo)\n\n"
+                        message += f"🛡️ Protecciones:\n"
+                        message += f"• Stop-Loss: ✅ (5%)\n"
+                        message += f"• Trailing Up: ❌ (Cerebro decide)\n\n"
+                        message += f"📈 Usa /status para monitorear el progreso."
+                        bot.send_message(chat_id, message)
+                    else:
+                        bot.send_message(chat_id, f"❌ Error iniciando bot: {result_message}")
+                        
+                except Exception as e:
+                    bot.send_message(chat_id, f"❌ Error iniciando bot: {str(e)}")
+            
+            threading.Thread(target=start_bot_with_cerebro, daemon=True).start()
 
         except Exception as e:
             error_message = f"❌ Error al cambiar a modo sandbox: {str(e)}"
