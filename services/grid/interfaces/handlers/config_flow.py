@@ -105,6 +105,8 @@ class ConfigFlowHandler(BaseHandler):
     def _process_valid_capital(self, chat_id: str, capital: float, bot: TelegramBot):
         """Procesa capital válido y muestra configuración sugerida"""
         try:
+            from services.grid.main import MODO_PRODUCTIVO
+            
             state = bot.get_conversation_state(chat_id)
             if state is None:
                 bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
@@ -119,17 +121,36 @@ class ConfigFlowHandler(BaseHandler):
             # Cambiar a confirmación
             bot.set_conversation_state(chat_id, "config_confirmation", state['data'])
             
-            # Mostrar configuración sugerida
-            message = f"💰 <b>Capital:</b> ${capital} USDT\n\n"
-            message += "🎯 <b>Configuración automática sugerida:</b>\n"
+            # Crear mensaje diferente según el modo
+            if not MODO_PRODUCTIVO:  # Modo Sandbox
+                message = f"🟡 <b>MODO SANDBOX ACTIVADO</b>\n\n"
+                message += f"💰 <b>Capital automático:</b> $1000 USDT (simulado)\n"
+                message += f"ℹ️ Tu solicitud de ${capital} USDT se ignora en sandbox\n\n"
+            else:  # Modo Productivo
+                capital_minimo = optimal_config.get('capital_minimo_sugerido', 600)
+                if capital < capital_minimo:
+                    message = f"⚠️ <b>CAPITAL INSUFICIENTE</b>\n\n"
+                    message += f"💰 <b>Solicitado:</b> ${capital} USDT\n"
+                    message += f"💡 <b>Mínimo requerido:</b> ${capital_minimo} USDT\n"
+                    message += f"🎯 <b>Capital ajustado a:</b> ${optimal_config['total_capital']} USDT\n\n"
+                    message += f"📈 Para 30 niveles + 10% rango necesitas mínimo ${capital_minimo} USDT\n\n"
+                else:
+                    message = f"🟢 <b>MODO PRODUCTIVO</b>\n\n"
+                    message += f"💰 <b>Capital:</b> ${capital} USDT (dinero real)\n"
+                    message += f"⚠️ <b>¡ADVERTENCIA!</b> Operarás con dinero real\n\n"
+            
+            # Configuración optimizada (misma para ambos modos)
+            message += "🎯 <b>Configuración Optimizada (Backtesting):</b>\n"
             message += f"📊 <b>Par:</b> {optimal_config['pair']}\n"
-            message += f"🎚️ <b>Niveles de grid:</b> {optimal_config['grid_levels']}\n"
-            message += f"📈 <b>Rango de precios:</b> ±{optimal_config['price_range_percent']}%\n\n"
-            message += "✅ ¿Confirmas esta configuración?\n\n"
+            message += f"🎚️ <b>Niveles:</b> {optimal_config['grid_levels']} (óptimo validado)\n"
+            message += f"📈 <b>Rango:</b> ±{optimal_config['price_range_percent']}% (óptimo validado)\n"
+            message += f"🛡️ <b>Stop Loss:</b> {optimal_config['stop_loss_percent']}% (activo)\n"
+            message += f"🧠 <b>Trailing Up:</b> Desactivado (Cerebro decide)\n\n"
+            
+            message += "✅ ¿Confirmas esta configuración optimizada?\n\n"
             message += "Responde:\n"
             message += "• <code>sí</code> para confirmar\n"
-            message += "• <code>no</code> para cancelar\n"
-            message += "• <code>personalizar</code> para configuración avanzada"
+            message += "• <code>no</code> para cancelar"
             
             bot.send_message(chat_id, message)
             
@@ -160,13 +181,27 @@ class ConfigFlowHandler(BaseHandler):
                 if self.save_user_config(chat_id, config_data):
                     bot.clear_conversation_state(chat_id)
                     
-                    message = "✅ <b>¡Configuración guardada correctamente!</b>\n\n"
-                    message += f"📊 <b>Resumen:</b>\n"
+                    from services.grid.main import obtener_configuracion_trading
+                    trading_config = obtener_configuracion_trading()
+                    
+                    modo_icon = "🟡" if trading_config['modo'] == 'SANDBOX' else "🟢"
+                    
+                    message = "✅ <b>¡Configuración optimizada guardada!</b>\n\n"
+                    message += f"{modo_icon} <b>Modo:</b> {trading_config['modo']}\n"
+                    message += f"📊 <b>Resumen de la configuración:</b>\n"
                     message += f"• <b>Par:</b> {config_data['pair']}\n"
                     message += f"• <b>Capital:</b> ${config_data['total_capital']} USDT\n"
-                    message += f"• <b>Niveles:</b> {config_data['grid_levels']}\n"
-                    message += f"• <b>Rango:</b> ±{config_data['price_range_percent']}%\n\n"
-                    message += "🚀 Usa /start_bot para iniciar el trading"
+                    message += f"• <b>Niveles:</b> {config_data['grid_levels']} (backtesting validado)\n"
+                    message += f"• <b>Rango:</b> ±{config_data['price_range_percent']}% (backtesting validado)\n"
+                    message += f"• <b>Stop Loss:</b> {config_data['stop_loss_percent']}% ✅\n"
+                    message += f"• <b>Trailing Up:</b> Desactivado (Cerebro decide) 🧠\n\n"
+                    
+                    if trading_config['modo'] == 'SANDBOX':
+                        message += "🟡 <b>Modo Sandbox:</b> Operaciones simuladas, sin riesgo\n"
+                    else:
+                        message += "🟢 <b>Modo Productivo:</b> ⚠️ Operaciones con dinero real\n"
+                    
+                    message += "\n🚀 Usa /start_bot para iniciar el trading con cerebro integrado"
                     
                     bot.send_message(chat_id, message)
                 else:

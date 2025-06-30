@@ -99,32 +99,49 @@ class BaseHandler:
         ]
     
     def calculate_optimal_config(self, pair: str, capital: float) -> Dict[str, Any]:
-        """Calcula configuración óptima basada en el capital - V2 con estrategias avanzadas"""
-        if capital < 50:
-            grid_levels = 2
-            price_range = 5.0
-            stop_loss = 3.0  # Más conservador para capitales pequeños
-        elif capital < 100:
-            grid_levels = 4
-            price_range = 8.0
-            stop_loss = 4.0
-        elif capital < 500:
-            grid_levels = 6
-            price_range = 10.0
+        """
+        Calcula configuración óptima basada en parámetros validados de backtesting.
+        
+        PARÁMETROS ÓPTIMOS VALIDADOS:
+        - 30 niveles de grid
+        - 10% de rango de precios
+        - Stop loss activo (trailing desactivado porque cerebro decide cuándo operar)
+        """
+        from services.grid.main import MODO_PRODUCTIVO
+        
+        # PARÁMETROS ÓPTIMOS DEL BACKTESTING
+        grid_levels = 30  # Validado en backtesting
+        price_range = 10.0  # Validado en backtesting
+        
+        # Calcular capital mínimo necesario para 30 niveles con 10% de rango
+        # Estimación: cada nivel necesita ~$15-20 USDT mínimo
+        min_capital_required = grid_levels * 20  # 30 * 20 = $600 mínimo
+        
+        # Configuración de capital según modo
+        if not MODO_PRODUCTIVO:  # Modo Sandbox
+            # Sandbox siempre usa 1000 USDT
+            final_capital = 1000.0
             stop_loss = 5.0
-        else:
-            grid_levels = 6
-            price_range = 12.0
-            stop_loss = 6.0  # Más agresivo para capitales grandes
+        else:  # Modo Productivo
+            if capital < min_capital_required:
+                # Si no tiene suficiente capital, informar el mínimo requerido
+                final_capital = min_capital_required
+                stop_loss = 3.0  # Más conservador para capitales justos
+            else:
+                # Usar el capital que especificó
+                final_capital = capital
+                stop_loss = 5.0
         
         return {
             'pair': pair,
-            'total_capital': capital,
+            'total_capital': final_capital,
             'grid_levels': grid_levels,
             'price_range_percent': price_range,
             'stop_loss_percent': stop_loss,
             'enable_stop_loss': True,  # Siempre activado por defecto
-            'enable_trailing_up': True  # Siempre activado por defecto
+            'enable_trailing_up': False,  # DESACTIVADO: Cerebro decide cuándo operar
+            'capital_minimo_sugerido': min_capital_required if MODO_PRODUCTIVO else None,
+            'modo_trading': 'SANDBOX' if not MODO_PRODUCTIVO else 'PRODUCTIVO'
         }
     
     def send_error_message(self, bot: TelegramBot, chat_id: str, operation: str, error: Optional[Exception] = None):

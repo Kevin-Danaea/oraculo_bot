@@ -47,6 +47,13 @@ class GridTelegramInterface:
         self.bot.register_command("status", self.basic_handler.handle_status_command)
         self.bot.register_command("delete_config", self.basic_handler.handle_delete_config_command)
         
+        # Comandos de integración con Cerebro v3.0
+        self.bot.register_command("modo_productivo", self.basic_handler.handle_modo_productivo_command)
+        self.bot.register_command("modo_sandbox", self.basic_handler.handle_modo_sandbox_command)
+        self.bot.register_command("estado_cerebro", self.basic_handler.handle_estado_cerebro_command)
+        self.bot.register_command("modo_actual", self.basic_handler.handle_modo_actual_command)
+        self.bot.register_command("info_config", self.basic_handler.handle_info_config_command)
+        
         # Comandos de configuración
         self.bot.register_command("config", self.config_handler.handle_config_command)
         
@@ -205,27 +212,27 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
                 'enable_trailing_up': enable_trailing_value
             }
         else:
-            # Configuración por defecto como fallback
-            logger.warning("⚠️ No hay configuración dinámica, usando valores por defecto")
+            # Configuración por defecto como fallback - PARÁMETROS ÓPTIMOS VALIDADOS
+            logger.warning("⚠️ No hay configuración dinámica, usando valores óptimos por defecto")
             return {
                 'pair': 'ETH/USDT',
-                'total_capital': 56.88,
-                'grid_levels': 4,
-                'price_range_percent': 10.0,
+                'total_capital': 1000.0,  # Capital por defecto para sandbox
+                'grid_levels': 30,  # Validado en backtesting
+                'price_range_percent': 10.0,  # Validado en backtesting
                 'stop_loss_percent': 5.0,
                 'enable_stop_loss': True,
-                'enable_trailing_up': True
+                'enable_trailing_up': False  # Desactivado: Cerebro decide cuándo operar
             }
             
     except Exception as e:
         logger.error(f"❌ Error obteniendo configuración dinámica: {e}")
-        # Fallback a configuración por defecto
+        # Fallback a configuración por defecto - PARÁMETROS ÓPTIMOS VALIDADOS
         return {
             'pair': 'ETH/USDT',
-            'total_capital': 56.88,
-            'grid_levels': 4,
-            'price_range_percent': 10.0,
+            'total_capital': 1000.0,  # Capital por defecto para sandbox
+            'grid_levels': 30,  # Validado en backtesting
+            'price_range_percent': 10.0,  # Validado en backtesting
             'stop_loss_percent': 5.0,
             'enable_stop_loss': True,
-            'enable_trailing_up': True
+            'enable_trailing_up': False  # Desactivado: Cerebro decide cuándo operar
         } 

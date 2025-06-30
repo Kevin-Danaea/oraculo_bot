@@ -23,12 +23,12 @@ def get_grid_bot_config():
         return get_dynamic_grid_config()
     except ImportError as e:
         logger.warning(f"⚠️ No se pudo importar configuración dinámica: {e}")
-        # Fallback a configuración por defecto
+        # Fallback a configuración por defecto - PARÁMETROS ÓPTIMOS VALIDADOS
         return {
             'pair': 'ETH/USDT',
-            'total_capital': 56.88,
-            'grid_levels': 4,
-            'price_range_percent': 10.0,
+            'total_capital': 1000.0,  # Capital por defecto para sandbox
+            'grid_levels': 30,  # Validado en backtesting
+            'price_range_percent': 10.0,  # Validado en backtesting
         }
 
 def run_grid_bot():

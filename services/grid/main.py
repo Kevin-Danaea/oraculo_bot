@@ -3,9 +3,17 @@ Grid Worker - Servicio de Trading (Pure Worker)
 Ejecuta estrategias de grid trading automatizado como background worker.
 Incluye bot de Telegram para control remoto.
 Expone minimal FastAPI para health checks únicamente.
+
+INTEGRACIÓN CEREBRO V3.0:
+- Consulta estado inicial del Cerebro al arrancar
+- Recibe notificaciones automáticas del Cerebro
+- Modo productivo vs sandbox controlable desde Telegram
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import httpx
+import asyncio
 from services.grid.schedulers.grid_scheduler import get_grid_scheduler, stop_grid_bot_scheduler
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
@@ -21,6 +29,94 @@ logger = get_logger(__name__)
 telegram_bot = None
 telegram_interface = None
 telegram_thread = None
+
+# ============================================================================
+# INTEGRACIÓN CON CEREBRO V3.0
+# ============================================================================
+
+# Variable global para controlar modo productivo/sandbox
+MODO_PRODUCTIVO = True  # True = Productivo, False = Sandbox/Paper Trading
+
+# Estado de la decisión del cerebro
+estado_cerebro = {
+    "decision": "PAUSAR_GRID",  # Por defecto pausado hasta consultar cerebro
+    "ultima_actualizacion": None,
+    "fuente": "inicial"
+}
+
+class DecisionCerebro(BaseModel):
+    """Modelo para recibir decisiones del Cerebro"""
+    par: str
+    decision: str  # OPERAR_GRID o PAUSAR_GRID
+    adx_valor: float
+    volatilidad_valor: float
+    sentiment_promedio: float
+    timestamp: str
+
+async def consultar_estado_inicial_cerebro():
+    """
+    Consulta el estado inicial del Cerebro al arrancar el Grid
+    """
+    global estado_cerebro
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get("http://localhost:8004/grid/status/ETH-USDT")
+            
+            if response.status_code == 200:
+                data = response.json()
+                estado_cerebro.update({
+                    "decision": data.get("decision", "PAUSAR_GRID"),
+                    "ultima_actualizacion": data.get("timestamp"),
+                    "fuente": data.get("fuente", "cerebro_consulta_inicial")
+                })
+                
+                logger.info(f"🧠 Estado inicial del Cerebro: {estado_cerebro['decision']}")
+                logger.info(f"📊 ADX: {data.get('adx_valor')}, Volatilidad: {data.get('volatilidad_valor')}")
+                
+                return True
+            else:
+                logger.warning(f"⚠️ Error consultando Cerebro: {response.status_code}")
+                
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo conectar con el Cerebro: {e}")
+        logger.info("🔄 Grid continuará con decisión por defecto: PAUSAR_GRID")
+    
+    return False
+
+def obtener_configuracion_trading():
+    """
+    Retorna la configuración de trading según el modo activo
+    """
+    from shared.config.settings import settings
+    
+    if MODO_PRODUCTIVO:
+        return {
+            "api_key": settings.BINANCE_API_KEY,
+            "api_secret": settings.BINANCE_API_SECRET,
+            "modo": "PRODUCTIVO",
+            "descripcion": "Trading real en Binance"
+        }
+    else:
+        return {
+            "api_key": settings.PAPER_TRADING_API_KEY,
+            "api_secret": settings.PAPER_TRADING_SECRET_KEY,
+            "modo": "SANDBOX",
+            "descripcion": "Paper trading para pruebas"
+        }
+
+def alternar_modo_trading():
+    """
+    Alterna entre modo productivo y sandbox
+    Retorna el nuevo modo y configuración
+    """
+    global MODO_PRODUCTIVO
+    MODO_PRODUCTIVO = not MODO_PRODUCTIVO
+    
+    config = obtener_configuracion_trading()
+    logger.info(f"🔄 Modo cambiado a: {config['modo']}")
+    
+    return config
 
 def start_telegram_bot():
     """
@@ -81,6 +177,10 @@ def start_grid_service():
         setup_logging()
         logger.info("🤖 Iniciando Grid Worker...")
         
+        # Mostrar configuración de trading activa
+        config = obtener_configuracion_trading()
+        logger.info(f"💹 Modo de trading: {config['modo']} - {config['descripcion']}")
+        
         # Inicializar base de datos (crear tablas si no existen)
         logger.info("🗄️ Inicializando base de datos...")
         init_database()
@@ -94,6 +194,13 @@ def start_grid_service():
         # Iniciar bot de Telegram
         telegram_bot_instance = start_telegram_bot()
         
+        # Consultar estado inicial del Cerebro de forma asíncrona
+        logger.info("🧠 Consultando estado inicial del Cerebro...")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(consultar_estado_inicial_cerebro())
+        loop.close()
+        
         logger.info("✅ Grid Worker iniciado correctamente")
         logger.info("🔄 Monitor de salud: Cada 5 minutos")
         logger.info("💹 Trading automatizado: Activo")
@@ -101,10 +208,11 @@ def start_grid_service():
         # Enviar notificación de inicio con características específicas
         features = [
             "🤖 Bot de Grid Trading automatizado",
-            "💹 Trading en Binance con estrategia de grilla", 
+            f"💹 Trading en modo: {config['modo']}", 
             "🔄 Monitoreo continuo y recuperación automática",
             "📊 Reportes automáticos por Telegram",
-            "🌐 Health endpoint en puerto 8001"
+            "🌐 Health endpoint en puerto 8001",
+            "🧠 Integración con Cerebro v3.0"
         ]
         
         if telegram_bot_instance:
@@ -159,7 +267,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Oráculo Bot - Grid Worker",
     version="0.1.0",
-    description="Worker de grid trading automatizado para Binance",
+    description="Worker de grid trading automatizado para Binance con integración Cerebro v3.0",
     lifespan=lifespan
 )
 
@@ -208,6 +316,74 @@ def health_check():
             "status": "error",
             "error": str(e)
         }
+
+# ============================================================================
+# ENDPOINTS PARA INTEGRACIÓN CON CEREBRO
+# ============================================================================
+
+@app.post("/cerebro/decision", tags=["Cerebro"])
+async def recibir_decision_cerebro(decision: DecisionCerebro):
+    """
+    Endpoint para recibir decisiones automáticas del Cerebro
+    """
+    global estado_cerebro
+    
+    try:
+        # Actualizar estado global
+        estado_cerebro.update({
+            "decision": decision.decision,
+            "ultima_actualizacion": decision.timestamp,
+            "fuente": "cerebro_notificacion_automatica"
+        })
+        
+        logger.info(f"🧠 Nueva decisión del Cerebro: {decision.decision}")
+        logger.info(f"📊 Par: {decision.par} | ADX: {decision.adx_valor} | Volatilidad: {decision.volatilidad_valor}")
+        
+        # Aquí puedes agregar lógica para actuar sobre la decisión
+        # Por ejemplo, pausar/reanudar el grid trading
+        
+        return {
+            "status": "success",
+            "message": f"Decisión {decision.decision} recibida y procesada",
+            "timestamp": decision.timestamp
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error procesando decisión del Cerebro: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/cerebro/estado", tags=["Cerebro"])
+def obtener_estado_cerebro():
+    """
+    Obtiene el estado actual de la decisión del Cerebro
+    """
+    config = obtener_configuracion_trading()
+    
+    return {
+        "estado_cerebro": estado_cerebro,
+        "modo_trading": config["modo"],
+        "timestamp": estado_cerebro.get("ultima_actualizacion"),
+        "status": "active"
+    }
+
+@app.post("/modo/alternar", tags=["Configuración"])
+def alternar_modo_trading_endpoint():
+    """
+    Alterna entre modo productivo y sandbox
+    """
+    try:
+        config = alternar_modo_trading()
+        
+        return {
+            "status": "success",
+            "nuevo_modo": config["modo"],
+            "descripcion": config["descripcion"],
+            "message": f"Modo cambiado a {config['modo']}"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error alternando modo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     # Punto de entrada directo (sin FastAPI)

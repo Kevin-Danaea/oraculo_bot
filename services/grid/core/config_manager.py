@@ -51,8 +51,8 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("El capital total debe ser mayor a 0")
         if grid_levels < 2:
             raise ValueError("Debe haber al menos 2 niveles de grilla")
-        if grid_levels > 20:
-            raise ValueError("Máximo 20 niveles de grilla permitidos")
+        if grid_levels > 50:
+            raise ValueError("Máximo 50 niveles de grilla permitidos (recomendado: 30)")
         if price_range_percent <= 0 or price_range_percent > 50:
             raise ValueError("El rango de precio debe estar entre 0.1% y 50%")
         

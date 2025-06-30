@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 
 from shared.services.telegram_bot_service import TelegramBot
+from shared.services.logging_config import get_logger
 from services.grid.schedulers.grid_scheduler import (
     get_grid_scheduler,
     start_grid_bot_scheduler, 
@@ -16,6 +17,8 @@ from services.grid.schedulers.grid_scheduler import (
     get_grid_bot_status
 )
 from .base_handler import BaseHandler
+
+logger = get_logger(__name__)
 
 
 class BasicCommandsHandler(BaseHandler):
@@ -27,18 +30,26 @@ class BasicCommandsHandler(BaseHandler):
             # Limpiar estados de conversación
             bot.clear_conversation_state(chat_id)
             
-            message = "🤖 <b>¡Bienvenido al Oráculo Grid Bot!</b>\n\n"
-            message += "🎯 <b>¿Qué puedes hacer?</b>\n"
-            message += "• Configurar estrategias de trading automáticas\n"
-            message += "• Controlar el bot desde Telegram\n"
-            message += "• Monitorear tus trades en tiempo real\n\n"
+            message = "🤖 <b>¡Bienvenido al Oráculo Grid Bot v3.0!</b>\n\n"
+            message += "🎯 <b>Características principales:</b>\n"
+            message += "• 🧠 Integración con Cerebro inteligente\n"
+            message += "• 📊 Parámetros optimizados por backtesting\n"
+            message += "• 🔄 Modo productivo y sandbox\n"
+            message += "• 💹 30 niveles + 10% rango (validado)\n"
+            message += "• 🛡️ Stop-loss automático integrado\n\n"
             
-            # Verificar estado actual
+            # Verificar estado actual y modo
+            from services.grid.main import obtener_configuracion_trading
+            trading_config = obtener_configuracion_trading()
+            modo_icon = "🟡" if trading_config['modo'] == 'SANDBOX' else "🟢"
+            
             scheduler = get_grid_scheduler()
             if scheduler and scheduler.running:
-                message += "🟢 <b>Estado:</b> Bot ejecutándose\n"
+                message += "🟢 <b>Estado Bot:</b> Ejecutándose\n"
             else:
-                message += "🔴 <b>Estado:</b> Bot detenido\n"
+                message += "🔴 <b>Estado Bot:</b> Detenido\n"
+            
+            message += f"{modo_icon} <b>Modo Trading:</b> {trading_config['modo']}\n"
             
             # Verificar si tiene configuración guardada
             user_config = self.get_user_config(chat_id)
@@ -47,20 +58,22 @@ class BasicCommandsHandler(BaseHandler):
             else:
                 message += "⚙️ <b>Configuración:</b> No configurado\n"
             
-            message += "\n📋 <b>Comandos disponibles:</b>\n"
-            message += "/config - Configurar bot paso a paso\n"
-            message += "/start_bot - Iniciar trading\n"
+            message += "\n📋 <b>Comandos principales:</b>\n"
+            message += "/config - Configurar bot (30 niveles automático)\n"
+            message += "/start_bot - Iniciar trading inteligente\n"
             message += "/stop_bot - Detener bot\n"
-            message += "/restart_bot - Reiniciar con nueva config\n"
-            message += "/status - Ver estado detallado\n"
-            message += "/delete_config - Borrar configuración\n\n"
-            message += "🛡️ <b>Comandos V2 - Estrategias Avanzadas:</b>\n"
-            message += "/protections - Ver estado de protecciones\n"
-            message += "/enable_stop_loss - Activar stop-loss\n"
-            message += "/disable_stop_loss - Desactivar stop-loss\n"
-            message += "/enable_trailing - Activar trailing up\n"
-            message += "/disable_trailing - Desactivar trailing up\n"
-            message += "/set_stop_loss X - Configurar % de stop-loss\n"
+            message += "/status - Estado completo (bot + cerebro)\n\n"
+            message += "🔄 <b>Control de modo trading:</b>\n"
+            message += "/modo_productivo - Cambiar a dinero real ⚠️\n"
+            message += "/modo_sandbox - Cambiar a simulación ✅\n"
+            message += "/modo_actual - Ver modo activo\n\n"
+            message += "🧠 <b>Estado del cerebro:</b>\n"
+            message += "/estado_cerebro - Ver análisis del cerebro\n\n"
+            message += "🛡️ <b>Protecciones:</b>\n"
+            message += "/protections - Ver estado stop-loss\n"
+            message += "/set_stop_loss X - Configurar % stop-loss\n\n"
+            message += "📊 <b>Información:</b>\n"
+            message += "/info_config - Info sobre configuración optimizada\n"
             
             bot.send_message(chat_id, message)
             
@@ -191,64 +204,88 @@ class BasicCommandsHandler(BaseHandler):
             self.send_error_message(bot, chat_id, "restart_bot", e)
     
     def handle_status_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja el comando /status - V2 con modo standby"""
+        """
+        Comando /status: Muestra estado del grid bot con integración Cerebro
+        """
         try:
-            bot_status = get_grid_bot_status()
-            
-            message = "📊 <b>ESTADO DEL GRID BOT V2</b>\n\n"
-            
-            # Estado principal
-            if bot_status['bot_running']:
-                message += "🟢 <b>Estado:</b> EJECUTÁNDOSE\n"
-                message += "📈 Trading activo\n"
-            elif bot_status['standby_mode']:
-                message += "⏸️ <b>Estado:</b> MODO STANDBY\n"
-                message += "🛡️ Servicio activo, esperando comando\n"
-            else:
-                message += "🔴 <b>Estado:</b> DETENIDO\n"
-                message += "❌ Servicio inactivo\n"
-            
-            # Estado técnico
-            message += f"\n🔧 <b>Estado técnico:</b>\n"
-            message += f"• Scheduler: {'✅' if bot_status['scheduler_active'] else '❌'}\n"
-            message += f"• Bot trading: {'✅' if bot_status['bot_running'] else '❌'}\n"
-            message += f"• Hilo activo: {'✅' if bot_status['thread_alive'] else '❌'}\n"
-            
-            # Mostrar configuración del usuario
+            # Obtener configuración del usuario
             user_config = self.get_user_config(chat_id)
+            
+            # Obtener estado del scheduler
+            scheduler = get_grid_scheduler()
+            is_running = scheduler.running if scheduler else False
+            
+            # Obtener estado del cerebro y modo de trading
+            try:
+                from services.grid.main import estado_cerebro, obtener_configuracion_trading
+                cerebro_estado = estado_cerebro
+                config_trading = obtener_configuracion_trading()
+            except ImportError:
+                cerebro_estado = {"decision": "No disponible", "fuente": "error"}
+                config_trading = {"modo": "No disponible"}
+            
+            # Crear mensaje de estado completo
             if user_config:
-                message += f"\n⚙️ <b>Configuración actual:</b>\n"
-                message += f"📈 <b>Par:</b> {user_config.pair}\n"
-                message += f"💰 <b>Capital:</b> ${user_config.total_capital} USDT\n"
-                message += f"🎚️ <b>Niveles:</b> {user_config.grid_levels}\n"
-                message += f"📊 <b>Rango:</b> ±{user_config.price_range_percent}%\n"
+                status_message = f"""
+🤖 **ESTADO DEL GRID BOT**
+
+📊 **Configuración Activa:**
+• Par: {user_config.pair}
+• Capital: ${user_config.total_capital:,.2f}
+• Niveles: {user_config.grid_levels}
+• Rango: {user_config.price_range_percent}%
+
+🔄 **Estado del Sistema:**
+• Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
+• Modo Trading: {config_trading.get('modo', 'No disponible')}
+
+🧠 **Estado del Cerebro:**
+• Decisión: {cerebro_estado.get('decision', 'No disponible')}
+• Fuente: {cerebro_estado.get('fuente', 'No disponible')}
+• Última actualización: {cerebro_estado.get('ultima_actualizacion', 'No disponible')}
+
+⚡ **Protecciones Avanzadas:**
+• Stop Loss: {'🟢 Activo' if getattr(user_config, 'enable_stop_loss', False) else '🔴 Inactivo'}
+• Trailing Up: {'🟢 Activo' if getattr(user_config, 'enable_trailing_up', False) else '🔴 Inactivo'}
+"""
                 
-                # Protecciones V2
-                message += f"\n🛡️ <b>Protecciones V2:</b>\n"
-                message += f"• Stop-Loss: {'✅' if getattr(user_config, 'enable_stop_loss', True) else '❌'} ({getattr(user_config, 'stop_loss_percent', 5.0)}%)\n"
-                message += f"• Trailing Up: {'✅' if getattr(user_config, 'enable_trailing_up', True) else '❌'}\n"
-                
-                message += f"\n📅 <b>Creado:</b> {user_config.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                if hasattr(user_config, 'enable_stop_loss') and getattr(user_config, 'enable_stop_loss', False):
+                    status_message += f"• Stop Loss %: {getattr(user_config, 'stop_loss_percent', 5.0)}%\n"
             else:
-                message += "\n⚠️ <b>Sin configuración guardada</b>\n"
-                message += "Usa /config para configurar el bot\n"
+                status_message = f"""
+🤖 **ESTADO DEL GRID BOT**
+
+⚠️ **Sin configuración activa**
+Usa /config para configurar el bot
+
+🔄 **Estado del Sistema:**
+• Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
+• Modo Trading: {config_trading.get('modo', 'No disponible')}
+
+🧠 **Estado del Cerebro:**
+• Decisión: {cerebro_estado.get('decision', 'No disponible')}
+• Fuente: {cerebro_estado.get('fuente', 'No disponible')}
+• Última actualización: {cerebro_estado.get('ultima_actualizacion', 'No disponible')}
+"""
             
-            # Acciones disponibles
-            message += f"\n🎮 <b>Acciones disponibles:</b>\n"
-            if bot_status['ready_to_start']:
-                message += "▶️ /start_bot - Iniciar trading\n"
-            if bot_status['ready_to_stop']:
-                message += "⏸️ /stop_bot - Detener trading\n"
-            message += "🔄 /restart_bot - Reiniciar con nueva config\n"
-            message += "🛡️ /protections - Ver estrategias avanzadas\n"
+            # Agregar comandos disponibles
+            status_message += """
+
+📝 **Comandos Nuevos:**
+• /modo_productivo - Cambiar a trading real
+• /modo_sandbox - Cambiar a paper trading
+• /estado_cerebro - Ver estado detallado del cerebro
+• /modo_actual - Ver modo de trading actual
+"""
             
-            message += f"\n⏰ <i>Consultado: {datetime.now().strftime('%H:%M:%S')}</i>"
-            
-            bot.send_message(chat_id, message)
+            bot.send_message(chat_id, status_message)
+            logger.info(f"✅ Estado enviado a chat {chat_id}")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "status", e)
-    
+            error_message = f"❌ Error al obtener el estado: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_status_command: {e}")
+
     def handle_delete_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /delete_config"""
         try:
@@ -269,4 +306,207 @@ class BasicCommandsHandler(BaseHandler):
                 bot.send_message(chat_id, "❌ Error eliminando configuración")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "eliminando config", e) 
+            self.send_error_message(bot, chat_id, "eliminando config", e)
+
+    def handle_modo_productivo_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /modo_productivo: Cambia a modo productivo (trading real)
+        """
+        try:
+            from services.grid.main import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
+            
+            # Si ya está en modo productivo, informar
+            if MODO_PRODUCTIVO:
+                config = obtener_configuracion_trading()
+                message = f"""
+🟢 **YA EN MODO PRODUCTIVO**
+
+• Modo actual: {config['modo']}
+• Descripción: {config['descripcion']}
+• Estado: Activo
+
+⚠️ **ADVERTENCIA**: Trading con dinero real
+"""
+            else:
+                # Cambiar a modo productivo
+                config = alternar_modo_trading()
+                message = f"""
+🟢 **CAMBIADO A MODO PRODUCTIVO**
+
+• Nuevo modo: {config['modo']}
+• Descripción: {config['descripción']}
+
+⚠️ **ADVERTENCIA IMPORTANTE**:
+Ahora estás operando con DINERO REAL en Binance.
+Todas las operaciones afectarán tu cuenta real.
+
+🔄 Usa /modo_sandbox para volver a paper trading
+"""
+            
+            bot.send_message(chat_id, message)
+            logger.info(f"✅ Comando modo_productivo ejecutado para chat {chat_id}")
+            
+        except Exception as e:
+            error_message = f"❌ Error al cambiar a modo productivo: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_modo_productivo_command: {e}")
+
+    def handle_modo_sandbox_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /modo_sandbox: Cambia a modo sandbox (paper trading)
+        """
+        try:
+            from services.grid.main import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
+            
+            # Si ya está en modo sandbox, informar
+            if not MODO_PRODUCTIVO:
+                config = obtener_configuracion_trading()
+                message = f"""
+🟡 **YA EN MODO SANDBOX**
+
+• Modo actual: {config['modo']}
+• Descripción: {config['descripcion']}
+• Estado: Activo
+
+✅ **SEGURO**: Paper trading sin riesgo
+"""
+            else:
+                # Cambiar a modo sandbox
+                config = alternar_modo_trading()
+                message = f"""
+🟡 **CAMBIADO A MODO SANDBOX**
+
+• Nuevo modo: {config['modo']}
+• Descripción: {config['descripcion']}
+
+✅ **MODO SEGURO ACTIVADO**:
+Todas las operaciones son simuladas.
+No se usa dinero real.
+
+🔄 Usa /modo_productivo para trading real
+"""
+            
+            bot.send_message(chat_id, message)
+            logger.info(f"✅ Comando modo_sandbox ejecutado para chat {chat_id}")
+            
+        except Exception as e:
+            error_message = f"❌ Error al cambiar a modo sandbox: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_modo_sandbox_command: {e}")
+
+    def handle_estado_cerebro_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /estado_cerebro: Muestra estado detallado del cerebro
+        """
+        try:
+            from services.grid.main import estado_cerebro
+            
+            message = f"""
+🧠 **ESTADO DETALLADO DEL CEREBRO**
+
+📊 **Decisión Actual:**
+• Acción: {estado_cerebro.get('decision', 'No disponible')}
+• Fuente: {estado_cerebro.get('fuente', 'No disponible')}
+• Última actualización: {estado_cerebro.get('ultima_actualizacion', 'No disponible')}
+
+🔄 **Significado de las decisiones:**
+• OPERAR_GRID: Condiciones favorables para trading
+• PAUSAR_GRID: Condiciones desfavorables, pausa recomendada
+
+📡 **Integración:**
+• Cerebro monitorea mercado cada 2 horas
+• Notifica automáticamente al Grid
+• Análisis basado en ADX y volatilidad
+"""
+            
+            bot.send_message(chat_id, message)
+            logger.info(f"✅ Estado del cerebro enviado a chat {chat_id}")
+            
+        except Exception as e:
+            error_message = f"❌ Error al obtener estado del cerebro: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_estado_cerebro_command: {e}")
+
+    def handle_modo_actual_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /modo_actual: Muestra el modo de trading actual
+        """
+        try:
+            from services.grid.main import obtener_configuracion_trading
+            
+            config = obtener_configuracion_trading()
+            modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
+            
+            message = f"""
+{modo_icon} **MODO DE TRADING ACTUAL**
+
+• Modo: {config['modo']}
+• Descripción: {config['descripcion']}
+
+💡 **Comandos disponibles:**
+• /modo_productivo - Cambiar a trading real
+• /modo_sandbox - Cambiar a paper trading
+• /status - Estado completo del sistema
+• /info_config - Info sobre configuración optimizada
+"""
+            
+            bot.send_message(chat_id, message)
+            logger.info(f"✅ Modo actual enviado a chat {chat_id}")
+            
+        except Exception as e:
+            error_message = f"❌ Error al obtener modo actual: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_modo_actual_command: {e}")
+
+    def handle_info_config_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /info_config: Muestra información sobre la configuración optimizada
+        """
+        try:
+            from services.grid.main import obtener_configuracion_trading
+            
+            config = obtener_configuracion_trading()
+            modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
+            
+            # Calcular capital mínimo para 30 niveles
+            capital_minimo = 30 * 20  # 600 USDT
+            
+            message = f"""
+📊 **CONFIGURACIÓN OPTIMIZADA v3.0**
+
+🎯 **Parámetros validados por backtesting:**
+• Niveles de grid: 30 (óptimo)
+• Rango de precios: 10% (óptimo)
+• Capital sandbox: $1000 USDT (fijo)
+• Capital productivo mínimo: ${capital_minimo} USDT
+
+🧠 **Integración con Cerebro:**
+• ADX < 30: Condiciones favorables
+• Volatilidad > 4%: Mercado activo
+• Stop-loss automático: 5% por defecto
+• Trailing: Desactivado (Cerebro decide)
+
+{modo_icon} **Modo actual: {config['modo']}**
+
+💰 **¿Por qué ${capital_minimo} USDT mínimo?**
+• 30 niveles requieren diversificación
+• ~$20 USDT por nivel para seguridad
+• Absorber fluctuaciones del 10% de rango
+• Mantener liquidez para recompras
+
+🔄 **Cambios vs versión anterior:**
+• Niveles: 4-6 → 30 (validado)
+• Capital: Variable → Optimizado
+• Trailing: Activo → Desactivado
+• Decisiones: Manual → Cerebro automático
+
+💡 Usa /config para aplicar estos parámetros automáticamente
+"""
+            
+            bot.send_message(chat_id, message)
+            logger.info(f"✅ Info configuración enviada a chat {chat_id}")
+            
+        except Exception as e:
+            error_message = f"❌ Error al obtener info configuración: {str(e)}"
+            bot.send_message(chat_id, error_message)
+            logger.error(f"❌ Error en handle_info_config_command: {e}") 

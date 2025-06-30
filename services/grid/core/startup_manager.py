@@ -187,16 +187,31 @@ def cleanup_binance_orphaned_orders(exchange) -> Dict[str, Any]:
     }
     
     try:
-        logger.info("🌐 Consultando órdenes abiertas en Binance...")
+        # Obtener configuración actual para saber qué par consultar
+        try:
+            from ..interfaces.telegram_interface import get_dynamic_grid_config
+            config = get_dynamic_grid_config()
+            symbol = config.get('pair', '').replace('/', '')  # ETH/USDT -> ETHUSDT
+            
+            if not symbol:
+                logger.warning("⚠️ No hay configuración de par activa, saltando limpieza de Binance")
+                return binance_result
+                
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo obtener configuración del par: {e}")
+            logger.info("⏭️ Saltando limpieza de órdenes específicas en Binance")
+            return binance_result
         
-        # Obtener TODAS las órdenes abiertas en Binance
-        open_orders = exchange.fetch_open_orders()
+        logger.info(f"🌐 Consultando órdenes abiertas para {symbol} en Binance...")
+        
+        # Obtener SOLO las órdenes del par específico (evita rate limits)
+        open_orders = exchange.fetch_open_orders(symbol)
         
         if not open_orders:
-            logger.info("✅ No hay órdenes abiertas en Binance")
+            logger.info(f"✅ No hay órdenes abiertas para {symbol} en Binance")
             return binance_result
             
-        logger.info(f"🔍 Encontradas {len(open_orders)} órdenes abiertas en Binance")
+        logger.info(f"🔍 Encontradas {len(open_orders)} órdenes abiertas para {symbol} en Binance")
         
         # Filtrar órdenes que pertenezcan a nuestro bot
         bot_orders = []

@@ -461,9 +461,9 @@ def stop_cerebro_service():
 # ============================================================================
 
 if __name__ == "__main__":
-    # Punto de entrada directo (sin run_cerebro_service.py)
+    # Punto de entrada directo (sin uvicorn - eso lo maneja run_cerebro_service.py)
     try:
-        app_instance = start_cerebro_service()
+        start_cerebro_service()
         
         # Mantener el servicio corriendo
         import time
