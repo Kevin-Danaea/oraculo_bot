@@ -42,7 +42,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
         })
         
         logger.info(f"🧠 Nueva decisión del Cerebro: {decision.decision}")
-        logger.info(f"📊 Par: {decision.par} | ADX: {decision.adx_valor} | Volatilidad: {decision.volatilidad_valor}")
+        logger.info(f"📊 Par: {decision.par} | ADX: {decision.adx_valor} | Volatilidad: {decision.volatilidad_valor} | Sentimiento: {decision.sentiment_promedio}")
         
         # LÓGICA AUTÓNOMA: Actuar según la decisión del cerebro
         bot_status = get_grid_bot_status()
@@ -62,6 +62,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                             f"📊 Par: {decision.par}\n"
                             f"📈 ADX: {decision.adx_valor:.2f}\n"
                             f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
+                            f"💬 Sentimiento: {decision.sentiment_promedio:.3f}\n"
                             f"⏰ {decision.timestamp}"
                         )
                     except Exception as e:
@@ -86,6 +87,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                             f"📊 Par: {decision.par}\n"
                             f"📈 ADX: {decision.adx_valor:.2f}\n"
                             f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
+                            f"💬 Sentimiento: {decision.sentiment_promedio:.3f}\n"
                             f"⏰ {decision.timestamp}\n\n"
                             f"🔄 El Grid se reactivará automáticamente cuando el Cerebro autorice"
                         )
