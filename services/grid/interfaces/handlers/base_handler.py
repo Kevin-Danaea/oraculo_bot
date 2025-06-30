@@ -92,11 +92,8 @@ class BaseHandler:
             return False
     
     def get_supported_pairs(self) -> list:
-        """Lista de pares soportados"""
-        return [
-            'BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'ADA/USDT', 'XRP/USDT',
-            'SOL/USDT', 'DOT/USDT', 'AVAX/USDT', 'MATIC/USDT', 'LINK/USDT'
-        ]
+        """Lista de pares soportados - Por ahora solo ETH/USDT"""
+        return ['ETH/USDT']  # Futuramente se agregarán más pares
     
     def calculate_optimal_config(self, pair: str, capital: float) -> Dict[str, Any]:
         """
@@ -106,16 +103,22 @@ class BaseHandler:
         - 30 niveles de grid
         - 10% de rango de precios
         - Stop loss activo (trailing desactivado porque cerebro decide cuándo operar)
+        - Capital mínimo considerando comisiones y seguridad
         """
         from services.grid.main import MODO_PRODUCTIVO
         
-        # PARÁMETROS ÓPTIMOS DEL BACKTESTING
+        # PARÁMETROS ÓPTIMOS DEL BACKTESTING (FIJOS)
         grid_levels = 30  # Validado en backtesting
         price_range = 10.0  # Validado en backtesting
         
-        # Calcular capital mínimo necesario para 30 niveles con 10% de rango
-        # Estimación: cada nivel necesita ~$15-20 USDT mínimo
-        min_capital_required = grid_levels * 20  # 30 * 20 = $600 mínimo
+        # Calcular capital mínimo considerando comisiones y seguridad
+        # Estimación: cada nivel necesita ~$25 USDT para cubrir:
+        # - Comisiones de Binance (0.1% por trade)
+        # - Spread entre compra/venta
+        # - Fluctuaciones del 10% de rango
+        # - Liquidez para recompras
+        capital_minimo_por_nivel = 25  # USDT por nivel
+        min_capital_required = grid_levels * capital_minimo_por_nivel  # 30 * 25 = $750
         
         # Configuración de capital según modo
         if not MODO_PRODUCTIVO:  # Modo Sandbox
@@ -124,7 +127,7 @@ class BaseHandler:
             stop_loss = 5.0
         else:  # Modo Productivo
             if capital < min_capital_required:
-                # Si no tiene suficiente capital, informar el mínimo requerido
+                # Si no tiene suficiente capital, usar el mínimo requerido
                 final_capital = min_capital_required
                 stop_loss = 3.0  # Más conservador para capitales justos
             else:
@@ -141,6 +144,7 @@ class BaseHandler:
             'enable_stop_loss': True,  # Siempre activado por defecto
             'enable_trailing_up': False,  # DESACTIVADO: Cerebro decide cuándo operar
             'capital_minimo_sugerido': min_capital_required if MODO_PRODUCTIVO else None,
+            'capital_minimo_por_nivel': capital_minimo_por_nivel,
             'modo_trading': 'SANDBOX' if not MODO_PRODUCTIVO else 'PRODUCTIVO'
         }
     

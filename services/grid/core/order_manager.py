@@ -172,8 +172,8 @@ def create_sell_order_after_buy(exchange: ccxt.Exchange, buy_order: Dict[str, An
         else:
             # Fallback: calcular dinámicamente usando configuración disponible o valores por defecto
             fallback_config = config if config else {
-                'price_range_percent': 10.0,  # Valor optimizado por backtesting
-                'grid_levels': 30  # Valor optimizado por backtesting
+                'price_range_percent': 10.0,  # Valor optimizado por backtesting (FIJOS)
+                'grid_levels': 30  # Valor optimizado por backtesting (FIJOS)
             }
             profit_percentage = calculate_dynamic_profit_percentage(fallback_config)
         

@@ -15,21 +15,39 @@ grid_bot_running = False
 
 def get_grid_bot_config():
     """
-    Configuración del grid bot - Ahora usa configuración dinámica desde la base de datos
+    Configuración del grid bot - Ahora usa configuración dinámica según el modo
     """
     # Importar función de configuración dinámica
     try:
         from services.grid.interfaces.telegram_interface import get_dynamic_grid_config
-        return get_dynamic_grid_config()
+        config = get_dynamic_grid_config()
+        logger.info(f"✅ Configuración obtenida: {config['modo']} - {config['pair']} - ${config['total_capital']} USDT")
+        return config
     except ImportError as e:
         logger.warning(f"⚠️ No se pudo importar configuración dinámica: {e}")
-        # Fallback a configuración por defecto - PARÁMETROS ÓPTIMOS VALIDADOS
-        return {
-            'pair': 'ETH/USDT',
-            'total_capital': 1000.0,  # Capital por defecto para sandbox
-            'grid_levels': 30,  # Validado en backtesting
-            'price_range_percent': 10.0,  # Validado en backtesting
-        }
+        # Fallback a configuración por defecto según el modo
+        from services.grid.main import MODO_PRODUCTIVO
+        
+        if not MODO_PRODUCTIVO:
+            # Configuración fija para sandbox
+            logger.info("🟡 Usando configuración fija para SANDBOX (fallback)")
+            return {
+                'pair': 'ETH/USDT',
+                'total_capital': 1000.0,  # Capital fijo para sandbox
+                'grid_levels': 30,  # Validado en backtesting
+                'price_range_percent': 10.0,  # Validado en backtesting
+                'modo': 'SANDBOX'
+            }
+        else:
+            # Configuración mínima para productivo
+            logger.info("🟢 Usando configuración mínima para PRODUCTIVO (fallback)")
+            return {
+                'pair': 'ETH/USDT',
+                'total_capital': 750.0,  # Capital mínimo para productivo
+                'grid_levels': 30,  # Validado en backtesting
+                'price_range_percent': 10.0,  # Validado en backtesting
+                'modo': 'PRODUCTIVO'
+            }
 
 def run_grid_bot():
     """
@@ -99,6 +117,40 @@ def check_grid_bot_health():
     except Exception as e:
         logger.error(f"❌ Error verificando salud del Grid Bot: {e}")
 
+def check_cerebro_status():
+    """
+    Verifica el estado del cerebro y actúa automáticamente según la decisión.
+    Esta función se ejecuta periódicamente para asegurar sincronización.
+    """
+    try:
+        from services.grid.main import estado_cerebro
+        
+        decision_actual = estado_cerebro.get('decision', 'No disponible')
+        fuente = estado_cerebro.get('fuente', 'No disponible')
+        
+        # Solo actuar si la decisión viene del cerebro (no de consulta manual)
+        if fuente == 'cerebro_notificacion_automatica':
+            bot_status = get_grid_bot_status()
+            
+            if decision_actual == "OPERAR_GRID" and not bot_status['bot_running']:
+                logger.info("🧠 Monitoreo: Cerebro autoriza trading - Iniciando Grid Bot...")
+                success, message = start_grid_bot_manual()
+                if success:
+                    logger.info("✅ Grid Bot iniciado por monitoreo del cerebro")
+                else:
+                    logger.error(f"❌ Error iniciando Grid Bot por monitoreo: {message}")
+                    
+            elif decision_actual == "PAUSAR_GRID" and bot_status['bot_running']:
+                logger.info("🧠 Monitoreo: Cerebro recomienda pausar - Deteniendo Grid Bot...")
+                success, message = stop_grid_bot_manual()
+                if success:
+                    logger.info("✅ Grid Bot detenido por monitoreo del cerebro")
+                else:
+                    logger.error(f"❌ Error deteniendo Grid Bot por monitoreo: {message}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en monitoreo del cerebro: {e}")
+
 def setup_grid_scheduler():
     """
     Configura el scheduler del grid bot y retorna la instancia
@@ -115,8 +167,20 @@ def setup_grid_scheduler():
             misfire_grace_time=60  # 1 minuto de gracia para ejecuciones perdidas
         )
         
+        # Programar monitoreo del cerebro cada 10 minutos
+        scheduler.add_job(
+            func=check_cerebro_status,
+            trigger=IntervalTrigger(minutes=10),
+            id='cerebro_status_check',
+            name='Cerebro Status Check',
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=60
+        )
+        
         logger.info("✅ Grid Bot Scheduler configurado correctamente")
         logger.info("🔄 Verificación de salud programada cada 5 minutos")
+        logger.info("🧠 Monitoreo del cerebro programado cada 10 minutos")
         
         return scheduler
         
@@ -127,7 +191,7 @@ def setup_grid_scheduler():
 def start_grid_bot_scheduler():
     """
     Inicia el scheduler del grid bot en MODO STANDBY.
-    V2: NO inicia trading automáticamente, solo responde a comandos.
+    V3: MODO AUTÓNOMO - Responde automáticamente a decisiones del Cerebro
     """
     try:
         # Configurar scheduler
@@ -137,8 +201,10 @@ def start_grid_bot_scheduler():
         scheduler.start()
         logger.info("✅ Grid Bot Scheduler iniciado correctamente")
         
-        # V2: NO iniciar bot automáticamente - MODO STANDBY
-        logger.info("⏸️ Grid Bot en MODO STANDBY - Use /start_bot para iniciar trading")
+        # V3: MODO AUTÓNOMO - Responde a decisiones del Cerebro
+        logger.info("🧠 Grid Bot en MODO AUTÓNOMO - Responde a decisiones del Cerebro")
+        logger.info("🔄 Monitoreo automático cada 10 minutos")
+        logger.info("📱 Comandos manuales disponibles: /start_bot, /stop_bot")
         
         # Inicializar limpieza de órdenes huérfanas
         try:

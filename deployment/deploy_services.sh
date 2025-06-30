@@ -63,6 +63,7 @@ systemctl enable oraculo-news.service
 systemctl enable oraculo-grid.service
 systemctl enable oraculo-api.service
 systemctl enable oraculo-hype.service
+systemctl enable oraculo-cerebro.service
 
 # 6. Mostrar estado de servicios
 log "📊 Estado actual de los servicios:"
@@ -70,13 +71,15 @@ log "📊 Estado actual de los servicios:"
 # systemctl status oraculo-grid.service --no-pager -l || true
 # systemctl status oraculo-api.service --no-pager -l || true
 # systemctl status oraculo-hype.service --no-pager -l || true
+# systemctl status oraculo-brain.service --no-pager -l || true
 
 # 7.- Reiniciar los servicios
 log "🔄 Reiniciando servicios..."
-systemctl restart oraculo-news.service
-systemctl restart oraculo-grid.service
-systemctl restart oraculo-api.service
-systemctl restart oraculo-hype.service
+# systemctl restart oraculo-news.service
+# systemctl restart oraculo-grid.service
+# systemctl restart oraculo-api.service
+# systemctl restart oraculo-hype.service
+systemctl restart oraculo-cerebro.service
 
 echo
 log "🎉 Deployment completado!"

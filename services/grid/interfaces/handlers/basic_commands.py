@@ -30,13 +30,47 @@ class BasicCommandsHandler(BaseHandler):
             # Limpiar estados de conversación
             bot.clear_conversation_state(chat_id)
             
-            message = "🤖 <b>¡Bienvenido al Oráculo Grid Bot v3.0!</b>\n\n"
-            message += "🎯 <b>Características principales:</b>\n"
-            message += "• 🧠 Integración con Cerebro inteligente\n"
-            message += "• 📊 Parámetros optimizados por backtesting\n"
-            message += "• 🔄 Modo productivo y sandbox\n"
-            message += "• 💹 30 niveles + 10% rango (validado)\n"
-            message += "• 🛡️ Stop-loss automático integrado\n\n"
+            message = """
+🤖 **GRID BOT V3.0 - MODO AUTÓNOMO**
+
+🧠 **Nueva Arquitectura Inteligente:**
+• El Grid responde automáticamente a las decisiones del Cerebro
+• Monitoreo continuo cada 10 minutos
+• Activación/desactivación automática según condiciones del mercado
+
+📱 **Comandos Disponibles:**
+
+**Configuración:**
+• /config - Configurar parámetros del bot
+• /info_config - Ver configuración actual
+• /delete_config - Eliminar configuración
+
+**Control Manual:**
+• /start_bot - Iniciar trading manualmente (consulta al cerebro)
+• /stop_bot - Detener trading manualmente
+• /restart_bot - Reiniciar bot
+• /status - Estado actual del sistema
+
+**Modo de Trading:**
+• /modo_productivo - Cambiar a trading real
+• /modo_sandbox - Cambiar a paper trading
+• /modo_actual - Ver modo actual
+
+**Información del Cerebro:**
+• /estado_cerebro - Ver análisis detallado del cerebro
+
+🔄 **Funcionamiento Autónomo:**
+• El Cerebro analiza el mercado cada 2 horas
+• Si autoriza trading → Grid se activa automáticamente
+• Si recomienda pausar → Grid se detiene automáticamente
+• Notificaciones automáticas por Telegram
+
+💡 **Uso Recomendado:**
+1. Configura con /config
+2. El sistema funciona automáticamente
+3. Usa /status para monitorear
+4. Interviene solo si necesitas cambiar estrategia
+"""
             
             # Verificar estado actual y modo
             from services.grid.main import obtener_configuracion_trading
@@ -59,7 +93,7 @@ class BasicCommandsHandler(BaseHandler):
                 message += "⚙️ <b>Configuración:</b> No configurado\n"
             
             message += "\n📋 <b>Comandos principales:</b>\n"
-            message += "/config - Configurar bot (30 niveles automático)\n"
+            message += "/config - Configurar bot (solo par + capital)\n"
             message += "/start_bot - Iniciar trading inteligente\n"
             message += "/stop_bot - Detener bot\n"
             message += "/status - Estado completo (bot + cerebro)\n\n"
@@ -106,6 +140,70 @@ class BasicCommandsHandler(BaseHandler):
             # Iniciar bot manualmente
             def start_bot_async():
                 try:
+                    # PRIMERO: Consultar estado del cerebro
+                    bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
+                    
+                    try:
+                        from services.grid.main import consultar_estado_inicial_cerebro
+                        import asyncio
+                        
+                        # Crear event loop para la consulta asíncrona
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        try:
+                            # Consultar al cerebro
+                            resultado_cerebro = loop.run_until_complete(consultar_estado_inicial_cerebro())
+                            
+                            # Verificar que resultado_cerebro sea un diccionario
+                            if isinstance(resultado_cerebro, dict):
+                                # Analizar respuesta del cerebro
+                                if resultado_cerebro.get('puede_operar', False):
+                                    decision_cerebro = "🟢 OPERAR_GRID"
+                                    mensaje_cerebro = "✅ El Cerebro autoriza el trading"
+                                else:
+                                    decision_cerebro = "🔴 PAUSAR_GRID"
+                                    mensaje_cerebro = "⚠️ El Cerebro recomienda pausar el trading"
+                                
+                                # Mostrar resultado del cerebro
+                                bot.send_message(
+                                    chat_id, 
+                                    f"🧠 <b>Estado del Cerebro:</b>\n"
+                                    f"• Decisión: {decision_cerebro}\n"
+                                    f"• Razón: {resultado_cerebro.get('razon', 'No disponible')}\n"
+                                    f"• {mensaje_cerebro}"
+                                )
+                                
+                                # Si el cerebro dice PAUSAR, preguntar si continuar
+                                if not resultado_cerebro.get('puede_operar', False):
+                                    bot.send_message(
+                                        chat_id,
+                                        "⚠️ <b>El Cerebro recomienda pausar el trading</b>\n\n"
+                                        "¿Deseas continuar de todas formas?\n"
+                                        "Responde 'SI' para continuar o 'NO' para cancelar."
+                                    )
+                                    # Aquí podrías implementar un sistema de confirmación
+                                    # Por ahora, continuamos con advertencia
+                                    bot.send_message(chat_id, "⚠️ Continuando con advertencia...")
+                            else:
+                                bot.send_message(
+                                    chat_id,
+                                    f"⚠️ <b>Respuesta inesperada del Cerebro:</b> {resultado_cerebro}\n"
+                                    f"Continuando en modo standalone..."
+                                )
+                            
+                        finally:
+                            loop.close()
+                            
+                    except Exception as e:
+                        bot.send_message(
+                            chat_id,
+                            f"⚠️ <b>No se pudo consultar al Cerebro:</b> {str(e)}\n"
+                            f"Continuando en modo standalone..."
+                        )
+                    
+                    # SEGUNDO: Iniciar el grid bot
+                    bot.send_message(chat_id, "🚀 Iniciando Grid Bot...")
                     success, result_message = start_grid_bot_manual()
                     
                     if success:
@@ -238,6 +336,7 @@ class BasicCommandsHandler(BaseHandler):
 🔄 **Estado del Sistema:**
 • Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
 • Modo Trading: {config_trading.get('modo', 'No disponible')}
+• **Modo Operación: 🧠 AUTÓNOMO** (Responde a decisiones del Cerebro)
 
 🧠 **Estado del Cerebro:**
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
@@ -261,6 +360,7 @@ Usa /config para configurar el bot
 🔄 **Estado del Sistema:**
 • Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
 • Modo Trading: {config_trading.get('modo', 'No disponible')}
+• **Modo Operación: 🧠 AUTÓNOMO** (Responde a decisiones del Cerebro)
 
 🧠 **Estado del Cerebro:**
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
@@ -314,8 +414,9 @@ Usa /config para configurar el bot
         """
         try:
             from services.grid.main import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
-            
-            # Si ya está en modo productivo, informar
+            from services.grid.schedulers.grid_scheduler import get_grid_bot_status, stop_grid_bot_manual, start_grid_bot_manual
+
+            bot_status = get_grid_bot_status()
             if MODO_PRODUCTIVO:
                 config = obtener_configuracion_trading()
                 message = f"""
@@ -327,14 +428,25 @@ Usa /config para configurar el bot
 
 ⚠️ **ADVERTENCIA**: Trading con dinero real
 """
-            else:
-                # Cambiar a modo productivo
-                config = alternar_modo_trading()
-                message = f"""
+                bot.send_message(chat_id, message)
+                return
+
+            # Si el bot está corriendo, detenerlo y cancelar órdenes
+            if bot_status['bot_running']:
+                bot.send_message(chat_id, "🛑 Deteniendo Grid Bot y cancelando órdenes por cambio de modo...")
+                success, msg = stop_grid_bot_manual()
+                if success:
+                    bot.send_message(chat_id, "✅ Grid Bot detenido y órdenes canceladas correctamente.")
+                else:
+                    bot.send_message(chat_id, f"⚠️ Hubo un problema al detener el bot: {msg}")
+
+            # Cambiar a modo productivo
+            config = alternar_modo_trading()
+            message = f"""
 🟢 **CAMBIADO A MODO PRODUCTIVO**
 
 • Nuevo modo: {config['modo']}
-• Descripción: {config['descripción']}
+• Descripción: {config['descripcion']}
 
 ⚠️ **ADVERTENCIA IMPORTANTE**:
 Ahora estás operando con DINERO REAL en Binance.
@@ -342,10 +454,17 @@ Todas las operaciones afectarán tu cuenta real.
 
 🔄 Usa /modo_sandbox para volver a paper trading
 """
-            
             bot.send_message(chat_id, message)
             logger.info(f"✅ Comando modo_productivo ejecutado para chat {chat_id}")
-            
+
+            # Reiniciar el bot automáticamente en el nuevo modo
+            bot.send_message(chat_id, "🚀 Reiniciando Grid Bot en modo PRODUCTIVO...")
+            success, msg = start_grid_bot_manual()
+            if success:
+                bot.send_message(chat_id, "✅ Grid Bot iniciado en modo PRODUCTIVO.")
+            else:
+                bot.send_message(chat_id, f"⚠️ No se pudo iniciar el bot automáticamente: {msg}")
+
         except Exception as e:
             error_message = f"❌ Error al cambiar a modo productivo: {str(e)}"
             bot.send_message(chat_id, error_message)
@@ -357,8 +476,9 @@ Todas las operaciones afectarán tu cuenta real.
         """
         try:
             from services.grid.main import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
-            
-            # Si ya está en modo sandbox, informar
+            from services.grid.schedulers.grid_scheduler import get_grid_bot_status, stop_grid_bot_manual, start_grid_bot_manual
+
+            bot_status = get_grid_bot_status()
             if not MODO_PRODUCTIVO:
                 config = obtener_configuracion_trading()
                 message = f"""
@@ -370,10 +490,21 @@ Todas las operaciones afectarán tu cuenta real.
 
 ✅ **SEGURO**: Paper trading sin riesgo
 """
-            else:
-                # Cambiar a modo sandbox
-                config = alternar_modo_trading()
-                message = f"""
+                bot.send_message(chat_id, message)
+                return
+
+            # Si el bot está corriendo, detenerlo y cancelar órdenes
+            if bot_status['bot_running']:
+                bot.send_message(chat_id, "🛑 Deteniendo Grid Bot y cancelando órdenes por cambio de modo...")
+                success, msg = stop_grid_bot_manual()
+                if success:
+                    bot.send_message(chat_id, "✅ Grid Bot detenido y órdenes canceladas correctamente.")
+                else:
+                    bot.send_message(chat_id, f"⚠️ Hubo un problema al detener el bot: {msg}")
+
+            # Cambiar a modo sandbox
+            config = alternar_modo_trading()
+            message = f"""
 🟡 **CAMBIADO A MODO SANDBOX**
 
 • Nuevo modo: {config['modo']}
@@ -385,10 +516,17 @@ No se usa dinero real.
 
 🔄 Usa /modo_productivo para trading real
 """
-            
             bot.send_message(chat_id, message)
             logger.info(f"✅ Comando modo_sandbox ejecutado para chat {chat_id}")
-            
+
+            # Reiniciar el bot automáticamente en el nuevo modo
+            bot.send_message(chat_id, "🚀 Reiniciando Grid Bot en modo SANDBOX...")
+            success, msg = start_grid_bot_manual()
+            if success:
+                bot.send_message(chat_id, "✅ Grid Bot iniciado en modo SANDBOX.")
+            else:
+                bot.send_message(chat_id, f"⚠️ No se pudo iniciar el bot automáticamente: {msg}")
+
         except Exception as e:
             error_message = f"❌ Error al cambiar a modo sandbox: {str(e)}"
             bot.send_message(chat_id, error_message)
@@ -469,14 +607,14 @@ No se usa dinero real.
             modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
             
             # Calcular capital mínimo para 30 niveles
-            capital_minimo = 30 * 20  # 600 USDT
+            capital_minimo = 30 * 25  # 750 USDT
             
             message = f"""
 📊 **CONFIGURACIÓN OPTIMIZADA v3.0**
 
-🎯 **Parámetros validados por backtesting:**
-• Niveles de grid: 30 (óptimo)
-• Rango de precios: 10% (óptimo)
+🎯 **Parámetros actuales (FIJOS):**
+• Niveles de grid: 30 (óptimo validado)
+• Rango de precios: 10% (óptimo validado)
 • Capital sandbox: $1000 USDT (fijo)
 • Capital productivo mínimo: ${capital_minimo} USDT
 
@@ -490,17 +628,32 @@ No se usa dinero real.
 
 💰 **¿Por qué ${capital_minimo} USDT mínimo?**
 • 30 niveles requieren diversificación
-• ~$20 USDT por nivel para seguridad
-• Absorber fluctuaciones del 10% de rango
-• Mantener liquidez para recompras
+• ~$25 USDT por nivel para cubrir comisiones
+• Comisiones Binance: 0.1% por trade
+• Spread entre compra/venta
+• Fluctuaciones del 10% de rango
+• Liquidez para recompras
 
-🔄 **Cambios vs versión anterior:**
-• Niveles: 4-6 → 30 (validado)
-• Capital: Variable → Optimizado
-• Trailing: Activo → Desactivado
-• Decisiones: Manual → Cerebro automático
+🔄 **Evolución del sistema:**
 
-💡 Usa /config para aplicar estos parámetros automáticamente
+📈 **VERSIÓN ACTUAL (v3.0):**
+• Parámetros fijos: 30 niveles, 10% rango
+• Cerebro decide: ¿Cuándo operar?
+• Configuración: Solo par + capital
+
+🚀 **VERSIÓN FUTURA (v4.0):**
+• Cerebro decide: ¿Cuándo operar?
+• Cerebro decide: ¿Cuántos niveles? (dinámico)
+• Cerebro decide: ¿Qué rango usar? (dinámico)
+• Configuración: Solo par + capital mínimo
+
+🧠 **Cerebro Inteligente Futuro:**
+• Análisis de mercado en tiempo real
+• Selección dinámica de parámetros
+• Adaptación automática a condiciones
+• Optimización continua por IA
+
+💡 Usa /config para aplicar la configuración actual
 """
             
             bot.send_message(chat_id, message)

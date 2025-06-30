@@ -9,18 +9,25 @@ INTEGRACIÓN CEREBRO V3.0:
 - Recibe notificaciones automáticas del Cerebro
 - Modo productivo vs sandbox controlable desde Telegram
 """
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import httpx
 import asyncio
-from services.grid.schedulers.grid_scheduler import get_grid_scheduler, stop_grid_bot_scheduler
-from shared.services.logging_config import setup_logging, get_logger
-from shared.services.telegram_service import send_service_startup_notification
-from shared.database.session import init_database
+import logging
+import threading
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+from typing import Optional
+import httpx
+from pydantic import BaseModel
 
 # Imports para el bot de Telegram
 from shared.services.telegram_bot_service import TelegramBot
+from shared.services.telegram_service import send_service_startup_notification
+from shared.database.session import init_database
+from services.grid.schedulers.grid_scheduler import get_grid_scheduler, stop_grid_bot_scheduler
+from shared.services.logging_config import setup_logging, get_logger
 from services.grid.interfaces.telegram_interface import GridTelegramInterface
 
 logger = get_logger(__name__)
@@ -30,19 +37,19 @@ telegram_bot = None
 telegram_interface = None
 telegram_thread = None
 
+# Estado del cerebro para integración
+estado_cerebro = {
+    "decision": "No disponible",
+    "ultima_actualizacion": None,
+    "fuente": "no_inicializado"
+}
+
 # ============================================================================
 # INTEGRACIÓN CON CEREBRO V3.0
 # ============================================================================
 
 # Variable global para controlar modo productivo/sandbox
 MODO_PRODUCTIVO = True  # True = Productivo, False = Sandbox/Paper Trading
-
-# Estado de la decisión del cerebro
-estado_cerebro = {
-    "decision": "PAUSAR_GRID",  # Por defecto pausado hasta consultar cerebro
-    "ultima_actualizacion": None,
-    "fuente": "inicial"
-}
 
 class DecisionCerebro(BaseModel):
     """Modelo para recibir decisiones del Cerebro"""
@@ -55,34 +62,43 @@ class DecisionCerebro(BaseModel):
 
 async def consultar_estado_inicial_cerebro():
     """
-    Consulta el estado inicial del Cerebro al arrancar el Grid
+    Consulta el estado inicial del cerebro para el par configurado.
+    
+    Returns:
+        Dict con la decisión del cerebro
     """
     global estado_cerebro
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get("http://localhost:8004/grid/status/ETH-USDT")
+        # Por ahora, usar ETH/USDT como par por defecto
+        # En el futuro, esto se puede mejorar para obtener la configuración del usuario
+        par = "ETH/USDT"
+        
+        # Consultar al cerebro
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"http://localhost:8004/grid/status/{par.replace('/', '-')}",
+                timeout=10.0
+            )
             
             if response.status_code == 200:
-                data = response.json()
+                resultado = response.json()
+                
+                # Actualizar estado global
                 estado_cerebro.update({
-                    "decision": data.get("decision", "PAUSAR_GRID"),
-                    "ultima_actualizacion": data.get("timestamp"),
-                    "fuente": data.get("fuente", "cerebro_consulta_inicial")
+                    "decision": resultado.get('decision', 'No disponible'),
+                    "ultima_actualizacion": resultado.get('timestamp'),
+                    "fuente": resultado.get('fuente', 'consulta_manual')
                 })
                 
-                logger.info(f"🧠 Estado inicial del Cerebro: {estado_cerebro['decision']}")
-                logger.info(f"📊 ADX: {data.get('adx_valor')}, Volatilidad: {data.get('volatilidad_valor')}")
-                
-                return True
+                logger.info(f"✅ Estado del cerebro consultado: {par} -> {resultado.get('decision')}")
+                return resultado
             else:
-                logger.warning(f"⚠️ Error consultando Cerebro: {response.status_code}")
+                raise Exception(f"Error {response.status_code}: {response.text}")
                 
     except Exception as e:
-        logger.warning(f"⚠️ No se pudo conectar con el Cerebro: {e}")
-        logger.info("🔄 Grid continuará con decisión por defecto: PAUSAR_GRID")
-    
-    return False
+        logger.error(f"❌ Error consultando cerebro: {e}")
+        raise
 
 def obtener_configuracion_trading():
     """
@@ -194,12 +210,8 @@ def start_grid_service():
         # Iniciar bot de Telegram
         telegram_bot_instance = start_telegram_bot()
         
-        # Consultar estado inicial del Cerebro de forma asíncrona
-        logger.info("🧠 Consultando estado inicial del Cerebro...")
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(consultar_estado_inicial_cerebro())
-        loop.close()
+        # NOTA: La consulta al cerebro se hará en el lifespan de FastAPI
+        # para evitar problemas con el event loop
         
         logger.info("✅ Grid Worker iniciado correctamente")
         logger.info("🔄 Monitor de salud: Cada 5 minutos")
@@ -244,31 +256,52 @@ def stop_grid_service():
     except Exception as e:
         logger.error(f"❌ Error al detener grid worker: {e}")
 
-# Gestor de Ciclo de Vida para FastAPI
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("🚀 Iniciando FastAPI del Grid Worker...")
+    """
+    Lifespan de FastAPI para manejar eventos de inicio y cierre.
+    """
+    # Evento de inicio
+    logger.info("🚀 Iniciando Grid Service...")
+    
+    # Inicializar el grid service (scheduler, telegram, logs, etc.)
     try:
-        start_grid_service()
+        scheduler = start_grid_service()
+        logger.info("✅ Grid Service iniciado correctamente")
+        logger.info("🧠 Grid en MODO AUTÓNOMO - Responde a decisiones del Cerebro")
+        logger.info("🔄 Monitoreo automático cada 10 minutos")
+        logger.info("📱 Comandos manuales: /start_bot, /stop_bot")
     except Exception as e:
-        logger.error(f"❌ Error al iniciar Grid Worker: {e}")
+        logger.error(f"❌ Error al iniciar Grid Service: {e}")
+        raise
+    
+    # NO consultar al cerebro automáticamente - esperar activación manual o automática
+    logger.info("🧠 Grid en standby - Consulta al cerebro se hará al activar manualmente o automáticamente")
     
     yield
     
-    # Shutdown
-    logger.info("🛑 Cerrando FastAPI del Grid Worker...")
+    # Evento de cierre
+    logger.info("🛑 Cerrando Grid Service...")
     try:
         stop_grid_service()
     except Exception as e:
-        logger.error(f"❌ Error al detener Grid Worker: {e}")
+        logger.error(f"❌ Error al detener Grid Service: {e}")
 
-# Aplicación FastAPI minimal para health checks
+# Crear aplicación FastAPI con lifespan
 app = FastAPI(
-    title="Oráculo Bot - Grid Worker",
-    version="0.1.0",
-    description="Worker de grid trading automatizado para Binance con integración Cerebro v3.0",
+    title="Grid Trading Service",
+    description="Servicio de Grid Trading con integración Cerebro v3.0",
+    version="3.0.0",
     lifespan=lifespan
+)
+
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Endpoints mínimos para health checks
@@ -281,40 +314,37 @@ def read_root():
         "description": "Worker de trading - Grid trading automatizado en Binance"
     }
 
-@app.get("/health", tags=["Health"])
-def health_check():
-    """Health check específico para el grid worker."""
+@app.get("/health")
+async def health_check():
+    """
+    Endpoint de health check para el Grid Worker.
+    """
     try:
+        # Verificar que el scheduler esté activo
         scheduler = get_grid_scheduler()
-        is_running = scheduler.running if scheduler else False
-        
-        jobs_count = len(scheduler.get_jobs()) if scheduler and is_running else 0
-        
-        # Verificar estado del bot de Telegram
-        telegram_running = telegram_thread is not None and telegram_thread.is_alive()
-        
-        features = [
-            "🤖 Grid trading strategy",
-            "💹 Binance automated trading",
-            "🔄 Health monitoring every 5 minutes"
-        ]
-        
-        if telegram_running:
-            features.append("🤖 Telegram bot active")
-        
-        return {
-            "worker": "grid",
-            "status": "healthy" if is_running else "stopped",
-            "scheduler_running": is_running,
-            "telegram_bot_running": telegram_running,
-            "active_jobs": jobs_count,
-            "features": features
-        }
+        if scheduler and scheduler.running:
+            return {
+                "status": "healthy",
+                "service": "Grid Trading Service",
+                "version": "3.0.0",
+                "scheduler": "running",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "status": "unhealthy",
+                "service": "Grid Trading Service", 
+                "version": "3.0.0",
+                "scheduler": "stopped",
+                "timestamp": datetime.now().isoformat()
+            }
     except Exception as e:
         return {
-            "worker": "grid",
             "status": "error",
-            "error": str(e)
+            "service": "Grid Trading Service",
+            "version": "3.0.0", 
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
         }
 
 # ============================================================================
@@ -325,6 +355,7 @@ def health_check():
 async def recibir_decision_cerebro(decision: DecisionCerebro):
     """
     Endpoint para recibir decisiones automáticas del Cerebro
+    IMPLEMENTACIÓN AUTÓNOMA: El Grid responde automáticamente a las decisiones
     """
     global estado_cerebro
     
@@ -339,12 +370,65 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
         logger.info(f"🧠 Nueva decisión del Cerebro: {decision.decision}")
         logger.info(f"📊 Par: {decision.par} | ADX: {decision.adx_valor} | Volatilidad: {decision.volatilidad_valor}")
         
-        # Aquí puedes agregar lógica para actuar sobre la decisión
-        # Por ejemplo, pausar/reanudar el grid trading
+        # LÓGICA AUTÓNOMA: Actuar según la decisión del cerebro
+        from services.grid.schedulers.grid_scheduler import get_grid_bot_status, start_grid_bot_manual, stop_grid_bot_manual
+        
+        bot_status = get_grid_bot_status()
+        
+        if decision.decision == "OPERAR_GRID":
+            if not bot_status['bot_running']:
+                logger.info("🚀 Cerebro autoriza trading - Iniciando Grid Bot automáticamente...")
+                success, message = start_grid_bot_manual()
+                if success:
+                    logger.info("✅ Grid Bot iniciado automáticamente por decisión del Cerebro")
+                    # Enviar notificación por Telegram
+                    try:
+                        from shared.services.telegram_service import send_telegram_message
+                        send_telegram_message(
+                            f"🧠 <b>Grid iniciado automáticamente</b>\n\n"
+                            f"✅ El Cerebro autorizó el trading\n"
+                            f"📊 Par: {decision.par}\n"
+                            f"📈 ADX: {decision.adx_valor:.2f}\n"
+                            f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
+                            f"⏰ {decision.timestamp}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
+                else:
+                    logger.error(f"❌ Error iniciando Grid Bot automáticamente: {message}")
+            else:
+                logger.info("ℹ️ Grid Bot ya está ejecutándose - Cerebro confirma continuar")
+                
+        elif decision.decision == "PAUSAR_GRID":
+            if bot_status['bot_running']:
+                logger.info("🛑 Cerebro recomienda pausar - Deteniendo Grid Bot automáticamente...")
+                success, message = stop_grid_bot_manual()
+                if success:
+                    logger.info("✅ Grid Bot detenido automáticamente por decisión del Cerebro")
+                    # Enviar notificación por Telegram
+                    try:
+                        from shared.services.telegram_service import send_telegram_message
+                        send_telegram_message(
+                            f"🧠 <b>Grid pausado automáticamente</b>\n\n"
+                            f"⚠️ El Cerebro recomendó pausar el trading\n"
+                            f"📊 Par: {decision.par}\n"
+                            f"📈 ADX: {decision.adx_valor:.2f}\n"
+                            f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
+                            f"⏰ {decision.timestamp}\n\n"
+                            f"🔄 El Grid se reactivará automáticamente cuando el Cerebro autorice"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
+                else:
+                    logger.error(f"❌ Error deteniendo Grid Bot automáticamente: {message}")
+            else:
+                logger.info("ℹ️ Grid Bot ya está pausado - Cerebro confirma mantener pausado")
         
         return {
             "status": "success",
-            "message": f"Decisión {decision.decision} recibida y procesada",
+            "message": f"Decisión {decision.decision} procesada y ejecutada automáticamente",
+            "action_taken": "start" if decision.decision == "OPERAR_GRID" and not bot_status['bot_running'] else 
+                           "stop" if decision.decision == "PAUSAR_GRID" and bot_status['bot_running'] else "none",
             "timestamp": decision.timestamp
         }
         
@@ -386,12 +470,13 @@ def alternar_modo_trading_endpoint():
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    # Punto de entrada directo (sin FastAPI)
+    # Iniciar el grid service antes de FastAPI
     try:
+        logger.info("🚀 Iniciando Grid Service...")
         scheduler = start_grid_service()
+        logger.info("✅ Grid Service iniciado correctamente")
         
         # Mantener el servicio corriendo
-        import time
         logger.info("🤖 Grid Worker ejecutándose en modo standalone...")
         while True:
             time.sleep(60)  # Revisar cada minuto

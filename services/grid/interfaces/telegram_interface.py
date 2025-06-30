@@ -163,9 +163,31 @@ class GridTelegramInterface:
 
 def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Obtiene la configuración dinámica para el grid bot desde la base de datos.
-    Esta función mantiene compatibilidad con el sistema existente.
+    Obtiene la configuración dinámica para el grid bot.
+    
+    LÓGICA POR MODO:
+    - SANDBOX: Configuración fija (1000 USDT, ETH/USDT, etc.) - NO consulta BD
+    - PRODUCTIVO: Configuración personalizada desde la base de datos. Si no hay, la crea con mínimos.
     """
+    from services.grid.main import MODO_PRODUCTIVO
+    
+    # CONFIGURACIÓN FIJA PARA MODO SANDBOX
+    if not MODO_PRODUCTIVO:
+        logger.info("🟡 Usando configuración fija para MODO SANDBOX")
+        return {
+            'pair': 'ETH/USDT',
+            'total_capital': 1000.0,  # Capital fijo para sandbox
+            'grid_levels': 30,  # Validado en backtesting
+            'price_range_percent': 10.0,  # Validado en backtesting
+            'stop_loss_percent': 5.0,
+            'enable_stop_loss': True,
+            'enable_trailing_up': False,  # Desactivado: Cerebro decide cuándo operar
+            'modo': 'SANDBOX'
+        }
+    
+    # CONFIGURACIÓN DINÁMICA PARA MODO PRODUCTIVO
+    logger.info("🟢 Consultando configuración personalizada para MODO PRODUCTIVO")
+    
     # Crear una instancia temporal del handler para acceder a la funcionalidad
     from shared.services.telegram_bot_service import TelegramBot
     from shared.config.settings import settings
@@ -182,17 +204,26 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
         
         # Si no se encuentra configuración específica, buscar cualquier configuración activa
         if not config:
-            # Usar el método del handler base
             from shared.database.session import get_db_session
             from shared.database.models import GridBotConfig
-            
             with get_db_session() as db:
                 config = db.query(GridBotConfig).filter(
                     GridBotConfig.is_active == True
                 ).first()
+                # Si no hay configuración activa, crear una mínima por defecto
+                if not config:
+                    logger.warning("⚠️ No hay configuración activa, creando configuración mínima por defecto")
+                    from services.grid.interfaces.handlers.base_handler import BaseHandler
+                    base_handler = BaseHandler()
+                    min_config = base_handler.calculate_optimal_config('ETH/USDT', 750.0)
+                    # Guardar en la base de datos
+                    base_handler.save_user_config('default', min_config)
+                    config = db.query(GridBotConfig).filter(
+                        GridBotConfig.is_active == True
+                    ).first()
         
         if config:
-            logger.info(f"✅ Usando configuración dinámica: {config.pair}")
+            logger.info(f"✅ Usando configuración personalizada: {config.pair} - ${config.total_capital} USDT")
             # Acceder directamente a los valores del objeto
             pair_value = config.pair
             capital_value = config.total_capital
@@ -209,30 +240,33 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
                 'price_range_percent': range_value,
                 'stop_loss_percent': stop_loss_value,
                 'enable_stop_loss': enable_stop_loss_value,
-                'enable_trailing_up': enable_trailing_value
+                'enable_trailing_up': enable_trailing_value,
+                'modo': 'PRODUCTIVO'
             }
         else:
-            # Configuración por defecto como fallback - PARÁMETROS ÓPTIMOS VALIDADOS
-            logger.warning("⚠️ No hay configuración dinámica, usando valores óptimos por defecto")
+            # Configuración por defecto como fallback para modo productivo
+            logger.warning("⚠️ No hay configuración personalizada, usando valores mínimos por defecto")
             return {
                 'pair': 'ETH/USDT',
-                'total_capital': 1000.0,  # Capital por defecto para sandbox
+                'total_capital': 750.0,  # Capital mínimo para productivo
                 'grid_levels': 30,  # Validado en backtesting
                 'price_range_percent': 10.0,  # Validado en backtesting
                 'stop_loss_percent': 5.0,
                 'enable_stop_loss': True,
-                'enable_trailing_up': False  # Desactivado: Cerebro decide cuándo operar
+                'enable_trailing_up': False,  # Desactivado: Cerebro decide cuándo operar
+                'modo': 'PRODUCTIVO'
             }
             
     except Exception as e:
-        logger.error(f"❌ Error obteniendo configuración dinámica: {e}")
-        # Fallback a configuración por defecto - PARÁMETROS ÓPTIMOS VALIDADOS
+        logger.error(f"❌ Error obteniendo configuración personalizada: {e}")
+        # Fallback a configuración mínima para modo productivo
         return {
             'pair': 'ETH/USDT',
-            'total_capital': 1000.0,  # Capital por defecto para sandbox
+            'total_capital': 750.0,  # Capital mínimo para productivo
             'grid_levels': 30,  # Validado en backtesting
             'price_range_percent': 10.0,  # Validado en backtesting
             'stop_loss_percent': 5.0,
             'enable_stop_loss': True,
-            'enable_trailing_up': False  # Desactivado: Cerebro decide cuándo operar
+            'enable_trailing_up': False,  # Desactivado: Cerebro decide cuándo operar
+            'modo': 'PRODUCTIVO'
         } 

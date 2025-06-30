@@ -23,38 +23,56 @@ MAX_RECONNECTION_ATTEMPTS = 5
 
 def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Valida y normaliza la configuración del grid bot
+    Valida y normaliza la configuración del grid bot con parámetros fijos optimizados.
+    
+    PARÁMETROS FIJOS (validados por backtesting):
+    - 30 niveles de grid
+    - 10% de rango de precios
+    - Solo se valida el capital mínimo necesario
     
     Args:
         config: Configuración cruda del bot
         
     Returns:
-        Configuración validada y normalizada
+        Configuración validada y normalizada con parámetros fijos
         
     Raises:
         ValueError: Si la configuración es inválida
     """
     try:
         # Validar campos requeridos
-        required_fields = ['pair', 'total_capital', 'grid_levels', 'price_range_percent']
+        required_fields = ['pair', 'total_capital']
         for field in required_fields:
             if field not in config:
                 raise ValueError(f"Campo requerido faltante: {field}")
         
-        # Validar tipos y rangos
+        # Validar tipos básicos
         pair = str(config['pair']).upper()
         total_capital = float(config['total_capital'])
-        grid_levels = int(config['grid_levels'])
-        price_range_percent = float(config['price_range_percent'])
         
+        # PARÁMETROS FIJOS OPTIMIZADOS (no configurables)
+        grid_levels = 30  # Validado por backtesting
+        price_range_percent = 10.0  # Validado por backtesting
+        
+        # Validar capital mínimo necesario
         if total_capital <= 0:
             raise ValueError("El capital total debe ser mayor a 0")
-        if grid_levels < 2:
-            raise ValueError("Debe haber al menos 2 niveles de grilla")
-        if grid_levels > 50:
-            raise ValueError("Máximo 50 niveles de grilla permitidos (recomendado: 30)")
-        if price_range_percent <= 0 or price_range_percent > 50:
-            raise ValueError("El rango de precio debe estar entre 0.1% y 50%")
+        
+        # Calcular capital mínimo considerando comisiones y seguridad
+        # Estimación: cada nivel necesita ~$25-30 USDT para cubrir:
+        # - Comisiones de Binance (0.1% por trade)
+        # - Spread entre compra/venta
+        # - Fluctuaciones del 10% de rango
+        # - Liquidez para recompras
+        capital_minimo_por_nivel = 25  # USDT por nivel
+        capital_minimo_requerido = grid_levels * capital_minimo_por_nivel  # 30 * 25 = $750
+        
+        if total_capital < capital_minimo_requerido:
+            raise ValueError(
+                f"Capital insuficiente. Para {grid_levels} niveles con {price_range_percent}% de rango "
+                f"se requiere mínimo ${capital_minimo_requerido} USDT. "
+                f"Capital actual: ${total_capital} USDT"
+            )
         
         # Configuración temporal para calcular profit
         temp_config = {
@@ -66,20 +84,28 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         validated_config = {
             'pair': pair,
             'total_capital': total_capital,
-            'grid_levels': grid_levels,
-            'price_range_percent': price_range_percent,
+            'grid_levels': grid_levels,  # Fijo: 30
+            'price_range_percent': price_range_percent,  # Fijo: 10%
             'profit_percentage': dynamic_profit * 100,  # Para logging
             'dynamic_profit_decimal': dynamic_profit,  # Para uso interno
             'max_orders_per_side': grid_levels // 2 + 1,
-            'min_order_size': total_capital * 0.001  # 0.1% del capital mínimo por orden
+            'min_order_size': total_capital * 0.001,  # 0.1% del capital mínimo por orden
+            'capital_minimo_por_nivel': capital_minimo_por_nivel,
+            'capital_minimo_requerido': capital_minimo_requerido
         }
         
-        logger.info(f"✅ Configuración validada: {validated_config}")
+        logger.info(f"✅ Configuración validada con parámetros fijos:")
+        logger.info(f"   📊 Par: {pair}")
+        logger.info(f"   💰 Capital: ${total_capital} USDT")
+        logger.info(f"   🎯 Niveles: {grid_levels} (fijo)")
+        logger.info(f"   📈 Rango: {price_range_percent}% (fijo)")
+        logger.info(f"   💹 Profit dinámico: {dynamic_profit*100:.2f}%")
+        
         return validated_config
         
     except Exception as e:
         logger.error(f"❌ Error validando configuración: {e}")
-        raise ValueError(f"Configuración inválida: {e}")
+        raise
 
 
 def get_exchange_connection() -> ccxt.Exchange:
@@ -151,7 +177,13 @@ def reconnect_exchange(max_attempts: int = MAX_RECONNECTION_ATTEMPTS) -> Optiona
 
 def config_has_significant_changes(saved_config: Dict[str, Any], new_config: Dict[str, Any]) -> bool:
     """
-    Verifica si hay cambios significativos en la configuración que requieran reset
+    Verifica si hay cambios significativos en la configuración que requieran reset.
+    
+    CAMBIOS SIGNIFICATIVOS (solo par y capital):
+    - Par de trading
+    - Capital total
+    
+    Los parámetros técnicos (niveles, rango) son fijos y no se consideran cambios.
     
     Args:
         saved_config: Configuración guardada
@@ -161,8 +193,9 @@ def config_has_significant_changes(saved_config: Dict[str, Any], new_config: Dic
         True si hay cambios significativos
     """
     try:
-        # Campos que si cambian requieren reset completo
-        critical_fields = ['pair', 'total_capital', 'grid_levels', 'price_range_percent']
+        # Solo campos que si cambian requieren reset completo
+        # Los parámetros técnicos (grid_levels, price_range_percent) son fijos
+        critical_fields = ['pair', 'total_capital']
         
         for field in critical_fields:
             if saved_config.get(field) != new_config.get(field):
