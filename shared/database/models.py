@@ -28,7 +28,7 @@ class Noticia(Base):
 class GridBotConfig(Base):
     """
     Modelo para almacenar la configuración del bot de grid trading V2.
-    SISTEMA DE 3 CONFIGURACIONES FIJAS: ETH, BTC, POL
+    SISTEMA DE 3 CONFIGURACIONES FIJAS: ETH, BTC, AVAX
     Cada usuario tiene 3 configuraciones predefinidas que se actualizan, no se crean nuevas.
     """
     __tablename__ = "grid_bot_config"
@@ -37,10 +37,10 @@ class GridBotConfig(Base):
     
     # IDENTIFICACIÓN DE CONFIGURACIÓN
     telegram_chat_id = Column(String, nullable=False, index=True)  # Chat ID del usuario
-    config_type = Column(String, nullable=False, index=True)  # 'ETH', 'BTC', 'POL'
+    config_type = Column(String, nullable=False, index=True)  # 'ETH', 'BTC', 'AVAX'
     
     # CONFIGURACIÓN DE TRADING
-    pair = Column(String, nullable=False)  # Ej: "ETH/USDT", "BTC/USDT", "POL/USDT"
+    pair = Column(String, nullable=False)  # Ej: "ETH/USDT", "BTC/USDT", "AVAX/USDT"
     total_capital = Column(Float, nullable=False)
     grid_levels = Column(Integer, nullable=False, default=30)  # Fijo: 30
     price_range_percent = Column(Float, nullable=False, default=10.0)  # Fijo: 10%
@@ -82,7 +82,7 @@ class GridBotConfig(Base):
         Obtiene la configuración por defecto para un tipo específico
         
         Args:
-            config_type: 'ETH', 'BTC', 'POL'
+            config_type: 'ETH', 'BTC', 'AVAX'
             
         Returns:
             Diccionario con configuración por defecto
@@ -104,10 +104,10 @@ class GridBotConfig(Base):
                 'enable_stop_loss': True,
                 'enable_trailing_up': True
             },
-            'POL': {
-                'pair': 'POL/USDT',
+            'AVAX': {
+                'pair': 'AVAX/USDT',
                 'grid_levels': 30,
-                'price_range_percent': 10.0,  # RECETA MAESTRA POL
+                'price_range_percent': 10.0,  # RECETA MAESTRA AVAX
                 'stop_loss_percent': 5.0,
                 'enable_stop_loss': True,
                 'enable_trailing_up': True

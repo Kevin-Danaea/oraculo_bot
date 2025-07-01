@@ -17,7 +17,7 @@ class ConfigFlowHandler(BaseHandler):
             
             # Obtener configuraciones actuales del usuario
             configs = {}
-            for config_type in ['ETH', 'BTC', 'POL']:
+            for config_type in ['ETH', 'BTC', 'AVAX']:
                 config = self.get_user_config_by_type(chat_id, config_type)
                 if config and getattr(config, 'is_configured', False):
                     configs[config_type] = {
@@ -34,7 +34,7 @@ class ConfigFlowHandler(BaseHandler):
             message = "📊 <b>CONFIGURACIONES MULTIBOT</b>\n\n"
             message += "🎯 <b>Estado actual de tus configuraciones:</b>\n\n"
             
-            pair_names = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'POL': 'POL/USDT'}
+            pair_names = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'AVAX': 'AVAX/USDT'}
             
             for i, (config_type, pair_name) in enumerate(pair_names.items(), 1):
                 config_info = configs[config_type]
@@ -52,7 +52,7 @@ class ConfigFlowHandler(BaseHandler):
             message += "Responde con el número (1-3) o el nombre del par:\n"
             message += "• <code>1</code> o <code>ETH</code> para ETH/USDT\n"
             message += "• <code>2</code> o <code>BTC</code> para BTC/USDT\n"
-            message += "• <code>3</code> o <code>POL</code> para POL/USDT\n\n"
+            message += "• <code>3</code> o <code>AVAX</code> para AVAX/USDT\n\n"
             message += "📋 <b>Nota:</b> Solo se puede modificar el capital.\n"
             message += "Los demás parámetros están optimizados por backtesting."
             
@@ -69,7 +69,7 @@ class ConfigFlowHandler(BaseHandler):
             self.send_error_message(bot, chat_id, "config", e)
     
     def handle_config_type_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja la selección del par a configurar (ETH, BTC, POL)"""
+        """Maneja la selección del par a configurar (ETH, BTC, AVAX)"""
         try:
             state = bot.get_conversation_state(chat_id)
             if state is None:
@@ -80,7 +80,7 @@ class ConfigFlowHandler(BaseHandler):
             config_mapping = {
                 '1': 'ETH', 'ETH': 'ETH',
                 '2': 'BTC', 'BTC': 'BTC', 
-                '3': 'POL', 'POL': 'POL'
+                '3': 'AVAX', 'AVAX': 'AVAX'
             }
             
             # Normalizar entrada del usuario
@@ -94,13 +94,13 @@ class ConfigFlowHandler(BaseHandler):
                     "💡 Opciones disponibles:\n"
                     "• <code>1</code> o <code>ETH</code> para ETH/USDT\n"
                     "• <code>2</code> o <code>BTC</code> para BTC/USDT\n"
-                    "• <code>3</code> o <code>POL</code> para POL/USDT"
+                    "• <code>3</code> o <code>AVAX</code> para AVAX/USDT"
                 )
                 return
             
             # Obtener información de la configuración existente
             existing_config = self.get_user_config_by_type(chat_id, selected_type)
-            pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'POL': 'POL/USDT'}[selected_type]
+            pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'AVAX': 'AVAX/USDT'}[selected_type]
             
             # Guardar tipo seleccionado
             state['data']['config_type'] = selected_type
@@ -173,7 +173,7 @@ class ConfigFlowHandler(BaseHandler):
             
             # Obtener información del par
             config_type = state['data']['config_type']
-            pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'POL': 'POL/USDT'}[config_type]
+            pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'AVAX': 'AVAX/USDT'}[config_type]
             
             # Mostrar configuración final
             from services.grid.core.cerebro_integration import MODO_PRODUCTIVO

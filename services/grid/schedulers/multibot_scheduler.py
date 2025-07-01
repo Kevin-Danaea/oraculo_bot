@@ -1,6 +1,6 @@
 """
 Multibot Scheduler - Maneja múltiples bots de grid simultáneamente
-Cada par (ETH, BTC, POL) tiene su propio bot independiente que se ejecuta en paralelo.
+Cada par (ETH, BTC, AVAX) tiene su propio bot independiente que se ejecuta en paralelo.
 """
 
 import threading

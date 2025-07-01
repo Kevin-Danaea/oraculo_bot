@@ -52,18 +52,18 @@ class RecipeMaster:
                 },
                 'description': 'Condiciones optimizadas para BTC/USDT basadas en backtesting'
             },
-            'POL/USDT': {
-                'name': 'Receta Maestra POL',
+            'AVAX/USDT': {
+                'name': 'Receta Maestra AVAX',
                 'conditions': {
                     'adx_threshold': 35,  # ADX debe ser menor a 35
                     'bollinger_bandwidth_threshold': 0.020,  # Ancho de banda > 0.020
                     'sentiment_threshold': -0.20,  # Sentimiento > -0.20
                 },
                 'grid_config': {
-                    'price_range_percent': 10.0,  # RECETA MAESTRA POL
+                    'price_range_percent': 10.0,  # RECETA MAESTRA AVAX
                     'grid_levels': 30
                 },
-                'description': 'Condiciones optimizadas para POL/USDT basadas en backtesting'
+                'description': 'Condiciones optimizadas para AVAX/USDT basadas en backtesting'
             }
         }
         
@@ -162,7 +162,7 @@ class RecipeMaster:
     @staticmethod
     def get_all_supported_pairs() -> list:
         """Retorna todos los pares soportados con recetas maestras"""
-        return ['ETH/USDT', 'BTC/USDT', 'POL/USDT']
+        return ['ETH/USDT', 'BTC/USDT', 'AVAX/USDT']
     
     @staticmethod
     def get_recipe_summary() -> Dict[str, Any]:

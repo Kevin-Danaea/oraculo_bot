@@ -1,13 +1,13 @@
 # 🔮 Oráculo Cripto Bot V3.0 - Sistema Multibot Inteligente
 
-> **🆕 ACTUALIZACIÓN V3.0**: Sistema Multibot simultáneo con 3 pares (ETH, BTC, POL), UI simplificada y control automático
+> **🇵🇱 ACTUALIZACIÓN V3.0**: Sistema Multibot simultáneo con 3 pares (ETH, BTC, AVAX), UI simplificada y control automático
 
 Un ecosistema avanzado de **microservicios** para **trading automatizado multibot** con **3 bots simultáneos**, **cerebro inteligente**, **análisis de noticias crypto** y **control simplificado desde Telegram**.
 
 ## 🎯 Características Principales
 
 ### 🤖 **Sistema Multibot V3.0**
-- **🚀 3 Bots Simultáneos**: ETH/USDT, BTC/USDT, POL/USDT
+- **🚀 3 Bots Simultáneos**: ETH/USDT, BTC/USDT, AVAX/USDT
 - **🧠 Cerebro Inteligente**: Decisiones automáticas basadas en ADX, volatilidad y sentimiento
 - **📱 UI Simplificada**: Comandos de Telegram más simples y eficientes
 - **⚙️ Configuración Mínima**: Solo capital total requerido ($900 mínimo)

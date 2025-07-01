@@ -37,7 +37,7 @@ CONFIGURACIONES_OPTIMAS: Dict[str, Dict[str, Any]] = {
         "GRID_RANGO": 7.5,                   # Rango de precios: 7.5%
         "GRID_NIVELES": 30                   # Niveles de grid: 30
     },
-    "POL/USDT": {
+    "AVAX/USDT": {
         "UMBRAL_ADX": 35,                    # ADX debe ser menor a 35
         "UMBRAL_VOLATILIDAD": 0.020,         # Ancho de Banda de Bollinger debe ser mayor a 0.020
         "UMBRAL_SENTIMIENTO": -0.20,         # Media Móvil de Sentimiento (7d) debe ser mayor a -0.20
@@ -50,7 +50,7 @@ CONFIGURACIONES_OPTIMAS: Dict[str, Dict[str, Any]] = {
 # LISTA DE PARES A MONITOREAR
 # ============================================================================
 
-PARES_A_MONITOREAR: List[str] = ['ETH/USDT', 'BTC/USDT', 'POL/USDT']
+PARES_A_MONITOREAR: List[str] = ['ETH/USDT', 'BTC/USDT', 'AVAX/USDT']
 
 # ============================================================================
 # CONFIGURACIÓN DE BASE DE DATOS

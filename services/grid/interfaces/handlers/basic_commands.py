@@ -32,7 +32,7 @@ class BasicCommandsHandler(BaseHandler):
 🤖 GRID BOT V3.0 - SISTEMA MULTIBOT AUTÓNOMO
 
 🧠 Arquitectura Inteligente:
-• Monitoreo automático de 3 pares simultáneos (ETH, BTC, POL)
+• Monitoreo automático de 3 pares simultáneos (ETH, BTC, AVAX)
 • El Cerebro decide cuándo operar cada par
 • Activación/desactivación automática según condiciones del mercado
 • Notificaciones automáticas por Telegram

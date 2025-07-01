@@ -191,8 +191,8 @@ def crear_configuraciones_por_defecto(db, chat_id: str = "default"):
                 'price_range_percent': 7.5
             },
             {
-                'config_type': 'POL',
-                'pair': 'POL/USDT',
+                'config_type': 'AVAX',
+                'pair': 'AVAX/USDT',
                 'total_capital': 1000.0,
                 'grid_levels': 30,
                 'price_range_percent': 10.0

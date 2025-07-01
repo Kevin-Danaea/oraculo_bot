@@ -297,7 +297,7 @@ app = FastAPI(
     
     ## Nueva Arquitectura Multibot Proactiva
     
-    * **Análisis Automático**: Monitorea 3 pares simultáneamente (ETH, BTC, POL)
+    * **Análisis Automático**: Monitorea 3 pares simultáneamente (ETH, BTC, AVAX)
     * **Recetas Maestras**: Cada par tiene condiciones específicas optimizadas
     * **Notificación Proactiva**: Avisa al Grid Multibot cuando cambiar decisiones  
     * **Sistema Escalable**: Fácil agregar nuevos pares en el futuro
@@ -307,7 +307,7 @@ app = FastAPI(
     
     * **ETH/USDT**: ADX < 30, Bollinger > 0.025, Rango 10%
     * **BTC/USDT**: ADX < 25, Bollinger > 0.035, Rango 7.5%
-    * **POL/USDT**: ADX < 35, Bollinger > 0.020, Rango 10%
+    * **AVAX/USDT**: ADX < 35, Bollinger > 0.020, Rango 10%
     
     ## Análisis Automático
     
@@ -378,7 +378,7 @@ async def root():
         "recetas_maestras": {
             "ETH/USDT": "ADX < 30, Bollinger > 0.025, Rango 10%",
             "BTC/USDT": "ADX < 25, Bollinger > 0.035, Rango 7.5%",
-            "POL/USDT": "ADX < 35, Bollinger > 0.020, Rango 10%"
+            "AVAX/USDT": "ADX < 35, Bollinger > 0.020, Rango 10%"
         },
         "endpoints": {
             "health": "/health/",

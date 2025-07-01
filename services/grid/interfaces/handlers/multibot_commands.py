@@ -175,7 +175,7 @@ class MultibotCommandsHandler(BaseHandler):
             message += "🧠 <b>Recetas Maestras:</b>\n"
             message += "• ETH: ADX < 30, Bollinger > 0.025, Rango 10%\n"
             message += "• BTC: ADX < 25, Bollinger > 0.035, Rango 7.5%\n"
-            message += "• POL: ADX < 35, Bollinger > 0.020, Rango 10%\n\n"
+            message += "• AVAX: ADX < 35, Bollinger > 0.020, Rango 10%\n\n"
             
             # Comandos disponibles
             message += "🔧 <b>Comandos disponibles:</b>\n"
@@ -270,6 +270,6 @@ class MultibotCommandsHandler(BaseHandler):
         recipes = {
             'ETH/USDT': 'ADX < 30, Bollinger > 0.025, Rango 10%',
             'BTC/USDT': 'ADX < 25, Bollinger > 0.035, Rango 7.5%',
-            'POL/USDT': 'ADX < 35, Bollinger > 0.020, Rango 10%'
+            'AVAX/USDT': 'ADX < 35, Bollinger > 0.020, Rango 10%'
         }
         return recipes.get(pair, 'Receta no definida') 

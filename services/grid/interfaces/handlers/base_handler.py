@@ -37,7 +37,7 @@ class BaseHandler:
             return None
     
     def get_user_config_by_type(self, chat_id: str, config_type: str) -> Optional[GridBotConfig]:
-        """Obtiene la configuración específica de un tipo (ETH, BTC, POL)"""
+        """Obtiene la configuración específica de un tipo (ETH, BTC, AVAX)"""
         try:
             with get_db_session() as db:
                 config = db.query(GridBotConfig).filter(
@@ -50,7 +50,7 @@ class BaseHandler:
             return None
     
     def get_all_user_configs(self, chat_id: str) -> list:
-        """Obtiene todas las configuraciones del usuario (ETH, BTC, POL)"""
+        """Obtiene todas las configuraciones del usuario (ETH, BTC, AVAX)"""
         try:
             with get_db_session() as db:
                 configs = db.query(GridBotConfig).filter(
@@ -196,19 +196,19 @@ class BaseHandler:
             return False
     
     def get_supported_pairs(self) -> list:
-        """Lista de pares soportados - Ahora incluye ETH, BTC, POL"""
-        return ['ETH/USDT', 'BTC/USDT', 'POL/USDT']
+        """Lista de pares soportados - Ahora incluye ETH, BTC, AVAX"""
+        return ['ETH/USDT', 'BTC/USDT', 'AVAX/USDT']
     
     def get_supported_config_types(self) -> list:
         """Lista de tipos de configuración soportados"""
-        return ['ETH', 'BTC', 'POL']
+        return ['ETH', 'BTC', 'AVAX']
     
     def get_config_type_from_pair(self, pair: str) -> str:
         """Obtiene el tipo de configuración basado en el par"""
         pair_mapping = {
             'ETH/USDT': 'ETH',
             'BTC/USDT': 'BTC', 
-            'POL/USDT': 'POL'
+            'AVAX/USDT': 'AVAX'
         }
         return pair_mapping.get(pair, 'ETH')
     
