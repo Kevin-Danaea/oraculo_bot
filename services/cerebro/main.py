@@ -601,6 +601,56 @@ async def get_batch_analysis(force: bool = False):
             detail=f"Error en análisis batch: {str(e)}"
         )
 
+@app.get("/grid/batch/init")
+async def grid_batch_init():
+    """
+    Endpoint para inicializar el monitoreo batch y devolver el primer análisis de todos los pares.
+    """
+    global grid_conectado_primera_vez, ultimo_resultado_batch, ultimo_batch_timestamp
+
+    if not grid_conectado_primera_vez:
+        logger.info("🚀 ========== PRIMERA CONEXIÓN DEL GRID (BATCH) ==========")
+        grid_conectado_primera_vez = True
+        # Ejecutar análisis batch de todos los pares
+        resultados_batch = decision_engine.analizar_todos_los_pares()
+        ultimo_resultado_batch = resultados_batch
+        ultimo_batch_timestamp = datetime.now()
+        iniciar_bucle_analisis()
+        logger.info("🔄 Monitoreo batch ACTIVADO")
+    else:
+        logger.info("ℹ️ Grid solicitó batch init pero ya está activo, devolviendo último batch cacheado.")
+        resultados_batch = ultimo_resultado_batch
+
+    if not resultados_batch:
+        raise HTTPException(
+            status_code=500,
+            detail="Error ejecutando análisis batch"
+        )
+
+    # Preparar respuesta igual que en /grid/batch/analysis
+    response = {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "batch_cached_at": ultimo_batch_timestamp.isoformat() if ultimo_batch_timestamp else None,
+        "total_pairs": len(resultados_batch),
+        "pairs_analyzed": list(resultados_batch.keys()),
+        "results": {},
+        "summary": {
+            "OPERAR_GRID": 0,
+            "PAUSAR_GRID": 0,
+            "ERROR": 0
+        }
+    }
+    for par, resultado in resultados_batch.items():
+        response["results"][par] = resultado
+        if resultado.get('success', False):
+            decision = resultado.get('decision', 'ERROR')
+            response["summary"][decision] += 1
+        else:
+            response["summary"]["ERROR"] += 1
+    logger.info(f"✅ Batch init entregado: {response['summary']}")
+    return response
+
 # ============================================================================
 # FUNCIONES DE CONTROL DEL SERVICIO
 # ============================================================================

@@ -131,80 +131,143 @@ Modo de Trading:
             # Iniciar bot manualmente
             def start_bot_async():
                 try:
-                    # PRIMERO: Consultar estado del cerebro
+                    # PRIMERO: Consultar estado del cerebro (batch init)
                     bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
-                    
                     try:
-                        from services.grid.core.cerebro_integration import consultar_estado_inicial_cerebro
-                        
-                        # Crear event loop para la consulta asíncrona
+                        import httpx
+                        import asyncio
+                        cerebro_url = "http://localhost:8004/grid/batch/init"
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        
                         try:
-                            # Consultar al cerebro con timeout más largo
-                            resultado_cerebro = loop.run_until_complete(
+                            response = loop.run_until_complete(
                                 asyncio.wait_for(
-                                    consultar_estado_inicial_cerebro(),
-                                    timeout=30.0
+                                    httpx.AsyncClient().get(cerebro_url, timeout=60.0),
+                                    timeout=60.0
                                 )
                             )
+                            if response.status_code == 200:
+                                resultado_batch = response.json()
+                            else:
+                                bot.send_message(chat_id, f"⚠️ Error consultando batch inicial del cerebro: {response.status_code}")
+                                resultado_batch = None
                         except asyncio.TimeoutError:
                             bot.send_message(
                                 chat_id,
-                                f"⏰ El cerebro está tardando en responder (timeout 30s)\n"
-                                f"Continuando en modo standalone..."
+                                f"⏰ El cerebro está tardando en responder (timeout 60s)\nContinuando en modo standalone..."
                             )
-                            resultado_cerebro = None
-                        
-                        # Verificar que resultado_cerebro sea un diccionario
-                        if resultado_cerebro is None:
-                            # Ya se envió mensaje de timeout, continuar
-                            pass
-                        elif isinstance(resultado_cerebro, dict):
-                            # Analizar respuesta del cerebro
-                            if resultado_cerebro.get('puede_operar', False):
-                                decision_cerebro = "🟢 OPERAR_GRID"
-                                mensaje_cerebro = "✅ El Cerebro autoriza el trading"
-                            else:
-                                decision_cerebro = "🔴 PAUSAR_GRID"
-                                mensaje_cerebro = "⚠️ El Cerebro recomienda pausar el trading"
-                            
-                            # Mostrar resultado del cerebro
-                            bot.send_message(
-                                chat_id, 
-                                f"🧠 Estado del Cerebro:\n"
-                                f"• Decisión: {decision_cerebro}\n"
-                                f"• Razón: {resultado_cerebro.get('razon', 'No disponible')}\n"
-                                f"• {mensaje_cerebro}"
-                            )
-                            
-                            # Si el cerebro dice PAUSAR, preguntar si continuar
-                            if not resultado_cerebro.get('puede_operar', False):
-                                bot.send_message(
-                                    chat_id,
-                                    "⚠️ El Cerebro recomienda pausar el trading\n\n"
-                                    "¿Deseas continuar de todas formas?\n"
-                                    "Responde 'SI' para continuar o 'NO' para cancelar."
-                                )
-                                # Aquí podrías implementar un sistema de confirmación
-                                # Por ahora, continuamos con advertencia
-                                bot.send_message(chat_id, "⚠️ Continuando con advertencia...")
-                        else:
+                            resultado_batch = None
+                        except Exception as e:
                             bot.send_message(
                                 chat_id,
-                                f"⚠️ Respuesta inesperada del Cerebro: {resultado_cerebro}\n"
-                                f"Continuando en modo standalone..."
+                                f"⚠️ Error consultando batch inicial del cerebro: {str(e)}\nContinuando en modo standalone..."
                             )
-                        
+                            resultado_batch = None
+                        # Procesar resultado batch
+                        if resultado_batch and resultado_batch.get('status') == 'success':
+                            results = resultado_batch.get('results', {})
+                            # Mostrar resumen y mensajes detallados de todos los pares
+                            from services.grid.core.cerebro_integration import obtener_configuraciones_bd
+                            configs = obtener_configuraciones_bd(chat_id)
+                            if configs:
+                                message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
+                                message += f"🟡 MODO SANDBOX (Paper Trading)\n\n"
+                                message += f"📊 Estado de Configuraciones ({len(configs)} pares):\n"
+                                for config in configs:
+                                    pair = config['pair']
+                                    capital = config['total_capital']
+                                    decision_data = results.get(pair, {})
+                                    decision = decision_data.get('decision', 'NO_DECISION') if decision_data.get('success', False) else 'NO_DECISION'
+                                    if decision == 'OPERAR_GRID':
+                                        icon = "🟢"
+                                        estado = "Operando"
+                                    elif decision == 'PAUSAR_GRID':
+                                        icon = "🔴"
+                                        estado = "Pausado (Cerebro)"
+                                    else:
+                                        icon = "🟡"
+                                        estado = "Standby"
+                                    message += f"• {icon} {pair}: ${capital:,.2f} | {estado}\n"
+                                # Contar estados
+                                operando = sum(1 for config in configs if results.get(config['pair'], {}).get('success', False) and results.get(config['pair'], {}).get('decision') == 'OPERAR_GRID')
+                                pausado = sum(1 for config in configs if results.get(config['pair'], {}).get('success', False) and results.get(config['pair'], {}).get('decision') == 'PAUSAR_GRID')
+                                standby = len(configs) - operando - pausado
+                                message += f"\n📈 Resumen:\n"
+                                message += f"🟢 Operando: {operando} par{'es' if operando != 1 else ''}\n"
+                                message += f"🔴 Pausado: {pausado} par{'es' if pausado != 1 else ''}\n"
+                                message += f"🟡 Standby: {standby} par{'es' if standby != 1 else ''}\n"
+                                message += f"\n🛡️ Protecciones V2:\n"
+                                message += f"• Stop-Loss: ✅ (5.0%)\n"
+                                message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
+                                message += f"📈 Usa /status para monitorear el progreso."
+                                bot.send_message(chat_id, message)
+                                # Mensajes detallados por par
+                                for config in configs:
+                                    pair = config['pair']
+                                    capital = config['total_capital']
+                                    decision_data = results.get(pair, {})
+                                    if not decision_data.get('success', False):
+                                        continue
+                                    decision = decision_data.get('decision', 'NO_DECISION')
+                                    indicadores = decision_data.get('indicadores', {})
+                                    razon = decision_data.get('razon', '')
+                                    # Obtener número de órdenes creadas y total esperado
+                                    ordenes_creadas = None
+                                    ordenes_totales = None
+                                    try:
+                                        # Intentar obtener del scheduler el número de órdenes creadas para el par
+                                        scheduler = get_multibot_scheduler()
+                                        bot_status = scheduler.get_status()
+                                        active_bot = next((b for b in bot_status['active_bots'] if b['pair'] == pair), None)
+                                        if active_bot and 'ordenes_creadas' in active_bot and 'ordenes_totales' in active_bot:
+                                            ordenes_creadas = active_bot['ordenes_creadas']
+                                            ordenes_totales = active_bot['ordenes_totales']
+                                        else:
+                                            # Fallback: usar niveles de grid como total esperado
+                                            ordenes_totales = config.get('grid_levels', None)
+                                    except Exception as e:
+                                        logger.warning(f"No se pudo obtener número de órdenes para {pair}: {e}")
+                                    if decision == 'OPERAR_GRID':
+                                        start_message = f"🚀 <b>GRID BOT AUTORIZADO</b>\n\n"
+                                        start_message += f"📊 Par: {pair}\n"
+                                        start_message += f"💰 Capital: ${capital:,.2f}\n"
+                                        start_message += f"🎯 Niveles: {config['grid_levels']}\n"
+                                        start_message += f"📈 Rango: {config['price_range_percent']}%\n"
+                                        start_message += f"📈 ADX: {indicadores.get('adx_actual', 0):.2f}\n"
+                                        start_message += f"📊 Volatilidad: {indicadores.get('volatilidad_actual', 0):.4f}\n"
+                                        start_message += f"💬 Sentimiento: {indicadores.get('sentiment_promedio', 0):.3f}\n\n"
+                                        start_message += f"✅ <b>Razón de autorización:</b>\n"
+                                        start_message += f"• {razon}\n\n"
+                                        start_message += f"🟢 El bot está operando automáticamente"
+                                        if ordenes_creadas is not None and ordenes_totales is not None:
+                                            start_message += f"\n📦 Órdenes creadas: {ordenes_creadas}/{ordenes_totales}"
+                                        elif ordenes_totales is not None:
+                                            start_message += f"\n📦 Órdenes creadas: ?/{ordenes_totales}"
+                                        bot.send_message(chat_id, start_message)
+                                    elif decision == 'PAUSAR_GRID':
+                                        pause_message = f"⏸️ <b>GRID BOT PAUSADO</b>\n\n"
+                                        pause_message += f"📊 Par: {pair}\n"
+                                        pause_message += f"💰 Capital: ${capital:,.2f}\n"
+                                        pause_message += f"🎯 Niveles: {config['grid_levels']}\n"
+                                        pause_message += f"📈 Rango: {config['price_range_percent']}%\n"
+                                        pause_message += f"📈 ADX: {indicadores.get('adx_actual', 0):.2f}\n"
+                                        pause_message += f"📊 Volatilidad: {indicadores.get('volatilidad_actual', 0):.4f}\n"
+                                        pause_message += f"💬 Sentimiento: {indicadores.get('sentiment_promedio', 0):.3f}\n\n"
+                                        pause_message += f"🛑 <b>Razón de pausa:</b>\n"
+                                        pause_message += f"• {razon}\n\n"
+                                        pause_message += f"🔄 El bot se reactivará automáticamente cuando el Cerebro autorice"
+                                        if ordenes_creadas is not None and ordenes_totales is not None:
+                                            pause_message += f"\n📦 Órdenes creadas: {ordenes_creadas}/{ordenes_totales}"
+                                        elif ordenes_totales is not None:
+                                            pause_message += f"\n📦 Órdenes creadas: ?/{ordenes_totales}"
+                                        bot.send_message(chat_id, pause_message)
+                        else:
+                            bot.send_message(chat_id, "⚠️ No se pudo obtener el estado batch inicial del cerebro. Continuando en modo standalone...")
                     except Exception as e:
                         bot.send_message(
                             chat_id,
-                            f"⚠️ No se pudo consultar al Cerebro: {str(e)}\n"
-                            f"El cerebro puede estar tardando en responder.\n"
-                            f"Continuando en modo standalone..."
+                            f"⚠️ No se pudo consultar al Cerebro: {str(e)}\nEl cerebro puede estar tardando en responder.\nContinuando en modo standalone..."
                         )
-                    
                     # SEGUNDO: Iniciar el multibot
                     bot.send_message(chat_id, "🚀 Iniciando Multibot...")
                     success = start_multibot_scheduler()
@@ -420,7 +483,7 @@ Usa /config para configurar el bot
 🔄 Estado del Sistema:
 • Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
 • Modo Trading: {config_trading.get('modo', 'No disponible')}
-• Modo Operación: 🧠 AUTÓNOMO (Responde a decisiones del Cerebro)
+• Modo Operación: �� AUTÓNOMO (Responde a decisiones del Cerebro)
 
 🧠 Estado del Cerebro:
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
