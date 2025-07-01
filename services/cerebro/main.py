@@ -65,6 +65,10 @@ grid_conectado_primera_vez = False
 # Configuración del servicio Grid
 GRID_SERVICE_URL = "http://localhost:8001"  # Puerto del servicio Grid
 
+# ================== CACHÉ DEL ÚLTIMO ANÁLISIS BATCH =====================
+ultimo_resultado_batch: Optional[Dict] = None
+ultimo_batch_timestamp: Optional[datetime] = None
+
 # ============================================================================
 # COMUNICACIÓN CON GRID SERVICE
 # ============================================================================
@@ -117,7 +121,7 @@ async def bucle_principal_analisis():
     3. Notifica al Grid con todas las decisiones de una vez
     4. Actualiza base de datos
     """
-    global bucle_activo, decisiones_anteriores
+    global bucle_activo, decisiones_anteriores, ultimo_resultado_batch, ultimo_batch_timestamp
     
     logger.info("🚀 ========== INICIANDO BUCLE PRINCIPAL DE ANÁLISIS MULTIBOT BATCH ==========")
     logger.info(f"📊 Pares a monitorear: {PARES_A_MONITOREAR}")
@@ -138,6 +142,9 @@ async def bucle_principal_analisis():
             # ANÁLISIS BATCH: Analizar todos los pares de una vez
             logger.info("🚀 Ejecutando análisis batch de todos los pares...")
             resultados_batch = decision_engine.analizar_todos_los_pares()
+            # Guardar en caché el resultado y el timestamp
+            ultimo_resultado_batch = resultados_batch
+            ultimo_batch_timestamp = datetime.now()
             
             if not resultados_batch:
                 logger.error("❌ Error en análisis batch - no se obtuvieron resultados")
@@ -540,30 +547,32 @@ async def get_master_recipes():
         )
 
 @app.get("/grid/batch/analysis")
-async def get_batch_analysis():
+async def get_batch_analysis(force: bool = False):
     """
     Endpoint para obtener análisis batch de todos los pares de una vez.
-    Mejora la eficiencia al evitar múltiples llamadas individuales.
-    
-    Returns:
-        Análisis completo de todos los pares monitoreados
+    Si force=true, ejecuta un análisis nuevo. Si no, devuelve el último resultado cacheado.
     """
+    global ultimo_resultado_batch, ultimo_batch_timestamp
     try:
-        logger.info("🚀 ========== SOLICITUD DE ANÁLISIS BATCH ==========")
-        
-        # Ejecutar análisis batch
-        resultados_batch = decision_engine.analizar_todos_los_pares()
-        
+        if force or ultimo_resultado_batch is None:
+            logger.info("🚀 Ejecutando análisis batch (forzado o primer uso)...")
+            resultados_batch = decision_engine.analizar_todos_los_pares()
+            ultimo_resultado_batch = resultados_batch
+            ultimo_batch_timestamp = datetime.now()
+        else:
+            logger.info(f"ℹ️ Devolviendo resultado batch cacheado (timestamp: {ultimo_batch_timestamp})")
+            resultados_batch = ultimo_resultado_batch
+
         if not resultados_batch:
             raise HTTPException(
                 status_code=500,
                 detail="Error ejecutando análisis batch"
             )
-        
         # Preparar respuesta
         response = {
             "status": "success",
             "timestamp": datetime.now().isoformat(),
+            "batch_cached_at": ultimo_batch_timestamp.isoformat() if ultimo_batch_timestamp else None,
             "total_pairs": len(resultados_batch),
             "pairs_analyzed": list(resultados_batch.keys()),
             "results": {},
@@ -573,21 +582,16 @@ async def get_batch_analysis():
                 "ERROR": 0
             }
         }
-        
         # Procesar resultados
         for par, resultado in resultados_batch.items():
             response["results"][par] = resultado
-            
             if resultado.get('success', False):
                 decision = resultado.get('decision', 'ERROR')
                 response["summary"][decision] += 1
             else:
                 response["summary"]["ERROR"] += 1
-        
-        logger.info(f"✅ Análisis batch completado: {response['summary']}")
-        
+        logger.info(f"✅ Análisis batch entregado: {response['summary']}")
         return response
-        
     except HTTPException:
         raise
     except Exception as e:
