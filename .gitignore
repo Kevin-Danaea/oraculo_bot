@@ -232,7 +232,6 @@ tmp/
 *.temp
 
 # Application specific
-data/
 downloads/
 backups/
 cache/
