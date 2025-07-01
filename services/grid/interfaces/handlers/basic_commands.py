@@ -131,8 +131,13 @@ Modo de Trading:
             # Iniciar bot manualmente
             def start_bot_async():
                 try:
-                    # PRIMERO: Consultar estado del cerebro (batch init)
+                    # Consultar al cerebro por el estado inicial (solo una vez)
                     bot.send_message(chat_id, "🧠 Consultando estado del Cerebro...")
+                    
+                    # Declarar results fuera del try para que esté disponible más adelante
+                    results = {}
+                    resultado_batch = None
+                    
                     try:
                         import httpx
                         import asyncio
@@ -168,41 +173,7 @@ Modo de Trading:
                             results = resultado_batch.get('results', {})
                             from services.grid.core.cerebro_integration import obtener_configuraciones_bd
                             configs = obtener_configuraciones_bd(chat_id)
-                            if configs:
-                                # Mostrar solo el resumen (una vez)
-                                message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
-                                message += f"🟡 MODO SANDBOX (Paper Trading)\n\n"
-                                message += f"📊 Estado de Configuraciones ({len(configs)} pares):\n"
-                                for config in configs:
-                                    pair = config['pair']
-                                    capital = config['total_capital']
-                                    decision_data = results.get(pair, {})
-                                    decision = decision_data.get('decision', 'NO_DECISION') if decision_data.get('success', False) else 'NO_DECISION'
-                                    if decision == 'OPERAR_GRID':
-                                        icon = "🟢"
-                                        estado = "Operando"
-                                    elif decision == 'PAUSAR_GRID':
-                                        icon = "🔴"
-                                        estado = "Pausado (Cerebro)"
-                                    else:
-                                        icon = "🟡"
-                                        estado = "Standby"
-                                    message += f"• {icon} {pair}: ${capital:,.2f} | {estado}\n"
-                                # Contar estados
-                                operando = sum(1 for config in configs if results.get(config['pair'], {}).get('success', False) and results.get(config['pair'], {}).get('decision') == 'OPERAR_GRID')
-                                pausado = sum(1 for config in configs if results.get(config['pair'], {}).get('success', False) and results.get(config['pair'], {}).get('decision') == 'PAUSAR_GRID')
-                                standby = len(configs) - operando - pausado
-                                message += f"\n📈 Resumen:\n"
-                                message += f"🟢 Operando: {operando} par{'es' if operando != 1 else ''}\n"
-                                message += f"🔴 Pausado: {pausado} par{'es' if pausado != 1 else ''}\n"
-                                message += f"🟡 Standby: {standby} par{'es' if standby != 1 else ''}\n"
-                                message += f"\n🛡️ Protecciones V2:\n"
-                                message += f"• Stop-Loss: ✅ (5.0%)\n"
-                                message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
-                                message += f"📈 Usa /status para monitorear el progreso."
-                                bot.send_message(chat_id, message)
-                            else:
-                                bot.send_message(chat_id, "⚠️ Sin configuraciones activas. Usa /config para configurar los pares.")
+                            # Ya no mostramos el resumen aquí - se mostrará al final
                         else:
                             bot.send_message(chat_id, "⚠️ No se pudo obtener el estado batch inicial del cerebro. Continuando en modo standalone...")
                     except Exception as e:
@@ -289,8 +260,12 @@ Modo de Trading:
                                 if configs:
                                     # Obtener decisiones del cerebro para cada par
                                     try:
-                                        from services.grid.core.cerebro_integration import consultar_y_procesar_cerebro_batch
-                                        decisiones_cerebro = consultar_y_procesar_cerebro_batch()
+                                        # Usar los resultados del batch inicial si están disponibles
+                                        if 'results' in locals() and results:
+                                            decisiones_cerebro = results
+                                        else:
+                                            from services.grid.core.cerebro_integration import consultar_y_procesar_cerebro_batch
+                                            decisiones_cerebro = consultar_y_procesar_cerebro_batch()
                                     except Exception as e:
                                         logger.warning(f"⚠️ Error obteniendo decisiones del cerebro: {e}")
                                         decisiones_cerebro = {}
