@@ -306,7 +306,6 @@ Modo de Trading:
                                 
                                 # Agregar separador antes del resumen
                                 bot.send_message(chat_id, message)
-                        bot.send_message(chat_id, message)
                     else:
                         bot.send_message(chat_id, "❌ Error iniciando multibot")
                         

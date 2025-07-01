@@ -190,6 +190,8 @@ async def bucle_principal_analisis():
                     logger.error(f"❌ Error en análisis de {par}: {resultado.get('error', 'Error desconocido')}")
             
             # NOTIFICACIÓN BATCH: Notificar todos los cambios de una vez
+            # NOTA: Esta es la ÚNICA notificación al Grid para evitar duplicados
+            # El decision_engine solo actualiza la BD, no notifica
             if cambios_detectados:
                 logger.info(f"📢 Notificando {len(cambios_detectados)} cambios al Grid...")
                 

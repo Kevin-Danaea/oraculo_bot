@@ -57,6 +57,22 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
             
             logger.info(f"🚀 Cerebro autoriza trading para {decision.par} - Estado actual: {'Activo' if par_activo else 'Inactivo'}")
             
+            # Verificar si ya se envió una notificación reciente para este par
+            from datetime import datetime, timedelta
+            current_time = datetime.now()
+            
+            # Obtener la última notificación enviada para este par
+            last_notification_key = f"last_notification_{decision.par}"
+            last_notification_time = getattr(recibir_decision_cerebro, last_notification_key, None)
+            
+            # Solo enviar notificación si han pasado más de 30 segundos desde la última
+            should_send_notification = True
+            if last_notification_time:
+                time_diff = current_time - last_notification_time
+                if time_diff.total_seconds() < 30:  # 30 segundos de cooldown
+                    should_send_notification = False
+                    logger.info(f"⏳ Notificación reciente para {decision.par} - saltando (cooldown 30s)")
+            
             if not par_activo:
                 logger.info(f"🚀 Cerebro autoriza trading para {decision.par} - Iniciando bot...")
                 
@@ -86,45 +102,65 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
             else:
                 logger.info(f"ℹ️ Bot para {decision.par} ya está ejecutándose - Cerebro confirma continuar")
             
-            # SIEMPRE enviar notificación de autorización, independientemente del estado actual
-            # Esto asegura que el usuario sepa que el cerebro autorizó el trading
-            try:
-                from shared.services.telegram_service import send_telegram_message
-                
-                # Obtener configuración del par para mostrar detalles
-                configs = obtener_configuraciones_bd("all")
-                config_par = None
-                for config in configs:
-                    if config['pair'] == decision.par:
-                        config_par = config
-                        break
-                
-                # Mensaje detallado de autorización
-                start_message = f"🚀 <b>GRID BOT AUTORIZADO</b>\n\n"
-                start_message += f"📊 Par: {decision.par}\n"
-                
-                if config_par:
-                    start_message += f"💰 Capital: ${config_par['total_capital']:,.2f}\n"
-                    start_message += f"🎯 Niveles: {config_par['grid_levels']}\n"
-                    start_message += f"📈 Rango: {config_par['price_range_percent']}%\n"
-                
-                start_message += f"📈 ADX: {decision.adx_valor:.2f}\n"
-                start_message += f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
-                start_message += f"💬 Sentimiento: {decision.sentiment_promedio:.3f}\n\n"
-                start_message += f"✅ <b>Razón de autorización:</b>\n"
-                start_message += f"• {decision.razon}\n\n"
-                start_message += f"🟢 El bot está operando automáticamente"
-                
-                send_telegram_message(start_message)
-                logger.info(f"✅ Notificación de autorización enviada para {decision.par}")
-            except Exception as e:
-                logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
+            # Enviar notificación solo si es necesario
+            if should_send_notification:
+                try:
+                    from shared.services.telegram_service import send_telegram_message
+                    
+                    # Obtener configuración del par para mostrar detalles
+                    configs = obtener_configuraciones_bd("all")
+                    config_par = None
+                    for config in configs:
+                        if config['pair'] == decision.par:
+                            config_par = config
+                            break
+                    
+                    # Mensaje detallado de autorización
+                    start_message = f"🚀 <b>GRID BOT AUTORIZADO</b>\n\n"
+                    start_message += f"📊 Par: {decision.par}\n"
+                    
+                    if config_par:
+                        start_message += f"💰 Capital: ${config_par['total_capital']:,.2f}\n"
+                        start_message += f"🎯 Niveles: {config_par['grid_levels']}\n"
+                        start_message += f"📈 Rango: {config_par['price_range_percent']}%\n"
+                    
+                    start_message += f"📈 ADX: {decision.adx_valor:.2f}\n"
+                    start_message += f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
+                    start_message += f"💬 Sentimiento: {decision.sentiment_promedio:.3f}\n\n"
+                    start_message += f"✅ <b>Razón de autorización:</b>\n"
+                    start_message += f"• {decision.razon}\n\n"
+                    start_message += f"🟢 El bot está operando automáticamente"
+                    
+                    send_telegram_message(start_message)
+                    logger.info(f"✅ Notificación de autorización enviada para {decision.par}")
+                    
+                    # Actualizar timestamp de última notificación
+                    setattr(recibir_decision_cerebro, last_notification_key, current_time)
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
+            else:
+                logger.info(f"⏳ Notificación omitida para {decision.par} (cooldown activo)")
                 
         elif decision.decision == "PAUSAR_GRID":
             # Verificar si el bot para este par está ejecutándose
             par_activo = any(bot['pair'] == decision.par for bot in bot_status['active_bots'])
             
             logger.info(f"🛑 Cerebro recomienda pausar {decision.par} - Estado actual: {'Activo' if par_activo else 'Inactivo'}")
+            
+            # Verificar si ya se envió una notificación reciente para este par
+            from datetime import datetime
+            current_time = datetime.now()
+            last_notification_key = f"last_notification_{decision.par}"
+            last_notification_time = getattr(recibir_decision_cerebro, last_notification_key, None)
+            
+            # Solo enviar notificación si han pasado más de 30 segundos desde la última
+            should_send_notification = True
+            if last_notification_time:
+                time_diff = current_time - last_notification_time
+                if time_diff.total_seconds() < 30:  # 30 segundos de cooldown
+                    should_send_notification = False
+                    logger.info(f"⏳ Notificación reciente para {decision.par} - saltando (cooldown 30s)")
             
             if par_activo:
                 logger.info(f"🛑 Cerebro recomienda pausar {decision.par} - Deteniendo bot...")
@@ -136,39 +172,45 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
             else:
                 logger.info(f"ℹ️ Bot para {decision.par} ya está pausado - Cerebro confirma mantener pausado")
             
-            # SIEMPRE enviar notificación de pausa, independientemente del estado actual
-            # Esto asegura que el usuario sepa que el cerebro decidió pausar
-            try:
-                from shared.services.telegram_service import send_telegram_message
-                
-                # Obtener configuración del par para mostrar detalles
-                configs = obtener_configuraciones_bd("all")
-                config_par = None
-                for config in configs:
-                    if config['pair'] == decision.par:
-                        config_par = config
-                        break
-                
-                # Mensaje detallado de pausa
-                pause_message = f"⏸️ <b>GRID BOT PAUSADO</b>\n\n"
-                pause_message += f"📊 Par: {decision.par}\n"
-                
-                if config_par:
-                    pause_message += f"💰 Capital: ${config_par['total_capital']:,.2f}\n"
-                    pause_message += f"🎯 Niveles: {config_par['grid_levels']}\n"
-                    pause_message += f"📈 Rango: {config_par['price_range_percent']}%\n"
-                
-                pause_message += f"📈 ADX: {decision.adx_valor:.2f}\n"
-                pause_message += f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
-                pause_message += f"💬 Sentimiento: {decision.sentiment_promedio:.3f}\n\n"
-                pause_message += f"🛑 <b>Razón de pausa:</b>\n"
-                pause_message += f"• {decision.razon}\n\n"
-                pause_message += f"🔄 El bot se reactivará automáticamente cuando el Cerebro autorice"
-                
-                send_telegram_message(pause_message)
-                logger.info(f"✅ Notificación de pausa enviada para {decision.par}")
-            except Exception as e:
-                logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
+            # Enviar notificación solo si es necesario
+            if should_send_notification:
+                try:
+                    from shared.services.telegram_service import send_telegram_message
+                    
+                    # Obtener configuración del par para mostrar detalles
+                    configs = obtener_configuraciones_bd("all")
+                    config_par = None
+                    for config in configs:
+                        if config['pair'] == decision.par:
+                            config_par = config
+                            break
+                    
+                    # Mensaje detallado de pausa
+                    pause_message = f"⏸️ <b>GRID BOT PAUSADO</b>\n\n"
+                    pause_message += f"📊 Par: {decision.par}\n"
+                    
+                    if config_par:
+                        pause_message += f"💰 Capital: ${config_par['total_capital']:,.2f}\n"
+                        pause_message += f"🎯 Niveles: {config_par['grid_levels']}\n"
+                        pause_message += f"📈 Rango: {config_par['price_range_percent']}%\n"
+                    
+                    pause_message += f"📈 ADX: {decision.adx_valor:.2f}\n"
+                    pause_message += f"📊 Volatilidad: {decision.volatilidad_valor:.4f}\n"
+                    pause_message += f"💬 Sentimiento: {decision.sentiment_promedio:.3f}\n\n"
+                    pause_message += f"🛑 <b>Razón de pausa:</b>\n"
+                    pause_message += f"• {decision.razon}\n\n"
+                    pause_message += f"🔄 El bot se reactivará automáticamente cuando el Cerebro autorice"
+                    
+                    send_telegram_message(pause_message)
+                    logger.info(f"✅ Notificación de pausa enviada para {decision.par}")
+                    
+                    # Actualizar timestamp de última notificación
+                    setattr(recibir_decision_cerebro, last_notification_key, current_time)
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
+            else:
+                logger.info(f"⏳ Notificación omitida para {decision.par} (cooldown activo)")
         
         return {
             "status": "success",

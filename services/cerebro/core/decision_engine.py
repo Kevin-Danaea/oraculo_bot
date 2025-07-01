@@ -115,17 +115,8 @@ class DecisionEngine:
                 config=config
             )
             
-            # Notificar al grid multibot sobre el cambio de decisión
-            self._notificar_grid_multibot(
-                par=par,
-                decision=decision,
-                razon=razon,
-                indicadores={
-                    'adx_actual': adx_actual,
-                    'volatilidad_actual': volatilidad_actual,
-                    'sentiment_promedio': sentiment_promedio
-                }
-            )
+            # NOTA: La notificación al Grid se maneja desde el bucle principal (main.py)
+            # para evitar notificaciones duplicadas. Aquí solo se actualiza la BD.
             
             return {
                 "par": par,
@@ -317,33 +308,7 @@ class DecisionEngine:
         finally:
             db.close()
     
-    def _notificar_grid_multibot(
-        self,
-        par: str,
-        decision: str,
-        razon: str,
-        indicadores: Dict[str, Any]
-    ):
-        """
-        Notifica al grid multibot sobre un cambio de decisión.
-        
-        Args:
-            par: Par de trading
-            decision: Nueva decisión
-            razon: Razón de la decisión
-            indicadores: Indicadores utilizados
-        """
-        try:
-            from .multibot_notifier import notify_decision_change
-            success = notify_decision_change(par, decision, razon, indicadores)
-            
-            if success:
-                logger.info(f"✅ Grid multibot notificado: {par} -> {decision}")
-            else:
-                logger.warning(f"⚠️ Error notificando grid multibot para {par}")
-                
-        except Exception as e:
-            logger.error(f"❌ Error notificando grid multibot para {par}: {e}")
+
     
     def analizar_todos_los_pares(self) -> Dict[str, Dict[str, Any]]:
         """

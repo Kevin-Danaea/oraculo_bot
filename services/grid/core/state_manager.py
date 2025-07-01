@@ -116,13 +116,14 @@ def cancel_all_active_orders(exchange: ccxt.Exchange, active_orders: List[Dict[s
     return cancelled_count
 
 
-def reset_bot_for_new_config(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]]) -> None:
+def reset_bot_for_new_config(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]], send_notification: bool = True) -> None:
     """
     Resetea completamente el bot para nueva configuración
     
     Args:
         exchange: Instancia del exchange
         active_orders: Lista de órdenes activas a cancelar
+        send_notification: Si enviar notificación de Telegram (default: True)
     """
     try:
         logger.info("🔄 ========== REINICIANDO BOT CON NUEVA CONFIGURACIÓN ==========")
@@ -133,13 +134,16 @@ def reset_bot_for_new_config(exchange: ccxt.Exchange, active_orders: List[Dict[s
         # 2. Limpiar estado guardado
         clear_bot_state()
         
-        # 3. Enviar notificación
-        message = f"🔄 <b>GRID BOT REINICIADO</b>\n\n"
-        message += f"🚫 <b>Órdenes canceladas:</b> {cancelled_orders}\n"
-        message += f"🗑️ <b>Estado limpiado:</b> ✅\n"
-        message += f"🆕 <b>Iniciando con nueva configuración...</b>"
-        
-        send_telegram_message(message)
+        # 3. Enviar notificación solo si se solicita
+        if send_notification:
+            message = f"🔄 <b>GRID BOT REINICIADO</b>\n\n"
+            message += f"🚫 <b>Órdenes canceladas:</b> {cancelled_orders}\n"
+            message += f"🗑️ <b>Estado limpiado:</b> ✅\n"
+            message += f"🆕 <b>Iniciando con nueva configuración...</b>"
+            
+            send_telegram_message(message)
+        else:
+            logger.info("📱 Notificación de reinicio omitida (modo silencioso)")
         
         logger.info("✅ Reset completado - Bot listo para nueva configuración")
         
