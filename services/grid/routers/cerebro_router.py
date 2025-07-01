@@ -57,21 +57,9 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
             
             logger.info(f"🚀 Cerebro autoriza trading para {decision.par} - Estado actual: {'Activo' if par_activo else 'Inactivo'}")
             
-            # Verificar si ya se envió una notificación reciente para este par
-            from datetime import datetime, timedelta
-            current_time = datetime.now()
-            
-            # Obtener la última notificación enviada para este par
-            last_notification_key = f"last_notification_{decision.par}"
-            last_notification_time = getattr(recibir_decision_cerebro, last_notification_key, None)
-            
-            # Solo enviar notificación si han pasado más de 30 segundos desde la última
+            # NOTA: Ya no necesitamos cooldown porque el cerebro no envía duplicados
+            # El problema de duplicados se resolvió en el origen
             should_send_notification = True
-            if last_notification_time:
-                time_diff = current_time - last_notification_time
-                if time_diff.total_seconds() < 30:  # 30 segundos de cooldown
-                    should_send_notification = False
-                    logger.info(f"⏳ Notificación reciente para {decision.par} - saltando (cooldown 30s)")
             
             if not par_activo:
                 logger.info(f"🚀 Cerebro autoriza trading para {decision.par} - Iniciando bot...")
@@ -133,9 +121,6 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                     
                     send_telegram_message(start_message)
                     logger.info(f"✅ Notificación de autorización enviada para {decision.par}")
-                    
-                    # Actualizar timestamp de última notificación
-                    setattr(recibir_decision_cerebro, last_notification_key, current_time)
                     
                 except Exception as e:
                     logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
@@ -203,9 +188,6 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                     
                     send_telegram_message(pause_message)
                     logger.info(f"✅ Notificación de pausa enviada para {decision.par}")
-                    
-                    # Actualizar timestamp de última notificación
-                    setattr(recibir_decision_cerebro, last_notification_key, current_time)
                     
                 except Exception as e:
                     logger.warning(f"⚠️ No se pudo enviar notificación Telegram: {e}")
