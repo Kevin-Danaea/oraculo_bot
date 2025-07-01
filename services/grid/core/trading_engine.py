@@ -73,17 +73,9 @@ def run_grid_trading_bot(config: Dict[str, Any]) -> None:
             if not active_orders:
                 raise Exception("No se pudieron crear órdenes iniciales")
             
-            # Enviar notificación de inicio
-            startup_message = f"🚀 <b>GRID BOT INICIADO</b>\n\n"
-            startup_message += f"📊 <b>Par:</b> {validated_config['pair']}\n"
-            startup_message += f"💰 <b>Capital:</b> ${validated_config['total_capital']:,.2f}\n"
-            startup_message += f"🎯 <b>Niveles:</b> {validated_config['grid_levels']}\n"
-            startup_message += f"📈 <b>Rango:</b> {validated_config['price_range_percent']}%\n"
-            startup_message += f"💹 <b>Precio actual:</b> ${current_price:.2f}\n"
-            startup_message += f"🟢 <b>Órdenes creadas:</b> {len(active_orders)}\n"
-            startup_message += f"💵 <b>Ganancia objetivo:</b> {validated_config.get('profit_percentage', 'N/A')}%"
-            
-            send_telegram_message(startup_message)
+            # NO enviar notificación aquí - el cerebro se encarga de enviar las notificaciones
+            # cuando autoriza o pausa el trading
+            logger.info(f"✅ Bot iniciado para {validated_config['pair']} - Esperando autorización del cerebro")
         
         # Iniciar monitoreo continuo
         monitor_grid_orders(exchange, active_orders, validated_config)
