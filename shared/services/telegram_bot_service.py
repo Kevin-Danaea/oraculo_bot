@@ -1,15 +1,18 @@
 """
-Servicio de bot de Telegram genérico para manejar comandos e interacciones.
-Versión refactorizada para usar la librería python-telegram-bot.
+Módulo genérico para el servicio de Telegram V2
+Basado en python-telegram-bot, asíncrono y modular.
 """
 import asyncio
 import threading
-from typing import Dict, Callable, Optional, Any
-
+from typing import Dict, Any, Optional, Callable, cast
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from telegram.constants import ParseMode
-
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    MessageHandler, 
+    ContextTypes, 
+    filters
+)
 from shared.config.settings import settings
 from shared.services.logging_config import get_logger
 
@@ -18,141 +21,153 @@ logger = get_logger(__name__)
 
 class TelegramBot:
     """
-    Clase genérica para manejar un bot de Telegram con sistema de comandos,
-    usando la librería python-telegram-bot.
+    Clase genérica para un bot de Telegram.
+    Maneja el ciclo de vida, registro de comandos y estados de conversación.
     """
     
-    def __init__(self, token: Optional[str] = None):
-        """
-        Inicializa el bot de Telegram
-        
-        Args:
-            token: Token del bot de Telegram. Si no se proporciona, usa el de settings.
-        """
-        self.token = token or settings.TELEGRAM_BOT_TOKEN
-        if not self.token:
-            logger.error("❌ No se ha configurado el token del bot de Telegram")
+    def __init__(self):
+        """Inicializa el bot de Telegram."""
+        if not settings.TELEGRAM_BOT_TOKEN:
             raise ValueError("Token de Telegram no configurado")
         
-        self.application = Application.builder().token(self.token).build()
-        self.command_handlers: Dict[str, Callable] = {}
-        self.conversation_states: Dict[str, Dict] = {}
+        # Crear aplicación con el nuevo ApplicationBuilder
+        self.application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+        self.conversation_states: Dict[str, Dict] = {}  # Almacena estados de conversación
         
-        # El handler de mensajes de texto para conversaciones
+        # Registrar manejador genérico para mensajes de texto
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_message))
 
     def register_command(self, command: str, handler: Callable):
         """
-        Registra un handler para un comando específico.
+        Registra un nuevo comando y su manejador.
         
         Args:
-            command: Comando sin la barra (ej: "start").
-            handler: Función async que manejará el comando.
+            command: Nombre del comando (ej: 'start')
+            handler: Función que manejará el comando
         """
-        self.command_handlers[command.lower()] = handler
-        self.application.add_handler(CommandHandler(command.lower(), self._command_wrapper(handler)))
+        self.application.add_handler(CommandHandler(command, self._command_wrapper(handler)))
         logger.info(f"✅ Comando /{command} registrado")
-
-    def _command_wrapper(self, handler: Callable) -> Callable:
-        """Crea un wrapper para pasar los argumentos correctos al handler."""
-        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            if update.message:
-                chat_id = str(update.message.chat_id)
-                text = update.message.text or ""
-                await handler(chat_id, text, self)
-        return wrapper
-
-    async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja mensajes de texto que no son comandos (para conversaciones)."""
-        if not update.message:
-            return
-            
-        chat_id = str(update.message.chat_id)
-        text = update.message.text or ""
-
-        if chat_id in self.conversation_states:
-            state = self.conversation_states[chat_id]
-            handler_name = state.get('handler')
-            
-            if handler_name and handler_name in self.command_handlers:
-                try:
-                    await self.command_handlers[handler_name](chat_id, text, self)
-                except Exception as e:
-                    logger.error(f"❌ Error ejecutando handler de conversación '{handler_name}': {e}")
-                    await self.send_message(chat_id, f"❌ Error procesando tu respuesta: {e}")
-            else:
-                self.clear_conversation_state(chat_id)
-                await self.send_message(chat_id, "❓ Mensaje no entendido. Usa /start para ver los comandos.")
-        else:
-            await self.send_message(chat_id, "❓ Mensaje no entendido. Usa /start para ver los comandos.")
-
-    async def send_message(self, chat_id: str, text: str, parse_mode: str = "HTML", reply_markup: Optional[Any] = None) -> bool:
+    
+    async def send_message(self, chat_id: str, message: str, parse_mode: str = "HTML") -> bool:
         """
         Envía un mensaje a un chat específico.
         
         Args:
-            chat_id: ID del chat.
-            text: Texto del mensaje.
-            parse_mode: Modo de parseo (HTML o MarkdownV2).
-            reply_markup: Teclado inline opcional.
+            chat_id: ID del chat
+            message: Mensaje a enviar
+            parse_mode: 'HTML' o 'Markdown'
+            
+        Returns:
+            True si el mensaje se envió correctamente
         """
         try:
             await self.application.bot.send_message(
                 chat_id=chat_id,
-                text=text,
-                parse_mode=ParseMode.HTML if parse_mode == "HTML" else ParseMode.MARKDOWN_V2,
-                reply_markup=reply_markup
+                text=message,
+                parse_mode=parse_mode
             )
-            logger.info(f"✅ Mensaje enviado a chat {chat_id}")
+            logger.info(f"✅ Mensaje enviado a Telegram correctamente")
             return True
         except Exception as e:
-            logger.error(f"❌ Error enviando mensaje a {chat_id}: {e}")
+            logger.error(f"❌ Error enviando mensaje a Telegram: {e}")
             return False
 
-    def set_conversation_state(self, chat_id: str, handler: str, data: Optional[Dict] = None):
+    def _get_conversation_state_key(self, chat_id: str) -> str:
+        return f"convo_state_{chat_id}"
+
+    def set_conversation_state(self, chat_id: str, state: str, data: Optional[Dict] = None):
         """
         Establece el estado de conversación para un chat.
         
         Args:
             chat_id: ID del chat.
-            handler: Nombre del handler que manejará los próximos mensajes.
+            state: Nombre del estado de conversación.
             data: Datos adicionales del estado.
         """
-        self.conversation_states[chat_id] = {'handler': handler, 'data': data or {}}
-        logger.info(f"📱 Estado de conversación establecido para chat {chat_id}: {handler}")
+        key = self._get_conversation_state_key(chat_id)
+        self.conversation_states[key] = {'state': state, 'data': data or {}}
+        logger.info(f"🧠 Estado de conversación establecido para {chat_id}: {state}")
 
     def get_conversation_state(self, chat_id: str) -> Optional[Dict]:
         """Obtiene el estado de conversación para un chat."""
-        return self.conversation_states.get(chat_id)
+        key = self._get_conversation_state_key(chat_id)
+        return self.conversation_states.get(key)
 
     def clear_conversation_state(self, chat_id: str):
         """Limpia el estado de conversación para un chat."""
-        if chat_id in self.conversation_states:
-            del self.conversation_states[chat_id]
+        key = self._get_conversation_state_key(chat_id)
+        if key in self.conversation_states:
+            del self.conversation_states[key]
             logger.info(f"🧹 Estado de conversación limpiado para chat {chat_id}")
+    
+    def polling_thread(self):
+        """El hilo que ejecuta el polling del bot."""
+        try:
+            logger.info("🤖 Bot iniciado en modo polling con python-telegram-bot")
+            # Agregamos stop_signals=[] para evitar que la librería
+            # intente manejar señales, lo cual falla en hilos secundarios en Linux.
+            self.application.run_polling(
+                drop_pending_updates=True,
+                stop_signals=[]
+            )
+        except Exception as e:
+            logger.error(f"❌ Error crítico en polling del bot: {e}", exc_info=True)
 
-    def start_background_polling(self, interval: int = 2):
+    def start_background_polling(self, interval: int = 1) -> Optional[threading.Thread]:
         """
         Inicia el polling en un hilo separado para no bloquear.
         
         Args:
-            interval: No usado en esta versión, pero se mantiene por compatibilidad.
+            interval: Intervalo de polling (no usado directamente por la librería)
+            
+        Returns:
+            El hilo de polling iniciado
         """
+        try:
+            polling_thread = threading.Thread(target=self.polling_thread, daemon=True)
+            polling_thread.start()
+            
+            logger.info("🚀 Bot iniciado en hilo separado")
+            return polling_thread
+            
+        except Exception as e:
+            logger.error(f"❌ Error iniciando hilo de polling: {e}")
+            return None
+    
+    async def _handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Manejador para texto que no es un comando."""
+        chat_id = str(update.effective_chat.id) if update.effective_chat else 'unknown'
+        message_text = update.message.text if update.message else ''
         
-        def polling_thread():
-            logger.info(f"🤖 Bot iniciado en modo polling con python-telegram-bot")
-            try:
-                # Crear y establecer un nuevo bucle de eventos para este hilo
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                # run_polling es un método bloqueante, no una corutina.
-                # Se ejecuta directamente en el hilo con su propio bucle de eventos.
-                self.application.run_polling(drop_pending_updates=True)
-            except Exception as e:
-                logger.error(f"❌ Error crítico en polling del bot: {e}", exc_info=True)
-
-        thread = threading.Thread(target=polling_thread, daemon=True, name="TelegramBotPolling")
-        thread.start()
-        logger.info("🚀 Bot iniciado en hilo separado")
-        return thread
+        # Verificar si hay estado de conversación
+        state_info = self.get_conversation_state(chat_id)
+        
+        if state_info and 'state' in state_info:
+            # Re-invocar el handler del comando que estableció el estado
+            command = state_info['state']
+            if command in self.application.handlers[0]:
+                # El handler debe ser una corutina
+                handler_callback = cast(CommandHandler, self.application.handlers[0][self.application.handlers[0].index(self.application.handlers[0][command])]).callback
+                await handler_callback(update, context)
+        elif update.message:
+            # Mensaje por defecto si no hay estado y es un mensaje de texto
+            await update.message.reply_text(
+                "🤖 No he entendido tu mensaje.\n"
+                "Usa /start para ver los comandos disponibles."
+            )
+            
+    def _command_wrapper(self, handler: Callable) -> Callable:
+        """
+        Wrapper para todos los comandos para manejar chat_id y message_text.
+        """
+        async def wrapped_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            chat_id = str(update.effective_chat.id) if update.effective_chat else None
+            message_text = update.message.text if update.message else ''
+            
+            if not chat_id:
+                logger.error("No se pudo obtener chat_id")
+                return
+            
+            await handler(chat_id, message_text, self)
+        
+        return wrapped_handler
