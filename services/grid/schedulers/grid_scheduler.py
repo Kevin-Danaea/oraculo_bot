@@ -43,7 +43,7 @@ def get_grid_bot_config():
             logger.info("🟢 Usando configuración mínima para PRODUCTIVO (fallback)")
             return {
                 'pair': 'ETH/USDT',
-                'total_capital': 750.0,  # Capital mínimo para productivo
+                'total_capital': 300.0,  # Capital mínimo para productivo (30 * $10)
                 'grid_levels': 30,  # Validado en backtesting
                 'price_range_percent': 10.0,  # Validado en backtesting
                 'modo': 'PRODUCTIVO'

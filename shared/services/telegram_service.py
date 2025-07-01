@@ -14,6 +14,7 @@ logger = get_logger(__name__)
 def get_current_balance(exchange: ccxt.Exchange, pair: str) -> dict:
     """
     Obtiene el balance actual de USDT y la crypto del par especificado
+    MEJORADO: Agrega logging detallado y validaciones
     
     Args:
         exchange: Instancia del exchange
@@ -23,9 +24,11 @@ def get_current_balance(exchange: ccxt.Exchange, pair: str) -> dict:
         Dict con balances de USDT y crypto
     """
     try:
+        # Obtener balance completo del exchange
         balance = exchange.fetch_balance()
         crypto_symbol = pair.split('/')[0]  # ETH de ETH/USDT
         
+        # Extraer balances específicos
         usdt_balance = balance.get('USDT', {}).get('free', 0)
         crypto_balance = balance.get(crypto_symbol, {}).get('free', 0)
         
@@ -34,6 +37,24 @@ def get_current_balance(exchange: ccxt.Exchange, pair: str) -> dict:
         current_price = ticker['last']
         crypto_value = crypto_balance * current_price
         total_value = usdt_balance + crypto_value
+        
+        # LOGGING DETALLADO PARA DEBUGGING
+        logger.info(f"💰 Balance detallado para {pair}:")
+        logger.info(f"   USDT disponible: ${usdt_balance:.2f}")
+        logger.info(f"   {crypto_symbol} disponible: {crypto_balance:.6f}")
+        logger.info(f"   Precio actual {crypto_symbol}: ${current_price:.2f}")
+        logger.info(f"   Valor {crypto_symbol}: ${crypto_value:.2f}")
+        logger.info(f"   Total calculado: ${total_value:.2f}")
+        
+        # Validar que los valores sean razonables
+        if usdt_balance < 0:
+            logger.warning(f"⚠️ USDT balance negativo: ${usdt_balance:.2f}")
+        if crypto_balance < 0:
+            logger.warning(f"⚠️ {crypto_symbol} balance negativo: {crypto_balance:.6f}")
+        if current_price <= 0:
+            logger.error(f"❌ Precio inválido: ${current_price:.2f}")
+        if total_value < 0:
+            logger.error(f"❌ Total negativo: ${total_value:.2f}")
         
         return {
             'usdt': usdt_balance,
@@ -53,6 +74,67 @@ def get_current_balance(exchange: ccxt.Exchange, pair: str) -> dict:
             'current_price': 0,
             'crypto_value': 0,
             'total_value': 0
+        }
+
+
+def calculate_pnl_with_explanation(balance: dict, initial_capital: float, mode: str = "UNKNOWN") -> dict:
+    """
+    Calcula P&L con explicación detallada y validaciones
+    
+    Args:
+        balance: Dict con balance actual (de get_current_balance)
+        initial_capital: Capital inicial configurado
+        mode: Modo de trading (SANDBOX/PRODUCTIVO)
+        
+    Returns:
+        Dict con P&L calculado y explicación
+    """
+    try:
+        total_value = balance['total_value']
+        usdt_balance = balance['usdt']
+        crypto_value = balance['crypto_value']
+        
+        # Calcular P&L
+        total_pnl = total_value - initial_capital
+        
+        # Calcular porcentaje con validación
+        if initial_capital > 0:
+            total_pnl_percentage = (total_pnl / initial_capital) * 100
+        else:
+            total_pnl_percentage = 0
+            logger.warning("⚠️ Capital inicial es 0, no se puede calcular porcentaje")
+        
+        # Determinar icono
+        pnl_icon = "📈" if total_pnl >= 0 else "📉"
+        
+        # LOGGING DETALLADO
+        logger.info(f"📊 P&L calculado ({mode}):")
+        logger.info(f"   Capital inicial: ${initial_capital:.2f}")
+        logger.info(f"   Total actual: ${total_value:.2f}")
+        logger.info(f"   P&L absoluto: ${total_pnl:.2f}")
+        logger.info(f"   P&L porcentual: {total_pnl_percentage:.2f}%")
+        logger.info(f"   Desglose: USDT ${usdt_balance:.2f} + {balance['crypto_symbol']} ${crypto_value:.2f}")
+        
+        return {
+            'total_pnl': total_pnl,
+            'total_pnl_percentage': total_pnl_percentage,
+            'pnl_icon': pnl_icon,
+            'initial_capital': initial_capital,
+            'total_value': total_value,
+            'mode': mode,
+            'explanation': f"P&L = ${total_value:.2f} (actual) - ${initial_capital:.2f} (inicial) = ${total_pnl:.2f}"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error calculando P&L: {e}")
+        return {
+            'total_pnl': 0,
+            'total_pnl_percentage': 0,
+            'pnl_icon': "❓",
+            'initial_capital': initial_capital,
+            'total_value': balance.get('total_value', 0),
+            'mode': mode,
+            'explanation': f"Error calculando P&L: {str(e)}"
         }
 
 
@@ -127,6 +209,7 @@ def send_service_startup_notification(service_name: str, features = None):
 def send_grid_trade_notification(order_info: dict, config: dict, exchange: Optional[ccxt.Exchange] = None):
     """
     Envía notificación específica para trades del grid bot con balance actual
+    MEJORADO: Usa nueva función de P&L con explicación detallada
     
     Args:
         order_info: Información de la orden ejecutada
@@ -158,24 +241,30 @@ def send_grid_trade_notification(order_info: dict, config: dict, exchange: Optio
         if exchange:
             try:
                 balance = get_current_balance(exchange, pair)
-                message += f"\n💰 <b>BALANCE ACTUAL:</b>\n"
-                message += f"💵 <b>USDT:</b> ${balance['usdt']:.2f}\n"
-                message += f"🪙 <b>{balance['crypto_symbol']}:</b> {balance['crypto']:.6f}\n"
-                message += f"💎 <b>Valor {balance['crypto_symbol']}:</b> ${balance['crypto_value']:.2f}\n"
-                message += f"📊 <b>Total:</b> ${balance['total_value']:.2f}\n"
                 
-                # Calcular P&L si tenemos información de compra
-                if order_type == "SELL" and 'buy_price' in order_info:
-                    # Calcular P&L total aproximado
-                    initial_capital = config.get('total_capital', 0)
-                    if initial_capital > 0:
-                        total_pnl = balance['total_value'] - initial_capital
-                        total_pnl_percentage = (total_pnl / initial_capital) * 100
-                        pnl_icon = "📈" if total_pnl >= 0 else "📉"
-                        message += f"{pnl_icon} <b>P&L Total:</b> ${total_pnl:.2f} ({total_pnl_percentage:.2f}%)\n"
+                # Obtener modo de trading para contexto
+                from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+                mode = "PRODUCTIVO" if MODO_PRODUCTIVO else "SANDBOX"
+                
+                message += f"\n💰 <b>BALANCE ACTUAL ({mode}):</b>\n"
+                message += f"💵 <b>USDT disponible:</b> ${balance['usdt']:.2f}\n"
+                message += f"🪙 <b>{balance['crypto_symbol']} disponible:</b> {balance['crypto']:.6f}\n"
+                message += f"💎 <b>Valor {balance['crypto_symbol']}:</b> ${balance['crypto_value']:.2f}\n"
+                message += f"📊 <b>Total actual:</b> ${balance['total_value']:.2f}\n"
+                
+                # Calcular P&L usando nueva función mejorada
+                initial_capital = config.get('total_capital', 0)
+                if initial_capital > 0:
+                    pnl_data = calculate_pnl_with_explanation(balance, initial_capital, mode)
+                    
+                    message += f"\n{pnl_data['pnl_icon']} <b>P&L Total:</b> ${pnl_data['total_pnl']:.2f} ({pnl_data['total_pnl_percentage']:.2f}%)\n"
+                    message += f"💡 <i>Capital inicial: ${initial_capital:.2f} | {mode}</i>\n"
+                else:
+                    message += f"\n⚠️ <i>No se puede calcular P&L (capital inicial no configurado)</i>\n"
                 
             except Exception as e:
                 logger.warning(f"⚠️ No se pudo obtener balance: {e}")
+                message += f"\n⚠️ <i>Error obteniendo balance: {str(e)}</i>\n"
         
         # Timestamp
         from datetime import datetime
@@ -193,6 +282,7 @@ def send_grid_trade_notification(order_info: dict, config: dict, exchange: Optio
 def send_grid_hourly_summary(active_orders: list, config: dict, trades_count: int, exchange: Optional[ccxt.Exchange] = None):
     """
     Envía resumen horario del grid bot con información de actividad y balance
+    MEJORADO: Usa nueva función de P&L con explicación detallada
     
     Args:
         active_orders: Lista de órdenes activas
@@ -228,22 +318,30 @@ def send_grid_hourly_summary(active_orders: list, config: dict, trades_count: in
         if exchange:
             try:
                 balance = get_current_balance(exchange, config['pair'])
-                message += f"\n💰 <b>BALANCE ACTUAL:</b>\n"
-                message += f"💵 <b>USDT:</b> ${balance['usdt']:.2f}\n"
-                message += f"🪙 <b>{balance['crypto_symbol']}:</b> {balance['crypto']:.6f}\n"
-                message += f"💎 <b>Valor {balance['crypto_symbol']}:</b> ${balance['crypto_value']:.2f}\n"
-                message += f"📊 <b>Total:</b> ${balance['total_value']:.2f}\n"
                 
-                # Calcular P&L total
+                # Obtener modo de trading para contexto
+                from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+                mode = "PRODUCTIVO" if MODO_PRODUCTIVO else "SANDBOX"
+                
+                message += f"\n💰 <b>BALANCE ACTUAL ({mode}):</b>\n"
+                message += f"💵 <b>USDT disponible:</b> ${balance['usdt']:.2f}\n"
+                message += f"🪙 <b>{balance['crypto_symbol']} disponible:</b> {balance['crypto']:.6f}\n"
+                message += f"💎 <b>Valor {balance['crypto_symbol']}:</b> ${balance['crypto_value']:.2f}\n"
+                message += f"📊 <b>Total actual:</b> ${balance['total_value']:.2f}\n"
+                
+                # Calcular P&L usando nueva función mejorada
                 initial_capital = config.get('total_capital', 0)
                 if initial_capital > 0:
-                    total_pnl = balance['total_value'] - initial_capital
-                    total_pnl_percentage = (total_pnl / initial_capital) * 100
-                    pnl_icon = "📈" if total_pnl >= 0 else "📉"
-                    message += f"{pnl_icon} <b>P&L Total:</b> ${total_pnl:.2f} ({total_pnl_percentage:.2f}%)\n"
+                    pnl_data = calculate_pnl_with_explanation(balance, initial_capital, mode)
+                    
+                    message += f"\n{pnl_data['pnl_icon']} <b>P&L Total:</b> ${pnl_data['total_pnl']:.2f} ({pnl_data['total_pnl_percentage']:.2f}%)\n"
+                    message += f"💡 <i>Capital inicial: ${initial_capital:.2f} | {mode}</i>\n"
+                else:
+                    message += f"\n⚠️ <i>No se puede calcular P&L (capital inicial no configurado)</i>\n"
                 
             except Exception as e:
                 logger.warning(f"⚠️ No se pudo obtener balance en resumen: {e}")
+                message += f"\n⚠️ <i>Error obteniendo balance: {str(e)}</i>\n"
         
         # Timestamp
         from datetime import datetime

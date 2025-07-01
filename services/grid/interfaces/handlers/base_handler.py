@@ -36,32 +36,86 @@ class BaseHandler:
             logger.error(f"❌ Error obteniendo configuración del usuario: {e}")
             return None
     
-    def save_user_config(self, chat_id: str, config_data: Dict[str, Any]) -> bool:
-        """Guarda la configuración del usuario en la base de datos"""
+    def get_user_config_by_type(self, chat_id: str, config_type: str) -> Optional[GridBotConfig]:
+        """Obtiene la configuración específica de un tipo (ETH, BTC, MATIC)"""
         try:
             with get_db_session() as db:
-                # Desactivar configuraciones anteriores
-                db.query(GridBotConfig).filter(
+                config = db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.config_type == config_type
+                ).first()
+                return config
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo configuración {config_type} del usuario: {e}")
+            return None
+    
+    def get_all_user_configs(self, chat_id: str) -> list:
+        """Obtiene todas las configuraciones del usuario (ETH, BTC, MATIC)"""
+        try:
+            with get_db_session() as db:
+                configs = db.query(GridBotConfig).filter(
                     GridBotConfig.telegram_chat_id == chat_id
+                ).all()
+                return configs
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo todas las configuraciones del usuario: {e}")
+            return []
+    
+    def save_user_config(self, chat_id: str, config_data: Dict[str, Any]) -> bool:
+        """Guarda la configuración del usuario en la base de datos - SISTEMA DE 3 CONFIGURACIONES FIJAS"""
+        try:
+            with get_db_session() as db:
+                config_type = config_data.get('config_type', 'ETH')
+                
+                # Buscar configuración existente del tipo
+                existing_config = db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.config_type == config_type
+                ).first()
+                
+                if existing_config:
+                    # ACTUALIZAR configuración existente
+                    existing_config.total_capital = config_data['total_capital']
+                    existing_config.stop_loss_percent = config_data.get('stop_loss_percent', 5.0)
+                    existing_config.enable_stop_loss = config_data.get('enable_stop_loss', True)
+                    existing_config.enable_trailing_up = config_data.get('enable_trailing_up', True)
+                    setattr(existing_config, 'is_configured', True)
+                    setattr(existing_config, 'updated_at', datetime.utcnow())
+                    
+                    logger.info(f"✅ Configuración {config_type} actualizada para usuario {chat_id}")
+                else:
+                    # CREAR nueva configuración del tipo
+                    default_config = GridBotConfig.get_default_config(config_type)
+                    
+                    new_config = GridBotConfig(
+                        telegram_chat_id=chat_id,
+                        config_type=config_type,
+                        pair=default_config['pair'],
+                        total_capital=config_data['total_capital'],
+                        grid_levels=default_config['grid_levels'],
+                        price_range_percent=default_config['price_range_percent'],
+                        stop_loss_percent=config_data.get('stop_loss_percent', default_config['stop_loss_percent']),
+                        enable_stop_loss=config_data.get('enable_stop_loss', default_config['enable_stop_loss']),
+                        enable_trailing_up=config_data.get('enable_trailing_up', default_config['enable_trailing_up']),
+                        is_configured=True
+                    )
+                    
+                    db.add(new_config)
+                    logger.info(f"✅ Nueva configuración {config_type} creada para usuario {chat_id}")
+                
+                # Desactivar otras configuraciones del usuario
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.config_type != config_type
                 ).update({'is_active': False})
                 
-                # Crear nueva configuración V2
-                new_config = GridBotConfig(
-                    pair=config_data['pair'],
-                    total_capital=config_data['total_capital'],
-                    grid_levels=config_data['grid_levels'],
-                    price_range_percent=config_data['price_range_percent'],
-                    stop_loss_percent=config_data.get('stop_loss_percent', 5.0),
-                    enable_stop_loss=config_data.get('enable_stop_loss', True),
-                    enable_trailing_up=config_data.get('enable_trailing_up', True),
-                    telegram_chat_id=chat_id,
-                    is_active=True
-                )
+                # Activar la configuración actual
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.config_type == config_type
+                ).update({'is_active': True})
                 
-                db.add(new_config)
                 db.commit()
-                
-                logger.info(f"✅ Configuración guardada para usuario {chat_id}")
                 return True
                 
         except Exception as e:
@@ -69,7 +123,7 @@ class BaseHandler:
             return False
     
     def update_user_config(self, chat_id: str, updates: Dict[str, Any]) -> bool:
-        """Actualiza campos específicos de la configuración del usuario"""
+        """Actualiza campos específicos de la configuración activa del usuario"""
         try:
             with get_db_session() as db:
                 # Convertir explícitamente para SQLAlchemy
@@ -91,9 +145,72 @@ class BaseHandler:
             logger.error(f"❌ Error actualizando configuración: {e}")
             return False
     
+    def update_config_capital(self, chat_id: str, config_type: str, new_capital: float) -> bool:
+        """Actualiza solo el capital de una configuración específica"""
+        try:
+            with get_db_session() as db:
+                config = db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.config_type == config_type
+                ).first()
+                
+                if config:
+                    setattr(config, 'total_capital', new_capital)
+                    setattr(config, 'updated_at', datetime.utcnow())
+                    db.commit()
+                    logger.info(f"✅ Capital actualizado para {config_type}: ${new_capital}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ No se encontró configuración {config_type} para usuario {chat_id}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"❌ Error actualizando capital: {e}")
+            return False
+    
+    def activate_config(self, chat_id: str, config_type: str) -> bool:
+        """Activa una configuración específica y desactiva las demás"""
+        try:
+            with get_db_session() as db:
+                # Desactivar todas las configuraciones del usuario
+                db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id
+                ).update({'is_active': False})
+                
+                # Activar la configuración específica
+                result = db.query(GridBotConfig).filter(
+                    GridBotConfig.telegram_chat_id == chat_id,
+                    GridBotConfig.config_type == config_type
+                ).update({'is_active': True})
+                
+                if result > 0:
+                    db.commit()
+                    logger.info(f"✅ Configuración {config_type} activada para usuario {chat_id}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ No se encontró configuración {config_type} para activar")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"❌ Error activando configuración: {e}")
+            return False
+    
     def get_supported_pairs(self) -> list:
-        """Lista de pares soportados - Por ahora solo ETH/USDT"""
-        return ['ETH/USDT']  # Futuramente se agregarán más pares
+        """Lista de pares soportados - Ahora incluye ETH, BTC, MATIC"""
+        return ['ETH/USDT', 'BTC/USDT', 'MATIC/USDT']
+    
+    def get_supported_config_types(self) -> list:
+        """Lista de tipos de configuración soportados"""
+        return ['ETH', 'BTC', 'MATIC']
+    
+    def get_config_type_from_pair(self, pair: str) -> str:
+        """Obtiene el tipo de configuración basado en el par"""
+        pair_mapping = {
+            'ETH/USDT': 'ETH',
+            'BTC/USDT': 'BTC', 
+            'MATIC/USDT': 'MATIC'
+        }
+        return pair_mapping.get(pair, 'ETH')
     
     def calculate_optimal_config(self, pair: str, capital: float) -> Dict[str, Any]:
         """
@@ -103,7 +220,7 @@ class BaseHandler:
         - 30 niveles de grid
         - 10% de rango de precios
         - Stop loss activo (trailing activo para optimizar ganancias durante operación)
-        - Capital mínimo considerando comisiones y seguridad
+        - Capital mínimo: $10 USDT por orden (fórmula simplificada)
         """
         from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
         
@@ -111,14 +228,10 @@ class BaseHandler:
         grid_levels = 30  # Validado en backtesting
         price_range = 10.0  # Validado en backtesting
         
-        # Calcular capital mínimo considerando comisiones y seguridad
-        # Estimación: cada nivel necesita ~$25 USDT para cubrir:
-        # - Comisiones de Binance (0.1% por trade)
-        # - Spread entre compra/venta
-        # - Fluctuaciones del 10% de rango
-        # - Liquidez para recompras
-        capital_minimo_por_nivel = 25  # USDT por nivel
-        min_capital_required = grid_levels * capital_minimo_por_nivel  # 30 * 25 = $750
+        # NUEVA FÓRMULA SIMPLIFICADA: $10 USDT por orden
+        # Cada nivel del grid necesita $10 USDT para operar eficientemente
+        capital_minimo_por_nivel = 10  # USDT por nivel (fórmula simplificada)
+        min_capital_required = grid_levels * capital_minimo_por_nivel  # 30 * 10 = $300
         
         # Configuración de capital según modo
         if not MODO_PRODUCTIVO:  # Modo Sandbox
@@ -135,6 +248,9 @@ class BaseHandler:
                 final_capital = capital
                 stop_loss = 5.0
         
+        # Obtener tipo de configuración basado en el par
+        config_type = self.get_config_type_from_pair(pair)
+        
         return {
             'pair': pair,
             'total_capital': final_capital,
@@ -145,7 +261,8 @@ class BaseHandler:
             'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
             'capital_minimo_sugerido': min_capital_required if MODO_PRODUCTIVO else None,
             'capital_minimo_por_nivel': capital_minimo_por_nivel,
-            'modo_trading': 'SANDBOX' if not MODO_PRODUCTIVO else 'PRODUCTIVO'
+            'modo_trading': 'SANDBOX' if not MODO_PRODUCTIVO else 'PRODUCTIVO',
+            'config_type': config_type  # Nuevo campo para identificar el tipo
         }
     
     def send_error_message(self, bot: TelegramBot, chat_id: str, operation: str, error: Optional[Exception] = None):

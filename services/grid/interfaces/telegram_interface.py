@@ -55,11 +55,18 @@ class GridTelegramInterface:
         self.bot.register_command("info_config", self.basic_handler.handle_info_config_command)
         self.bot.register_command("balance", self.basic_handler.handle_balance_command)
         
+        # Comandos de gestión multibot
+        self.bot.register_command("configs", self.basic_handler.handle_configs_command)
+        self.bot.register_command("activate_eth", self.basic_handler.handle_activate_eth_command)
+        self.bot.register_command("activate_btc", self.basic_handler.handle_activate_btc_command)
+        self.bot.register_command("activate_matic", self.basic_handler.handle_activate_matic_command)
+        self.bot.register_command("update_capital", self.basic_handler.handle_update_capital_command)
+        
         # Comandos de configuración
         self.bot.register_command("config", self.config_handler.handle_config_command)
         
         # Estados de conversación para configuración
-        self.bot.register_command("config_pair_selection", self.config_handler.handle_pair_selection)
+        self.bot.register_command("config_type_selection", self.config_handler.handle_config_type_selection)
         self.bot.register_command("config_capital_input", self.config_handler.handle_capital_input)
         self.bot.register_command("config_confirmation", self.config_handler.handle_config_confirmation)
         
@@ -125,9 +132,9 @@ class GridTelegramInterface:
         """Método legacy - delegado al handler correspondiente"""
         return self.basic_handler.handle_delete_config_command(chat_id, message_text, bot)
     
-    def handle_pair_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
+    def handle_config_type_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
-        return self.config_handler.handle_pair_selection(chat_id, message_text, bot)
+        return self.config_handler.handle_config_type_selection(chat_id, message_text, bot)
     
     def handle_capital_input(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
@@ -257,7 +264,7 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
             logger.warning("⚠️ No hay configuración personalizada, usando valores mínimos por defecto")
             return {
                 'pair': 'ETH/USDT',
-                'total_capital': 750.0,  # Capital mínimo para productivo
+                'total_capital': 300.0,  # Capital mínimo para productivo (30 * $10)
                 'grid_levels': 30,  # Validado en backtesting
                 'price_range_percent': 10.0,  # Validado en backtesting
                 'stop_loss_percent': 5.0,
@@ -271,7 +278,7 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
         # Fallback a configuración mínima para modo productivo
         return {
             'pair': 'ETH/USDT',
-            'total_capital': 750.0,  # Capital mínimo para productivo
+            'total_capital': 300.0,  # Capital mínimo para productivo (30 * $10)
             'grid_levels': 30,  # Validado en backtesting
             'price_range_percent': 10.0,  # Validado en backtesting
             'stop_loss_percent': 5.0,

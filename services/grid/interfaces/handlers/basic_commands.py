@@ -109,6 +109,12 @@ Información del Cerebro:
             message += "/set_stop_loss X - Configurar % stop-loss\n\n"
             message += "📊 Información:\n"
             message += "/info_config - Info sobre configuración optimizada\n"
+            message += "/configs - Ver todas las configuraciones (ETH, BTC, MATIC)\n\n"
+            message += "🔄 Gestión Multibot:\n"
+            message += "/activate_eth - Cambiar a configuración ETH\n"
+            message += "/activate_btc - Cambiar a configuración BTC\n"
+            message += "/activate_matic - Cambiar a configuración MATIC\n"
+            message += "/update_capital X - Cambiar capital de configuración activa\n"
             
             bot.send_message(chat_id, message)
             
@@ -830,7 +836,7 @@ No se usa dinero real.
             modo_icon = "🟢" if config['modo'] == "PRODUCTIVO" else "🟡"
             
             # Calcular capital mínimo para 30 niveles
-            capital_minimo = 30 * 25  # 750 USDT
+            capital_minimo = 30 * 10  # 300 USDT (fórmula simplificada)
             
             message = f"""
 📊 CONFIGURACIÓN OPTIMIZADA v3.0
@@ -850,12 +856,11 @@ No se usa dinero real.
 {modo_icon} Modo actual: {config['modo']}
 
 💰 ¿Por qué ${capital_minimo} USD
-• 30 niveles requieren diversificación
-• ~$25 USDT por nivel para cubrir comisiones
-• Comisiones Binance: 0.1% por trade
-• Spread entre compra/venta
-• Fluctuaciones del 10% de rango
-• Liquidez para recompras
+• 30 niveles requieren $10 USDT por orden
+• Fórmula simplificada: Niveles × $10
+• Cobertura de comisiones y operaciones
+• Liquidez para recompras automáticas
+• Optimizado para eficiencia operativa
 
 🔄 Evolución del sistema:
 
@@ -890,6 +895,7 @@ No se usa dinero real.
     def handle_balance_command(self, chat_id: str, message_text: str, bot):
         """
         Comando /balance: Muestra el balance actual de la cuenta
+        MEJORADO: Usa nueva función de P&L con explicación detallada
         """
         try:
             from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
@@ -911,7 +917,7 @@ No se usa dinero real.
                     return
                 
                 pair = str(user_config.pair)
-                initial_capital = user_config.total_capital
+                initial_capital = float(getattr(user_config, 'total_capital', 0))
                 
             else:
                 # MODO SANDBOX: Usar configuración fija
@@ -928,18 +934,12 @@ No se usa dinero real.
                     exchange = get_exchange_connection()
                     
                     # Obtener balance actual
-                    from shared.services.telegram_service import get_current_balance
+                    from shared.services.telegram_service import get_current_balance, calculate_pnl_with_explanation
                     balance = get_current_balance(exchange, pair)
                     
-                    # Calcular P&L
-                    total_pnl = balance['total_value'] - initial_capital
-                    
-                    try:
-                        total_pnl_percentage = (total_pnl / initial_capital) * 100
-                    except (TypeError, ZeroDivisionError):
-                        total_pnl_percentage = 0
-                    
-                    pnl_icon = "📈" if total_pnl >= 0 else "📉"
+                    # Calcular P&L usando nueva función mejorada
+                    mode = "PRODUCTIVO" if MODO_PRODUCTIVO else "SANDBOX"
+                    pnl_data = calculate_pnl_with_explanation(balance, initial_capital, mode)
                     
                     # Crear mensaje con información del modo
                     modo_info = "🟢 PRODUCTIVO" if MODO_PRODUCTIVO else "🟡 SANDBOX (Paper Trading)"
@@ -957,7 +957,8 @@ No se usa dinero real.
 💎 <b>Valor {balance['crypto_symbol']}:</b> ${balance['crypto_value']:.2f}
 📊 <b>Total actual:</b> ${balance['total_value']:.2f}
 
-{pnl_icon} <b>P&L Total:</b> ${total_pnl:.2f} ({total_pnl_percentage:.2f}%)
+{pnl_data['pnl_icon']} <b>P&L Total:</b> ${pnl_data['total_pnl']:.2f} ({pnl_data['total_pnl_percentage']:.2f}%)
+💡 <i>Capital inicial: ${initial_capital:.2f} | {mode}</i>
 
 💹 <b>Precio actual:</b> ${balance['current_price']:.2f}
 
@@ -965,7 +966,7 @@ No se usa dinero real.
 """
                     
                     bot.send_message(chat_id, message)
-                    logger.info(f"✅ Balance enviado a chat {chat_id} (modo: {'PRODUCTIVO' if MODO_PRODUCTIVO else 'SANDBOX'})")
+                    logger.info(f"✅ Balance enviado a chat {chat_id} (modo: {mode})")
                     
                 except Exception as e:
                     error_message = f"❌ Error obteniendo balance: {str(e)}"
@@ -980,4 +981,169 @@ No se usa dinero real.
         except Exception as e:
             error_message = f"❌ Error al obtener balance: {str(e)}"
             bot.send_message(chat_id, error_message)
-            logger.error(f"❌ Error en handle_balance_command: {e}") 
+            logger.error(f"❌ Error en handle_balance_command: {e}")
+
+    def handle_configs_command(self, chat_id: str, message_text: str, bot):
+        """
+        Comando /configs: Muestra todas las configuraciones del usuario
+        """
+        try:
+            # Obtener todas las configuraciones del usuario
+            all_configs = self.get_all_user_configs(chat_id)
+            
+            if not all_configs:
+                message = "📊 <b>CONFIGURACIONES MULTIBOT</b>\n\n"
+                message += "⚠️ No tienes configuraciones guardadas\n\n"
+                message += "💡 Usa /config para crear tu primera configuración"
+                bot.send_message(chat_id, message)
+                return
+            
+            message = "📊 <b>CONFIGURACIONES MULTIBOT</b>\n\n"
+            
+            # Agrupar configuraciones por tipo
+            configs_by_type = {}
+            for config in all_configs:
+                config_type = getattr(config, 'config_type', 'ETH')
+                if config_type not in configs_by_type:
+                    configs_by_type[config_type] = []
+                configs_by_type[config_type].append(config)
+            
+            # Mostrar cada tipo de configuración
+            for config_type in ['ETH', 'BTC', 'MATIC']:
+                configs = configs_by_type.get(config_type, [])
+                
+                if configs:
+                    config = configs[0]  # Tomar la primera (debería ser la única)
+                    is_active = getattr(config, 'is_active', False)
+                    is_configured = getattr(config, 'is_configured', False)
+                    
+                    status_icon = "🟢" if is_active else "⚪"
+                    config_status = "ACTIVA" if is_active else "INACTIVA"
+                    configured_status = "✅ Configurada" if is_configured else "⚪ Sin configurar"
+                    
+                    message += f"{status_icon} <b>{config_type}</b> - {config_status}\n"
+                    message += f"   📊 Par: {config.pair}\n"
+                    message += f"   💰 Capital: ${config.total_capital} USDT\n"
+                    message += f"   🎯 Niveles: {config.grid_levels}\n"
+                    message += f"   📈 Rango: ±{config.price_range_percent}%\n"
+                    message += f"   🛡️ Stop-Loss: {getattr(config, 'stop_loss_percent', 5.0)}%\n"
+                    message += f"   📈 Trailing: {'✅' if getattr(config, 'enable_trailing_up', True) else '❌'}\n"
+                    message += f"   📋 Estado: {configured_status}\n\n"
+                else:
+                    message += f"⚪ <b>{config_type}</b> - SIN CONFIGURAR\n"
+                    message += f"   💡 Usa /config para configurar\n\n"
+            
+            message += "🔧 <b>Comandos disponibles:</b>\n"
+            message += "/config - Configurar nueva configuración\n"
+            message += "/activate_eth - Activar configuración ETH\n"
+            message += "/activate_btc - Activar configuración BTC\n"
+            message += "/activate_matic - Activar configuración MATIC\n"
+            message += "/update_capital X - Actualizar capital de configuración activa\n"
+            
+            bot.send_message(chat_id, message)
+            
+        except Exception as e:
+            self.send_error_message(bot, chat_id, "mostrando configuraciones", e)
+    
+    def handle_activate_eth_command(self, chat_id: str, message_text: str, bot):
+        """Comando /activate_eth: Activa la configuración ETH"""
+        self._handle_activate_config(chat_id, 'ETH', bot)
+    
+    def handle_activate_btc_command(self, chat_id: str, message_text: str, bot):
+        """Comando /activate_btc: Activa la configuración BTC"""
+        self._handle_activate_config(chat_id, 'BTC', bot)
+    
+    def handle_activate_matic_command(self, chat_id: str, message_text: str, bot):
+        """Comando /activate_matic: Activa la configuración MATIC"""
+        self._handle_activate_config(chat_id, 'MATIC', bot)
+    
+    def _handle_activate_config(self, chat_id: str, config_type: str, bot):
+        """Método interno para activar una configuración específica"""
+        try:
+            # Verificar que la configuración existe y está configurada
+            config = self.get_user_config_by_type(chat_id, config_type)
+            
+            if not config:
+                message = f"⚠️ No tienes configuración {config_type} guardada\n\n"
+                message += f"💡 Usa /config para crear la configuración {config_type} primero"
+                bot.send_message(chat_id, message)
+                return
+            
+            if not getattr(config, 'is_configured', False):
+                message = f"⚠️ La configuración {config_type} no está configurada\n\n"
+                message += f"💡 Usa /config para configurar {config_type} primero"
+                bot.send_message(chat_id, message)
+                return
+            
+            # Activar la configuración
+            if self.activate_config(chat_id, config_type):
+                message = f"✅ <b>Configuración {config_type} activada</b>\n\n"
+                message += f"📊 <b>Par:</b> {config.pair}\n"
+                message += f"💰 <b>Capital:</b> ${config.total_capital} USDT\n"
+                message += f"🎯 <b>Niveles:</b> {config.grid_levels}\n"
+                message += f"📈 <b>Rango:</b> ±{config.price_range_percent}%\n"
+                message += f"🛡️ <b>Stop-Loss:</b> {getattr(config, 'stop_loss_percent', 5.0)}%\n\n"
+                message += f"🚀 Usa /start_bot para iniciar trading con {config_type}"
+                bot.send_message(chat_id, message)
+            else:
+                bot.send_message(chat_id, f"❌ Error activando configuración {config_type}")
+                
+        except Exception as e:
+            self.send_error_message(bot, chat_id, f"activando configuración {config_type}", e)
+    
+    def handle_update_capital_command(self, chat_id: str, message_text: str, bot):
+        """Comando /update_capital X: Actualiza el capital de la configuración activa"""
+        try:
+            # Obtener configuración activa
+            active_config = self.get_user_config(chat_id)
+            
+            if not active_config:
+                bot.send_message(chat_id, "⚠️ No tienes configuración activa\n\nUsa /config para configurar el bot primero.")
+                return
+            
+            # Extraer nuevo capital del mensaje
+            parts = message_text.strip().split()
+            if len(parts) != 2:
+                bot.send_message(
+                    chat_id, 
+                    "❌ Formato incorrecto.\n\n"
+                    "✅ Uso correcto: <code>/update_capital 500</code>\n"
+                    "💡 Ejemplo: 500 significa $500 USDT"
+                )
+                return
+            
+            try:
+                new_capital = float(parts[1])
+                if new_capital <= 0:
+                    bot.send_message(chat_id, "❌ El capital debe ser mayor a 0")
+                    return
+            except ValueError:
+                bot.send_message(chat_id, "❌ Capital inválido. Usa números como: 500")
+                return
+            
+            # Verificar capital mínimo
+            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+            if MODO_PRODUCTIVO:
+                capital_minimo = 30 * 10  # 300 USDT mínimo
+                if new_capital < capital_minimo:
+                    bot.send_message(
+                        chat_id,
+                        f"❌ Capital insuficiente. Mínimo requerido: ${capital_minimo} USDT\n\n"
+                        f"💡 Para 30 niveles se necesita $10 USDT por orden"
+                    )
+                    return
+            
+            # Actualizar capital
+            config_type = getattr(active_config, 'config_type', 'ETH')
+            if self.update_config_capital(chat_id, config_type, new_capital):
+                message = f"✅ <b>Capital actualizado exitosamente</b>\n\n"
+                message += f"📊 <b>Configuración:</b> {config_type}\n"
+                message += f"💰 <b>Nuevo capital:</b> ${new_capital} USDT\n"
+                message += f"📈 <b>Par:</b> {active_config.pair}\n\n"
+                message += f"🚀 Usa /start_bot para iniciar trading con el nuevo capital"
+                bot.send_message(chat_id, message)
+            else:
+                bot.send_message(chat_id, "❌ Error actualizando capital")
+                
+        except Exception as e:
+            self.send_error_message(bot, chat_id, "actualizando capital", e) 

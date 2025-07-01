@@ -62,24 +62,20 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("El capital total debe ser mayor a 0")
         
         if MODO_PRODUCTIVO:
-            # Calcular capital mínimo considerando comisiones y seguridad
-            # Estimación: cada nivel necesita ~$25-30 USDT para cubrir:
-            # - Comisiones de Binance (0.1% por trade)
-            # - Spread entre compra/venta
-            # - Fluctuaciones del 10% de rango
-            # - Liquidez para recompras
-            capital_minimo_por_nivel = 25  # USDT por nivel
-            capital_minimo_requerido = grid_levels * capital_minimo_por_nivel  # 30 * 25 = $750
+            # NUEVA FÓRMULA SIMPLIFICADA: $10 USDT por orden
+            # Cada nivel del grid necesita $10 USDT para operar eficientemente
+            capital_minimo_por_nivel = 10  # USDT por nivel (fórmula simplificada)
+            capital_minimo_requerido = grid_levels * capital_minimo_por_nivel  # 30 * 10 = $300
             
             if total_capital < capital_minimo_requerido:
                 raise ValueError(
-                    f"Capital insuficiente. Para {grid_levels} niveles con {price_range_percent}% de rango "
-                    f"se requiere mínimo ${capital_minimo_requerido} USDT. "
+                    f"Capital insuficiente. Para {grid_levels} niveles se requiere mínimo ${capital_minimo_requerido} USDT "
+                    f"(${capital_minimo_por_nivel} USDT por orden). "
                     f"Capital actual: ${total_capital} USDT"
                 )
         else:
             # Modo sandbox - usar valores fijos
-            capital_minimo_por_nivel = 25  # Para cálculos internos
+            capital_minimo_por_nivel = 10  # Para cálculos internos (fórmula simplificada)
             capital_minimo_requerido = 1000.0  # Capital fijo para sandbox
             logger.info("🟡 Modo SANDBOX: Usando capital fijo de $1000 USDT")
         
