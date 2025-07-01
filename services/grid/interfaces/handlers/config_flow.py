@@ -10,36 +10,58 @@ class ConfigFlowHandler(BaseHandler):
     """Handler para el flujo de configuración del Grid Bot"""
     
     def handle_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja el comando /config - Inicia el flujo de configuración con selección de tipo"""
+        """Maneja el comando /config - Muestra configuraciones actuales y permite modificar capital"""
         try:
             # Limpiar estados de conversación previos
             bot.clear_conversation_state(chat_id)
+            
+            # Obtener configuraciones actuales del usuario
+            configs = {}
+            for config_type in ['ETH', 'BTC', 'POL']:
+                config = self.get_user_config_by_type(chat_id, config_type)
+                if config and getattr(config, 'is_configured', False):
+                    configs[config_type] = {
+                        'capital': config.total_capital,
+                        'is_configured': True
+                    }
+                else:
+                    configs[config_type] = {
+                        'capital': 0,
+                        'is_configured': False
+                    }
+            
+            # Mostrar estado actual de configuraciones
+            message = "📊 <b>CONFIGURACIONES MULTIBOT</b>\n\n"
+            message += "🎯 <b>Estado actual de tus configuraciones:</b>\n\n"
+            
+            pair_names = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'POL': 'POL/USDT'}
+            
+            for i, (config_type, pair_name) in enumerate(pair_names.items(), 1):
+                config_info = configs[config_type]
+                if config_info['is_configured']:
+                    status_icon = "🟢"
+                    status_text = f"${config_info['capital']} USDT"
+                else:
+                    status_icon = "⚪"
+                    status_text = "Sin configurar"
+                
+                message += f"{i}. {status_icon} <b>{config_type}</b> ({pair_name})\n"
+                message += f"   💰 Capital: {status_text}\n\n"
+            
+            message += "💡 <b>¿Qué par quieres configurar?</b>\n"
+            message += "Responde con el número (1-3) o el nombre del par:\n"
+            message += "• <code>1</code> o <code>ETH</code> para ETH/USDT\n"
+            message += "• <code>2</code> o <code>BTC</code> para BTC/USDT\n"
+            message += "• <code>3</code> o <code>POL</code> para POL/USDT\n\n"
+            message += "📋 <b>Nota:</b> Solo se puede modificar el capital.\n"
+            message += "Los demás parámetros están optimizados por backtesting."
             
             # Inicializar estado de configuración
             config_data = {
                 'config_type': '',
                 'total_capital': 0.0
             }
-            
-            # Cambiar a selección de tipo de configuración
             bot.set_conversation_state(chat_id, "config_type_selection", config_data)
-            
-            # Mostrar tipos de configuración disponibles
-            supported_types = self.get_supported_config_types()
-            message = "🎯 <b>CONFIGURACIÓN DEL GRID BOT v3.0 - MULTIBOT</b>\n\n"
-            message += "📊 <b>Paso 1: Selecciona el tipo de configuración</b>\n\n"
-            message += "🪙 <b>Configuraciones disponibles:</b>\n"
-            
-            for i, config_type in enumerate(supported_types, 1):
-                # Obtener información de la configuración existente si existe
-                existing_config = self.get_user_config_by_type(chat_id, config_type)
-                status_icon = "✅" if existing_config and getattr(existing_config, 'is_configured', False) else "⚪"
-                capital_info = f"${existing_config.total_capital}" if existing_config and getattr(existing_config, 'is_configured', False) else "No configurado"
-                
-                message += f"{i}. {status_icon} <code>{config_type}</code> - {capital_info}\n"
-            
-            message += "\n💡 <b>Responde con el número del tipo:</b>\n"
-            message += "Ejemplo: <code>1</code> para ETH"
             
             bot.send_message(chat_id, message)
             
@@ -47,46 +69,38 @@ class ConfigFlowHandler(BaseHandler):
             self.send_error_message(bot, chat_id, "config", e)
     
     def handle_config_type_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Maneja la selección del tipo de configuración (ETH, BTC, MATIC)"""
+        """Maneja la selección del par a configurar (ETH, BTC, POL)"""
         try:
             state = bot.get_conversation_state(chat_id)
             if state is None:
                 bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
                 return
             
-            # Obtener lista de tipos soportados
-            supported_types = self.get_supported_config_types()
+            # Mapeo de números y nombres a tipos de configuración
+            config_mapping = {
+                '1': 'ETH', 'ETH': 'ETH',
+                '2': 'BTC', 'BTC': 'BTC', 
+                '3': 'POL', 'POL': 'POL'
+            }
             
-            # Intentar parsear como número
-            try:
-                type_index = int(message_text.strip()) - 1  # Convertir a índice base 0
-                
-                if type_index < 0 or type_index >= len(supported_types):
-                    bot.send_message(
-                        chat_id,
-                        f"❌ Número inválido. Debe ser entre 1 y {len(supported_types)}.\n\n"
-                        f"Tipos disponibles:\n" + 
-                        "\n".join([f"{i}. {config_type}" for i, config_type in enumerate(supported_types, 1)])
-                    )
-                    return
-                
-                selected_type = supported_types[type_index]
-                
-            except ValueError:
-                # Si no es un número, intentar buscar por nombre
-                selected_type = message_text.strip().upper()
-                if selected_type not in supported_types:
-                    bot.send_message(
-                        chat_id,
-                        f"❌ Tipo no válido: {message_text}\n\n"
-                        f"Tipos disponibles:\n" + 
-                        "\n".join([f"{i}. {config_type}" for i, config_type in enumerate(supported_types, 1)]) +
-                        f"\n\n💡 Responde con el número (1-{len(supported_types)}) o el nombre exacto del tipo."
-                    )
-                    return
+            # Normalizar entrada del usuario
+            user_input = message_text.strip().upper()
+            selected_type = config_mapping.get(user_input)
+            
+            if not selected_type:
+                bot.send_message(
+                    chat_id,
+                    "❌ Opción no válida.\n\n"
+                    "💡 Opciones disponibles:\n"
+                    "• <code>1</code> o <code>ETH</code> para ETH/USDT\n"
+                    "• <code>2</code> o <code>BTC</code> para BTC/USDT\n"
+                    "• <code>3</code> o <code>POL</code> para POL/USDT"
+                )
+                return
             
             # Obtener información de la configuración existente
             existing_config = self.get_user_config_by_type(chat_id, selected_type)
+            pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'POL': 'POL/USDT'}[selected_type]
             
             # Guardar tipo seleccionado
             state['data']['config_type'] = selected_type
@@ -94,44 +108,40 @@ class ConfigFlowHandler(BaseHandler):
             # Cambiar a entrada de capital
             bot.set_conversation_state(chat_id, "config_capital_input", state['data'])
             
-            # Mostrar siguiente paso
+            # Mostrar información específica del par
             from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
             
             if not MODO_PRODUCTIVO:  # Modo Sandbox
-                message = f"✅ <b>Tipo seleccionado:</b> {selected_type}\n\n"
-                message += "💰 <b>Paso 2: Capital para trading</b>\n\n"
-                message += "🟡 <b>MODO SANDBOX ACTIVO</b>\n"
-                message += "• Capital fijo: $1000 USDT (simulado)\n"
-                message += "• Sin riesgo, para pruebas\n\n"
-                message += "💡 <b>Escribe cualquier número (se ignorará):</b>\n"
-                message += "Ejemplo: <code>500</code> o <code>1000</code>"
+                message = f"🟡 <b>CONFIGURANDO {selected_type} (MODO SANDBOX)</b>\n\n"
+                message += f"📊 <b>Par:</b> {pair_name}\n"
+                message += f"💰 <b>Capital actual:</b> $1000 USDT (fijo para sandbox)\n\n"
+                message += "💡 <b>En modo sandbox, el capital es fijo.</b>\n"
+                message += "Escribe cualquier número para continuar:"
             else:  # Modo Productivo
-                capital_minimo = 30 * 10  # 300 USDT mínimo para 30 niveles (fórmula simplificada)
+                capital_minimo = 30 * 10  # 300 USDT mínimo
                 
                 if existing_config and getattr(existing_config, 'is_configured', False):
-                    message = f"✅ <b>Tipo seleccionado:</b> {selected_type}\n\n"
-                    message += f"📊 <b>Configuración actual:</b> ${existing_config.total_capital} USDT\n\n"
-                    message += "💰 <b>Paso 2: Nuevo capital para trading</b>\n\n"
-                    message += "🟢 <b>MODO PRODUCTIVO</b>\n"
-                    message += f"• Capital mínimo requerido: ${capital_minimo} USDT\n"
-                    message += f"• Para 30 niveles ($10 USDT por orden)\n"
-                    message += "• ⚠️ Trading con dinero real\n\n"
+                    current_capital = existing_config.total_capital
+                    message = f"🟢 <b>MODIFICANDO {selected_type}</b>\n\n"
+                    message += f"📊 <b>Par:</b> {pair_name}\n"
+                    message += f"💰 <b>Capital actual:</b> ${current_capital} USDT\n\n"
                     message += "💡 <b>Escribe el nuevo capital en USDT:</b>\n"
-                    message += f"Ejemplo: <code>{capital_minimo}</code> o más"
-                else:
-                    message = f"✅ <b>Tipo seleccionado:</b> {selected_type}\n\n"
-                    message += "💰 <b>Paso 2: Capital para trading</b>\n\n"
-                    message += "🟢 <b>MODO PRODUCTIVO</b>\n"
-                    message += f"• Capital mínimo requerido: ${capital_minimo} USDT\n"
+                    message += f"• Mínimo recomendado: ${capital_minimo} USDT\n"
                     message += f"• Para 30 niveles ($10 USDT por orden)\n"
-                    message += "• ⚠️ Trading con dinero real\n\n"
+                    message += f"• ⚠️ Trading con dinero real"
+                else:
+                    message = f"🟢 <b>CONFIGURANDO {selected_type}</b>\n\n"
+                    message += f"📊 <b>Par:</b> {pair_name}\n"
+                    message += f"💰 <b>Capital actual:</b> Sin configurar\n\n"
                     message += "💡 <b>Escribe el capital en USDT:</b>\n"
-                    message += f"Ejemplo: <code>{capital_minimo}</code> o más"
+                    message += f"• Mínimo recomendado: ${capital_minimo} USDT\n"
+                    message += f"• Para 30 niveles ($10 USDT por orden)\n"
+                    message += f"• ⚠️ Trading con dinero real"
             
             bot.send_message(chat_id, message)
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "seleccionando tipo", e)
+            self.send_error_message(bot, chat_id, "seleccionando par", e)
     
     def handle_capital_input(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja la entrada del capital durante la configuración"""
@@ -161,58 +171,49 @@ class ConfigFlowHandler(BaseHandler):
             # Cambiar a confirmación
             bot.set_conversation_state(chat_id, "config_confirmation", state['data'])
             
-            # Calcular configuración óptima
+            # Obtener información del par
             config_type = state['data']['config_type']
-            pair_mapping = {
-                'ETH': 'ETH/USDT',
-                'BTC': 'BTC/USDT',
-                'MATIC': 'MATIC/USDT'
-            }
-            pair = pair_mapping.get(config_type, 'ETH/USDT')
-            optimal_config = self.calculate_optimal_config(pair, capital)
+            pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'POL': 'POL/USDT'}[config_type]
             
-            # Mostrar configuración final con parámetros fijos
+            # Mostrar configuración final
             from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
             
             if not MODO_PRODUCTIVO:  # Modo Sandbox
-                message = f"🟡 <b>MODO SANDBOX - CONFIGURACIÓN FINAL</b>\n\n"
-                message += f"📊 <b>Tipo seleccionado:</b> {config_type}\n"
+                message = f"🟡 <b>CONFIGURACIÓN SANDBOX - {config_type}</b>\n\n"
+                message += f"📊 <b>Par:</b> {pair_name}\n"
                 message += f"💰 <b>Capital:</b> $1000 USDT (fijo para sandbox)\n"
                 message += f"ℹ️ Tu solicitud de ${capital} USDT se ignora\n\n"
             else:  # Modo Productivo
-                capital_minimo = optimal_config.get('capital_minimo_sugerido', 300)
+                capital_minimo = 30 * 10  # 300 USDT mínimo
+                
                 if capital < capital_minimo:
                     message = f"⚠️ <b>CAPITAL INSUFICIENTE - AJUSTE AUTOMÁTICO</b>\n\n"
-                    message += f"📊 <b>Tipo seleccionado:</b> {config_type}\n"
+                    message += f"📊 <b>Par:</b> {pair_name}\n"
                     message += f"💰 <b>Solicitado:</b> ${capital} USDT\n"
                     message += f"💡 <b>Mínimo requerido:</b> ${capital_minimo} USDT\n"
-                    message += f"🎯 <b>Capital ajustado a:</b> ${optimal_config['total_capital']} USDT\n\n"
+                    message += f"🎯 <b>Capital ajustado a:</b> ${capital_minimo} USDT\n\n"
+                    # Ajustar capital automáticamente
+                    state['data']['total_capital'] = capital_minimo
                 else:
-                    message = f"🟢 <b>MODO PRODUCTIVO - CONFIGURACIÓN FINAL</b>\n\n"
-                    message += f"📊 <b>Tipo seleccionado:</b> {config_type}\n"
-                    message += f"💰 <b>Capital:</b> ${capital} USDT (dinero real)\n"
+                    message = f"🟢 <b>CONFIGURACIÓN PRODUCTIVA - {config_type}</b>\n\n"
+                    message += f"📊 <b>Par:</b> {pair_name}\n"
+                    message += f"💰 <b>Capital:</b> ${capital} USDT\n"
                     message += f"⚠️ <b>¡ADVERTENCIA!</b> Operarás con dinero real\n\n"
             
-            # Parámetros técnicos fijos (mismos para ambos modos)
+            # Parámetros técnicos fijos (optimizados por backtesting)
             message += "🎯 <b>Parámetros Técnicos (FIJOS):</b>\n"
-            message += f"• <b>Niveles de grid:</b> 30 (optimizado por backtesting)\n"
-            message += f"• <b>Rango de precios:</b> 10% (optimizado por backtesting)\n"
-            message += f"• <b>Stop Loss:</b> {optimal_config['stop_loss_percent']}% (activo)\n"
-            message += f"• <b>Trailing Up:</b> ✅ Activo (Optimiza ganancias)\n\n"
+            message += f"• <b>Niveles de grid:</b> 30 (optimizado)\n"
+            message += f"• <b>Rango de precios:</b> 10% (optimizado)\n"
+            message += f"• <b>Stop Loss:</b> 5% (activo)\n"
+            message += f"• <b>Trailing Up:</b> ✅ Activo\n\n"
             
-            message += "🧠 <b>Integración con Cerebro:</b>\n"
-            message += "• El cerebro decide cuándo operar (ADX + Volatilidad)\n"
-            message += "• Futuramente: cerebro elegirá niveles y rangos dinámicamente\n\n"
-            
-            message += "✅ ¿Confirmas esta configuración optimizada?\n\n"
-            message += "Responde:\n"
-            message += "• <code>sí</code> para confirmar\n"
-            message += "• <code>no</code> para cancelar"
+            message += "✅ <b>¿Confirmar esta configuración?</b>\n"
+            message += "Responde <code>SI</code> para confirmar o <code>NO</code> para cancelar."
             
             bot.send_message(chat_id, message)
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "procesando capital", e)
+            self.send_error_message(bot, chat_id, "configurando capital", e)
     
     def handle_config_confirmation(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja la confirmación de la configuración"""

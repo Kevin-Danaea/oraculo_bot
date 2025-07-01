@@ -56,17 +56,19 @@ def get_grid_boundaries(active_orders: List[Dict[str, Any]]) -> Tuple[Optional[f
 def check_manual_stop_requested() -> bool:
     """
     Verifica si se ha solicitado una parada manual del bot.
-    Importa y verifica la variable global grid_bot_running.
+    Usa el multibot scheduler para verificar el estado.
     
     Returns:
         True si se debe detener el bot, False si debe continuar
     """
     try:
-        # Importar variable global del scheduler
-        from ..schedulers.grid_scheduler import grid_bot_running
-        return not grid_bot_running
-    except ImportError:
-        logger.warning("⚠️ No se pudo importar grid_bot_running del scheduler")
+        # Importar multibot scheduler
+        from ..schedulers.multibot_scheduler import get_multibot_scheduler
+        scheduler = get_multibot_scheduler()
+        status = scheduler.get_status()
+        return status['total_active_bots'] == 0
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo verificar estado del multibot scheduler: {e}")
         return False
 
 

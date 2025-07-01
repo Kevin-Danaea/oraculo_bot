@@ -9,7 +9,6 @@ from shared.services.logging_config import get_logger
 from shared.services.telegram_bot_service import TelegramBot
 from .handlers.basic_commands import BasicCommandsHandler
 from .handlers.config_flow import ConfigFlowHandler
-from .handlers.advanced_strategies import AdvancedStrategiesHandler
 
 logger = get_logger(__name__)
 
@@ -32,35 +31,21 @@ class GridTelegramInterface:
         # Inicializar handlers especializados
         self.basic_handler = BasicCommandsHandler()
         self.config_handler = ConfigFlowHandler()
-        self.advanced_handler = AdvancedStrategiesHandler()
         
         # Registrar comandos
         self.register_commands()
     
     def register_commands(self):
-        """Registra todos los comandos específicos del grid bot V2"""
-        # Comandos básicos V1
+        """Registra todos los comandos esenciales del sistema multibot"""
+        # Comandos esenciales del multibot (8 comandos)
         self.bot.register_command("start", self.basic_handler.handle_start_command)
         self.bot.register_command("start_bot", self.basic_handler.handle_start_bot_command)
         self.bot.register_command("stop_bot", self.basic_handler.handle_stop_bot_command)
-        self.bot.register_command("restart_bot", self.basic_handler.handle_restart_bot_command)
         self.bot.register_command("status", self.basic_handler.handle_status_command)
-        self.bot.register_command("delete_config", self.basic_handler.handle_delete_config_command)
-        
-        # Comandos de integración con Cerebro v3.0
+        self.bot.register_command("balance", self.basic_handler.handle_balance_command)
         self.bot.register_command("modo_productivo", self.basic_handler.handle_modo_productivo_command)
         self.bot.register_command("modo_sandbox", self.basic_handler.handle_modo_sandbox_command)
         self.bot.register_command("estado_cerebro", self.basic_handler.handle_estado_cerebro_command)
-        self.bot.register_command("modo_actual", self.basic_handler.handle_modo_actual_command)
-        self.bot.register_command("info_config", self.basic_handler.handle_info_config_command)
-        self.bot.register_command("balance", self.basic_handler.handle_balance_command)
-        
-        # Comandos de gestión multibot
-        self.bot.register_command("configs", self.basic_handler.handle_configs_command)
-        self.bot.register_command("activate_eth", self.basic_handler.handle_activate_eth_command)
-        self.bot.register_command("activate_btc", self.basic_handler.handle_activate_btc_command)
-        self.bot.register_command("activate_matic", self.basic_handler.handle_activate_matic_command)
-        self.bot.register_command("update_capital", self.basic_handler.handle_update_capital_command)
         
         # Comandos de configuración
         self.bot.register_command("config", self.config_handler.handle_config_command)
@@ -70,15 +55,7 @@ class GridTelegramInterface:
         self.bot.register_command("config_capital_input", self.config_handler.handle_capital_input)
         self.bot.register_command("config_confirmation", self.config_handler.handle_config_confirmation)
         
-        # Comandos V2: Estrategias Avanzadas
-        self.bot.register_command("enable_stop_loss", self.advanced_handler.handle_enable_stop_loss_command)
-        self.bot.register_command("disable_stop_loss", self.advanced_handler.handle_disable_stop_loss_command)
-        self.bot.register_command("enable_trailing", self.advanced_handler.handle_enable_trailing_command)
-        self.bot.register_command("disable_trailing", self.advanced_handler.handle_disable_trailing_command)
-        self.bot.register_command("set_stop_loss", self.advanced_handler.handle_set_stop_loss_command)
-        self.bot.register_command("protections", self.advanced_handler.handle_protections_command)
-        
-        logger.info("✅ Comandos del Grid Bot V2 registrados en Telegram (versión refactorizada)")
+        logger.info("✅ Comandos esenciales del sistema multibot registrados en Telegram")
     
     # ============================================================================
     # MÉTODOS DE COMPATIBILIDAD CON LA VERSIÓN ANTERIOR
@@ -120,17 +97,9 @@ class GridTelegramInterface:
         """Método legacy - delegado al handler correspondiente"""
         return self.basic_handler.handle_stop_bot_command(chat_id, message_text, bot)
     
-    def handle_restart_bot_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Método legacy - delegado al handler correspondiente"""
-        return self.basic_handler.handle_restart_bot_command(chat_id, message_text, bot)
-    
     def handle_status_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
         return self.basic_handler.handle_status_command(chat_id, message_text, bot)
-    
-    def handle_delete_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Método legacy - delegado al handler correspondiente"""
-        return self.basic_handler.handle_delete_config_command(chat_id, message_text, bot)
     
     def handle_config_type_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
@@ -144,33 +113,17 @@ class GridTelegramInterface:
         """Método legacy - delegado al handler correspondiente"""
         return self.config_handler.handle_config_confirmation(chat_id, message_text, bot)
     
-    def handle_enable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    def handle_modo_productivo_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
-        return self.advanced_handler.handle_enable_stop_loss_command(chat_id, message_text, bot)
+        return self.basic_handler.handle_modo_productivo_command(chat_id, message_text, bot)
     
-    def handle_disable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    def handle_modo_sandbox_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
-        return self.advanced_handler.handle_disable_stop_loss_command(chat_id, message_text, bot)
+        return self.basic_handler.handle_modo_sandbox_command(chat_id, message_text, bot)
     
-    def handle_enable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    def handle_estado_cerebro_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""
-        return self.advanced_handler.handle_enable_trailing_command(chat_id, message_text, bot)
-    
-    def handle_disable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Método legacy - delegado al handler correspondiente"""
-        return self.advanced_handler.handle_disable_trailing_command(chat_id, message_text, bot)
-    
-    def handle_set_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Método legacy - delegado al handler correspondiente"""
-        return self.advanced_handler.handle_set_stop_loss_command(chat_id, message_text, bot)
-    
-    def handle_protections_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Método legacy - delegado al handler correspondiente"""
-        return self.advanced_handler.handle_protections_command(chat_id, message_text, bot)
-    
-    def handle_info_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
-        """Método legacy - delegado al handler correspondiente"""
-        return self.basic_handler.handle_info_config_command(chat_id, message_text, bot)
+        return self.basic_handler.handle_estado_cerebro_command(chat_id, message_text, bot)
     
     def handle_balance_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Método legacy - delegado al handler correspondiente"""

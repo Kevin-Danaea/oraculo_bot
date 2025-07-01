@@ -4,7 +4,7 @@ Router para health checks del servicio Grid
 
 from datetime import datetime
 from fastapi import APIRouter
-from services.grid.schedulers.grid_scheduler import get_grid_scheduler
+from services.grid.schedulers.multibot_scheduler import get_multibot_scheduler
 
 router = APIRouter(tags=["Health"])
 
@@ -24,8 +24,8 @@ async def health_check():
     """
     try:
         # Verificar que el scheduler esté activo
-        scheduler = get_grid_scheduler()
-        if scheduler and scheduler.running:
+        scheduler = get_multibot_scheduler()
+        if scheduler and scheduler.scheduler.running:
             return {
                 "status": "healthy",
                 "service": "Grid Trading Service",

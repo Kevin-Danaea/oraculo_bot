@@ -25,7 +25,21 @@ load_dotenv()
 CONFIGURACIONES_OPTIMAS: Dict[str, Dict[str, Any]] = {
     "ETH/USDT": {
         "UMBRAL_ADX": 30,                    # ADX debe ser menor a 30
+        "UMBRAL_VOLATILIDAD": 0.025,         # Ancho de Banda de Bollinger debe ser mayor a 0.025
+        "UMBRAL_SENTIMIENTO": -0.20,         # Media Móvil de Sentimiento (7d) debe ser mayor a -0.20
+        "GRID_RANGO": 10.0,                  # Rango de precios: 10.0%
+        "GRID_NIVELES": 30                   # Niveles de grid: 30
+    },
+    "BTC/USDT": {
+        "UMBRAL_ADX": 25,                    # ADX debe ser menor a 25
         "UMBRAL_VOLATILIDAD": 0.035,         # Ancho de Banda de Bollinger debe ser mayor a 0.035
+        "UMBRAL_SENTIMIENTO": -0.20,         # Media Móvil de Sentimiento (7d) debe ser mayor a -0.20
+        "GRID_RANGO": 7.5,                   # Rango de precios: 7.5%
+        "GRID_NIVELES": 30                   # Niveles de grid: 30
+    },
+    "POL/USDT": {
+        "UMBRAL_ADX": 35,                    # ADX debe ser menor a 35
+        "UMBRAL_VOLATILIDAD": 0.020,         # Ancho de Banda de Bollinger debe ser mayor a 0.020
         "UMBRAL_SENTIMIENTO": -0.20,         # Media Móvil de Sentimiento (7d) debe ser mayor a -0.20
         "GRID_RANGO": 10.0,                  # Rango de precios: 10.0%
         "GRID_NIVELES": 30                   # Niveles de grid: 30
@@ -36,7 +50,7 @@ CONFIGURACIONES_OPTIMAS: Dict[str, Dict[str, Any]] = {
 # LISTA DE PARES A MONITOREAR
 # ============================================================================
 
-PARES_A_MONITOREAR: List[str] = ['ETH/USDT']
+PARES_A_MONITOREAR: List[str] = ['ETH/USDT', 'BTC/USDT', 'POL/USDT']
 
 # ============================================================================
 # CONFIGURACIÓN DE BASE DE DATOS
@@ -56,8 +70,8 @@ if not DATABASE_URL:
 TIMEFRAME = '4h'
 DIAS_HISTORIAL = 40
 
-# Intervalo del bucle principal (en segundos) - 2 horas
-INTERVALO_ANALISIS = 7200
+# Intervalo del bucle principal (en segundos) - 1 hora
+INTERVALO_ANALISIS = 3600
 
 # Configuración de logging
 LOG_LEVEL = "INFO" 

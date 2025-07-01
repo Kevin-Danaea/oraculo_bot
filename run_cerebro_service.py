@@ -20,7 +20,7 @@ if __name__ == "__main__":
     print("📍 Puerto: 8004")
     print("🔄 Análisis continuo activado")
     print("📊 Pares monitoreados: ETH/USDT")
-    print("⏰ Intervalo: cada 2 horas")
+    print("⏰ Intervalo: cada 1 horas")
     print("💾 Base de datos: tabla estrategia_status")
     print("🔄 Iniciando servidor...")
     print("")

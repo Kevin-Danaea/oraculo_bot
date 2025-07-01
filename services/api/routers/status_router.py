@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from shared.services.logging_config import get_logger
 from shared.database.session import SessionLocal
 from services.news.schedulers.news_scheduler import get_news_scheduler
-from services.grid.schedulers.grid_scheduler import get_grid_scheduler
+from services.grid.schedulers.multibot_scheduler import get_multibot_scheduler
 import requests
 from typing import Dict, Any
 import asyncio
@@ -216,10 +216,10 @@ def health_status():
         
         # Verificar servicio de grid
         try:
-            grid_scheduler = get_grid_scheduler()
+            grid_scheduler = get_multibot_scheduler()
             services_status["grid"] = {
-                "status": "healthy" if grid_scheduler and grid_scheduler.running else "stopped",
-                "scheduler_running": grid_scheduler.running if grid_scheduler else False
+                "status": "healthy" if grid_scheduler and grid_scheduler.scheduler.running else "stopped",
+                "scheduler_running": grid_scheduler.scheduler.running if grid_scheduler else False
             }
         except Exception as e:
             services_status["grid"] = {"status": "error", "error": str(e)}
@@ -286,10 +286,10 @@ def scheduler_status():
         
         # Scheduler de grid
         try:
-            grid_scheduler = get_grid_scheduler()
-            if grid_scheduler and grid_scheduler.running:
+            grid_scheduler = get_multibot_scheduler()
+            if grid_scheduler and grid_scheduler.scheduler.running:
                 grid_jobs = []
-                for job in grid_scheduler.get_jobs():
+                for job in grid_scheduler.scheduler.get_jobs():
                     job_data = {
                         "id": job.id,
                         "name": job.name or job.func.__name__ if hasattr(job.func, '__name__') else str(job.func),

@@ -1,17 +1,18 @@
-# 🔮 Oráculo Cripto Bot V2.5 - Sistema de Trading Inteligente
+# 🔮 Oráculo Cripto Bot V3.0 - Sistema Multibot Inteligente
 
-> **🆕 ACTUALIZACIÓN V2.5**: News Service potenciado con 25 subreddits, posts de comunidad, 500 noticias/ciclo y filtros de calidad avanzados
+> **🆕 ACTUALIZACIÓN V3.0**: Sistema Multibot simultáneo con 3 pares (ETH, BTC, POL), UI simplificada y control automático
 
-Un ecosistema avanzado de **microservicios** para **trading automatizado** con **Grid Bot inteligente**, **análisis de noticias crypto** y **control total desde Telegram**.
+Un ecosistema avanzado de **microservicios** para **trading automatizado multibot** con **3 bots simultáneos**, **cerebro inteligente**, **análisis de noticias crypto** y **control simplificado desde Telegram**.
 
 ## 🎯 Características Principales
 
-### 🤖 **Grid Trading Inteligente V2.5**
-- **🛡️ Estrategias Defensivas**: Stop-Loss automático configurable
-- **📈 Estrategias Ofensivas**: Trailing Up dinámico  
-- **🧹 Limpieza Automática**: Cancela órdenes huérfanas al reiniciar
-- **⏸️ Modo Standby**: Inicio manual tras reinicio para mayor seguridad
-- **🎮 Control Total**: Gestión completa desde Telegram
+### 🤖 **Sistema Multibot V3.0**
+- **🚀 3 Bots Simultáneos**: ETH/USDT, BTC/USDT, POL/USDT
+- **🧠 Cerebro Inteligente**: Decisiones automáticas basadas en ADX, volatilidad y sentimiento
+- **📱 UI Simplificada**: Comandos de Telegram más simples y eficientes
+- **⚙️ Configuración Mínima**: Solo capital total requerido ($900 mínimo)
+- **🛡️ Estrategias Avanzadas**: Stop-Loss y Trailing Up automáticos
+- **🔄 Control Automático**: Responde a decisiones del cerebro sin intervención manual
 
 ### 📰 **Análisis de Noticias Automático V2.5**
 - **Recolección Ampliada**: 25 subreddits cada hora (9x más cobertura)

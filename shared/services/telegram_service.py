@@ -7,6 +7,7 @@ import requests
 import ccxt
 from shared.config.settings import settings
 from shared.services.logging_config import get_logger
+import re
 
 logger = get_logger(__name__)
 
@@ -138,6 +139,64 @@ def calculate_pnl_with_explanation(balance: dict, initial_capital: float, mode: 
         }
 
 
+def clean_html_message(text: str) -> str:
+    """
+    Limpia un mensaje de caracteres HTML problemáticos para Telegram.
+    Mantiene las etiquetas HTML válidas de Telegram (<b>, <i>, <code>, etc.)
+    y preserva los saltos de línea para mejor presentación.
+    
+    Args:
+        text: Texto original con HTML
+        
+    Returns:
+        Texto limpio y seguro para Telegram
+    """
+    try:
+        # Limpieza más agresiva para evitar errores de parsing
+        import re
+        
+        # Primero, limpiar caracteres problemáticos comunes
+        text = str(text)  # Asegurar que sea string
+        
+        # Reemplazar caracteres problemáticos específicos
+        text = text.replace('&', '&amp;')
+        text = text.replace('<', '&lt;')
+        text = text.replace('>', '&gt;')
+        
+        # Restaurar solo las etiquetas HTML válidas de Telegram
+        valid_tags = ['b', 'i', 'code', 'pre', 'a', 'u', 's', 'tg-spoiler']
+        for tag in valid_tags:
+            # Restaurar etiquetas de apertura
+            text = text.replace(f'&lt;{tag}&gt;', f'<{tag}>')
+            text = text.replace(f'&lt;{tag} /&gt;', f'<{tag}>')
+            # Restaurar etiquetas de cierre
+            text = text.replace(f'&lt;/{tag}&gt;', f'</{tag}>')
+        
+        # Limpiar espacios múltiples y caracteres problemáticos
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Limpiar espacios múltiples
+            cleaned_line = re.sub(r'[ \t]+', ' ', line.strip())
+            # Remover caracteres no imprimibles excepto espacios
+            cleaned_line = ''.join(char for char in cleaned_line if char.isprintable() or char.isspace())
+            cleaned_lines.append(cleaned_line)
+        
+        # Reconstruir el texto
+        result = '\n'.join(cleaned_lines)
+        
+        # Log para debugging
+        if '&lt;' in result or '&gt;' in result:
+            logger.warning(f"⚠️ Mensaje contiene caracteres HTML problemáticos: {result[:100]}...")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error limpiando mensaje HTML: {e}")
+        # En caso de error, devolver texto completamente limpio
+        return re.sub(r'[<>]', '', str(text))
+
+
 def send_telegram_message(message: str):
     """
     Envía un mensaje a Telegram usando la API de bots
@@ -151,13 +210,19 @@ def send_telegram_message(message: str):
             logger.warning("⚠️ No se han configurado las credenciales de Telegram")
             return False
         
+        # Limpiar mensaje de caracteres problemáticos
+        clean_message = clean_html_message(message)
+        
+        # Log para debugging
+        logger.debug(f"📤 Enviando mensaje a Telegram: {clean_message[:200]}...")
+        
         # URL de la API de Telegram
         url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
         
         # Datos del mensaje
         data = {
             'chat_id': settings.TELEGRAM_CHAT_ID,
-            'text': message,
+            'text': clean_message,
             'parse_mode': 'HTML'  # Para formateo HTML
         }
         

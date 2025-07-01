@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
         scheduler = start_grid_service()
         logger.info("✅ Grid Service iniciado correctamente")
         logger.info("🧠 Grid en MODO AUTÓNOMO - Responde a decisiones del Cerebro")
-        logger.info("🔄 Monitoreo automático cada 10 minutos")
+        logger.info("🔄 Monitoreo automático cada 1 hora (sincronizado con cerebro)")
         logger.info("📱 Comandos manuales: /start_bot, /stop_bot")
     except Exception as e:
         logger.error(f"❌ Error al iniciar Grid Service: {e}")

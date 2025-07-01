@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from .config import CONFIGURACIONES_OPTIMAS
 from .data_collector import fetch_and_prepare_data, get_current_indicators
+from .multibot_notifier import get_multibot_notifier
 from shared.database.session import SessionLocal
 from shared.database.models import EstrategiaStatus
 
@@ -112,6 +113,18 @@ class DecisionEngine:
                 volatilidad_actual=volatilidad_actual,
                 sentiment_promedio=sentiment_promedio,
                 config=config
+            )
+            
+            # Notificar al grid multibot sobre el cambio de decisión
+            self._notificar_grid_multibot(
+                par=par,
+                decision=decision,
+                razon=razon,
+                indicadores={
+                    'adx_actual': adx_actual,
+                    'volatilidad_actual': volatilidad_actual,
+                    'sentiment_promedio': sentiment_promedio
+                }
             )
             
             return {
@@ -302,4 +315,85 @@ class DecisionEngine:
             db.rollback()
             raise
         finally:
-            db.close() 
+            db.close()
+    
+    def _notificar_grid_multibot(
+        self,
+        par: str,
+        decision: str,
+        razon: str,
+        indicadores: Dict[str, Any]
+    ):
+        """
+        Notifica al grid multibot sobre un cambio de decisión.
+        
+        Args:
+            par: Par de trading
+            decision: Nueva decisión
+            razon: Razón de la decisión
+            indicadores: Indicadores utilizados
+        """
+        try:
+            from .multibot_notifier import notify_decision_change
+            success = notify_decision_change(par, decision, razon, indicadores)
+            
+            if success:
+                logger.info(f"✅ Grid multibot notificado: {par} -> {decision}")
+            else:
+                logger.warning(f"⚠️ Error notificando grid multibot para {par}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error notificando grid multibot para {par}: {e}")
+    
+    def analizar_todos_los_pares(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Analiza todos los pares configurados de una vez (análisis batch).
+        Mejora la eficiencia al procesar todos los pares simultáneamente.
+        
+        Returns:
+            Diccionario con resultados de análisis para todos los pares
+        """
+        try:
+            from .config import PARES_A_MONITOREAR
+            
+            logger.info(f"🚀 ========== INICIANDO ANÁLISIS BATCH ==========")
+            logger.info(f"📊 Pares a analizar: {PARES_A_MONITOREAR}")
+            logger.info(f"🔢 Total pares: {len(PARES_A_MONITOREAR)}")
+            
+            resultados = {}
+            
+            for par in PARES_A_MONITOREAR:
+                try:
+                    logger.info(f"🔍 Analizando {par}...")
+                    resultado = self.analizar_par(par)
+                    resultados[par] = resultado
+                    
+                    if resultado.get('success', False):
+                        logger.info(f"✅ {par}: {resultado['decision']}")
+                    else:
+                        logger.error(f"❌ {par}: Error en análisis")
+                        
+                except Exception as e:
+                    logger.error(f"💥 Error analizando {par}: {str(e)}")
+                    resultados[par] = {
+                        "par": par,
+                        "decision": "ERROR",
+                        "razon": f"Error en análisis: {str(e)}",
+                        "timestamp": datetime.now(),
+                        "success": False,
+                        "error": str(e)
+                    }
+            
+            # Resumen del análisis batch
+            exitosos = sum(1 for r in resultados.values() if r.get('success', False))
+            errores = len(resultados) - exitosos
+            
+            logger.info(f"✅ ========== ANÁLISIS BATCH COMPLETADO ==========")
+            logger.info(f"📊 Resultados: {exitosos} exitosos, {errores} errores")
+            logger.info(f"🎯 Decisiones: {[r.get('decision', 'ERROR') for r in resultados.values()]}")
+            
+            return resultados
+            
+        except Exception as e:
+            logger.error(f"💥 Error crítico en análisis batch: {str(e)}")
+            return {} 

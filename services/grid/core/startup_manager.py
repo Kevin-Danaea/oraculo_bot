@@ -431,17 +431,18 @@ def get_standby_status() -> Dict[str, Any]:
         Diccionario con información del estado standby
     """
     try:
-        from ..schedulers.grid_scheduler import get_grid_scheduler, grid_bot_running
+        from ..schedulers.multibot_scheduler import get_multibot_scheduler
         
-        scheduler = get_grid_scheduler()
-        scheduler_running = scheduler and scheduler.running
+        scheduler = get_multibot_scheduler()
+        scheduler_running = scheduler and scheduler.scheduler.running
         
+        status = scheduler.get_status()
         return {
-            'standby_mode': not grid_bot_running,
+            'standby_mode': status['total_active_bots'] == 0,
             'scheduler_active': scheduler_running,
-            'bot_trading': grid_bot_running,
+            'bot_trading': status['total_active_bots'] > 0,
             'telegram_available': True,  # Siempre disponible si el servicio está activo
-            'ready_to_start': scheduler_running and not grid_bot_running,
+            'ready_to_start': scheduler_running and status['total_active_bots'] == 0,
             'timestamp': datetime.now().isoformat()
         }
         

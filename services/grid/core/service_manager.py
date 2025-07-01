@@ -7,10 +7,10 @@ from typing import Any
 from shared.services.logging_config import setup_logging, get_logger
 from shared.services.telegram_service import send_service_startup_notification
 from shared.database.session import init_database
-from services.grid.schedulers.grid_scheduler import (
-    start_grid_bot_scheduler, 
-    stop_grid_bot_scheduler,
-    get_grid_scheduler
+from services.grid.schedulers.multibot_scheduler import (
+    start_multibot_scheduler, 
+    stop_multibot_scheduler,
+    get_multibot_scheduler
 )
 from services.grid.core.telegram_service import start_telegram_bot, stop_telegram_bot
 from services.grid.core.cerebro_integration import obtener_configuracion_trading
@@ -39,8 +39,8 @@ def start_grid_service() -> Any:
         logger.info("✅ Base de datos inicializada correctamente")
         
         # Configurar e iniciar scheduler en modo standby
-        start_grid_bot_scheduler()
-        scheduler = get_grid_scheduler()
+        start_multibot_scheduler()
+        scheduler = get_multibot_scheduler()
         
         # Iniciar bot de Telegram
         telegram_bot_instance = start_telegram_bot()
@@ -84,7 +84,7 @@ def stop_grid_service():
         stop_telegram_bot()
         
         # Detener scheduler
-        stop_grid_bot_scheduler()
+        stop_multibot_scheduler()
         
         logger.info("✅ Grid Worker detenido correctamente")
         

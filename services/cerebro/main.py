@@ -29,6 +29,7 @@ from .core.config import (
     LOG_LEVEL
 )
 from .core.decision_engine import DecisionEngine
+from .core.multibot_notifier import get_multibot_notifier
 from .routers import health_router
 
 # ============================================================================
@@ -110,18 +111,20 @@ async def bucle_principal_analisis():
     """
     Bucle principal que ejecuta el análisis continuo de los pares monitoreados.
     
-    NUEVA LÓGICA:
-    1. Analiza cada par según umbrales configurados
-    2. Compara con decisión anterior
-    3. Si hay cambio, notifica al Grid automáticamente
+    NUEVA LÓGICA BATCH:
+    1. Analiza TODOS los pares de una vez
+    2. Compara con decisiones anteriores
+    3. Notifica al Grid con todas las decisiones de una vez
     4. Actualiza base de datos
     """
     global bucle_activo, decisiones_anteriores
     
-    logger.info("🚀 ========== INICIANDO BUCLE PRINCIPAL DE ANÁLISIS ==========")
+    logger.info("🚀 ========== INICIANDO BUCLE PRINCIPAL DE ANÁLISIS MULTIBOT BATCH ==========")
     logger.info(f"📊 Pares a monitorear: {PARES_A_MONITOREAR}")
+    logger.info(f"🔢 Total pares: {len(PARES_A_MONITOREAR)}")
     logger.info(f"⏰ Intervalo de análisis: {INTERVALO_ANALISIS} segundos")
     logger.info(f"🔗 URL Grid Service: {GRID_SERVICE_URL}")
+    logger.info("🧠 Sistema multibot con análisis BATCH activado")
     logger.info("=" * 70)
     
     ciclo_numero = 0
@@ -129,71 +132,87 @@ async def bucle_principal_analisis():
     while bucle_activo:
         try:
             ciclo_numero += 1
-            logger.info(f"🔄 ========== INICIANDO CICLO #{ciclo_numero} ==========")
+            logger.info(f"🔄 ========== INICIANDO CICLO BATCH #{ciclo_numero} ==========")
             logger.info(f"🕐 Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # Iterar sobre cada par a monitorear
-            for par in PARES_A_MONITOREAR:
+            # ANÁLISIS BATCH: Analizar todos los pares de una vez
+            logger.info("🚀 Ejecutando análisis batch de todos los pares...")
+            resultados_batch = decision_engine.analizar_todos_los_pares()
+            
+            if not resultados_batch:
+                logger.error("❌ Error en análisis batch - no se obtuvieron resultados")
+                continue
+            
+            # Procesar resultados del análisis batch
+            cambios_detectados = {}
+            
+            for par, resultado in resultados_batch.items():
                 if not bucle_activo:  # Verificar si se debe detener
                     break
                 
-                try:
-                    logger.info(f"🔍 Analizando {par}...")
+                if resultado.get('success', False):
+                    decision_actual = resultado['decision']
+                    razon = resultado['razon']
+                    indicadores = resultado['indicadores']
                     
-                    # Ejecutar análisis para este par
-                    resultado = decision_engine.analizar_par(par)
+                    logger.info(f"✅ {par}: {decision_actual}")
+                    logger.info(f"📝 Razón: {razon}")
+                    logger.info(f"📊 ADX: {indicadores['adx_actual']:.2f}, Volatilidad: {indicadores['volatilidad_actual']:.4f}")
                     
-                    if resultado.get('success', False):
-                        decision_actual = resultado['decision']
-                        razon = resultado['razon']
-                        indicadores = resultado['indicadores']
+                    # Detectar cambios
+                    decision_anterior = decisiones_anteriores.get(par)
+                    
+                    if decision_anterior is None:
+                        # Primera vez - registrar cambio
+                        logger.info(f"🆕 Primera decisión para {par}: {decision_actual}")
+                        cambios_detectados[par] = {
+                            'decision': decision_actual,
+                            'razon': razon,
+                            'indicadores': indicadores
+                        }
+                        decisiones_anteriores[par] = decision_actual
                         
-                        logger.info(f"✅ {par}: {decision_actual}")
-                        logger.info(f"📝 Razón: {razon}")
-                        logger.info(f"📊 ADX: {indicadores['adx_actual']:.2f}, Volatilidad: {indicadores['volatilidad_actual']:.4f}")
+                    elif decision_anterior != decision_actual:
+                        # Cambio detectado - registrar cambio
+                        logger.info(f"🔄 CAMBIO DETECTADO en {par}: {decision_anterior} -> {decision_actual}")
+                        cambios_detectados[par] = {
+                            'decision': decision_actual,
+                            'razon': razon,
+                            'indicadores': indicadores
+                        }
+                        decisiones_anteriores[par] = decision_actual
                         
-                        # NUEVA LÓGICA: Detectar cambios y notificar Grid
-                        decision_anterior = decisiones_anteriores.get(par)
-                        
-                        if decision_anterior is None:
-                            # Primera vez - siempre notificar
-                            logger.info(f"🆕 Primera decisión para {par}: {decision_actual}")
-                            await notificar_grid(par, decision_actual, razon)
-                            decisiones_anteriores[par] = decision_actual
-                            
-                        elif decision_anterior != decision_actual:
-                            # Cambio detectado - notificar Grid
-                            logger.info(f"🔄 CAMBIO DETECTADO en {par}: {decision_anterior} -> {decision_actual}")
-                            await notificar_grid(par, decision_actual, razon)
-                            decisiones_anteriores[par] = decision_actual
-                            
-                        else:
-                            # Sin cambios - solo log
-                            logger.info(f"➡️ {par}: Sin cambios ({decision_actual})")
-                        
-                        if decision_actual == "OPERAR_GRID":
-                            logger.info(f"🟢 {par}: Condiciones favorables para Grid Trading")
-                        else:
-                            logger.info(f"🔴 {par}: Pausar Grid Trading")
-                            
                     else:
-                        logger.error(f"❌ Error en análisis de {par}: {resultado.get('error', 'Error desconocido')}")
+                        # Sin cambios - solo log
+                        logger.info(f"➡️ {par}: Sin cambios ({decision_actual})")
+                        
+                else:
+                    logger.error(f"❌ Error en análisis de {par}: {resultado.get('error', 'Error desconocido')}")
+            
+            # NOTIFICACIÓN BATCH: Notificar todos los cambios de una vez
+            if cambios_detectados:
+                logger.info(f"📢 Notificando {len(cambios_detectados)} cambios al Grid...")
+                
+                try:
+                    notifier = get_multibot_notifier()
+                    resultados_notificacion = await notifier.notify_all_decisions(cambios_detectados)
                     
-                    logger.info(f"💾 Estado actualizado en base de datos para {par}")
+                    exitosos = sum(1 for success in resultados_notificacion.values() if success)
+                    logger.info(f"✅ Notificaciones enviadas: {exitosos}/{len(cambios_detectados)} exitosas")
                     
                 except Exception as e:
-                    logger.error(f"💥 Error analizando {par}: {str(e)}")
-                    logger.info(f"⏭️ Continuando con el siguiente par...")
-                    continue
+                    logger.error(f"❌ Error en notificación batch: {e}")
+            else:
+                logger.info("ℹ️ No se detectaron cambios - no se envían notificaciones")
             
-            logger.info(f"✅ ========== CICLO #{ciclo_numero} COMPLETADO ==========")
+            logger.info(f"✅ ========== CICLO BATCH #{ciclo_numero} COMPLETADO ==========")
             
             if bucle_activo:
                 logger.info(f"⏳ Esperando {INTERVALO_ANALISIS} segundos hasta el próximo ciclo...")
                 await asyncio.sleep(INTERVALO_ANALISIS)
             
         except Exception as e:
-            logger.error(f"💥 Error crítico en bucle principal: {str(e)}")
+            logger.error(f"💥 Error crítico en bucle principal batch: {str(e)}")
             logger.info("🔄 Reintentando en 60 segundos...")
             if bucle_activo:
                 await asyncio.sleep(60)
@@ -230,13 +249,15 @@ async def lifespan(app: FastAPI):
     """Manager del ciclo de vida de la aplicación."""
     # Startup
     try:
-        logger.info("🎯 ========== INICIANDO SERVICIO CEREBRO ==========")
-        logger.info("🧠 Servicio Cerebro - Motor de Decisiones (Arquitectura Proactiva)")
-        logger.info("📋 Configuración:")
+        logger.info("🎯 ========== INICIANDO SERVICIO CEREBRO MULTIBOT ==========")
+        logger.info("🧠 Servicio Cerebro - Motor de Decisiones Multibot (Arquitectura Proactiva)")
+        logger.info("📋 Configuración Multibot:")
         logger.info(f"   📊 Pares monitoreados: {len(PARES_A_MONITOREAR)}")
+        logger.info(f"   🔢 Pares: {', '.join(PARES_A_MONITOREAR)}")
         logger.info(f"   ⏰ Intervalo: {INTERVALO_ANALISIS}s")
         logger.info(f"   📁 Log level: {LOG_LEVEL}")
         logger.info(f"   🔗 Grid Service: {GRID_SERVICE_URL}")
+        logger.info("🧠 Recetas maestras activadas para cada par")
         logger.info("⏸️ MODO STANDBY: Esperando primera conexión del Grid...")
         
         # NO iniciar bucle automáticamente - esperar a Grid
@@ -261,21 +282,36 @@ async def lifespan(app: FastAPI):
 # ============================================================================
 
 app = FastAPI(
-    title="Servicio Cerebro - Motor de Decisiones",
+    title="Servicio Cerebro - Motor de Decisiones Multibot",
     description="""
-    Servicio que actúa como el "cerebro" del sistema de trading.
+    Servicio que actúa como el "cerebro" del sistema de trading multibot.
     
-    ## Nueva Arquitectura Proactiva
+    ## Nueva Arquitectura Multibot Proactiva
     
-    * **Análisis Automático**: Monitorea pares 24/7 automáticamente
-    * **Notificación Proactiva**: Avisa al Grid cuando cambiar decisiones  
-    * **Consulta Inicial**: Grid puede consultar estado inicial al arrancar
-    * **Decisiones Basadas en ADX y Volatilidad**: Lógica simple y efectiva
+    * **Análisis Automático**: Monitorea 3 pares simultáneamente (ETH, BTC, POL)
+    * **Recetas Maestras**: Cada par tiene condiciones específicas optimizadas
+    * **Notificación Proactiva**: Avisa al Grid Multibot cuando cambiar decisiones  
+    * **Sistema Escalable**: Fácil agregar nuevos pares en el futuro
+    * **Decisiones Basadas en ADX, Volatilidad y Sentimiento**: Lógica optimizada
+    
+    ## Pares Monitoreados
+    
+    * **ETH/USDT**: ADX < 30, Bollinger > 0.025, Rango 10%
+    * **BTC/USDT**: ADX < 25, Bollinger > 0.035, Rango 7.5%
+    * **POL/USDT**: ADX < 35, Bollinger > 0.020, Rango 10%
+    
+    ## Análisis Automático
+    
+    * **Frecuencia**: Cada 1 hora
+    * **Modo**: Análisis batch de todos los pares simultáneamente
+    * **Notificación**: Proactiva al Grid cuando cambian las decisiones
     
     ## Endpoints Disponibles
     
     * **GET /**: Información del servicio
     * **GET /grid/status/{par}**: Consulta estado actual para Grid (inicial)
+    * **GET /grid/multibot/status**: Estado completo del sistema multibot
+    * **GET /recipes/master**: Información detallada de las recetas maestras
     * **GET /health/**: Health check del servicio
     """,
     version="3.0.0",
@@ -317,19 +353,30 @@ async def root():
         Información básica del servicio
     """
     return {
-        "servicio": "Cerebro - Motor de Decisiones",
+        "servicio": "Cerebro - Motor de Decisiones Multibot",
         "version": "3.0.0",
-        "arquitectura": "Proactiva",
+        "arquitectura": "Multibot Proactiva",
         "estado": "monitoreo_activo" if bucle_activo else "standby",
         "grid_conectado": grid_conectado_primera_vez,
-        "descripcion": "Servicio de análisis continuo que notifica al Grid automáticamente",
+        "descripcion": "Servicio de análisis continuo que monitorea 3 pares simultáneamente",
         "pares_monitoreados": PARES_A_MONITOREAR,
+        "total_pares": len(PARES_A_MONITOREAR),
         "intervalo_analisis": f"{INTERVALO_ANALISIS}s",
         "grid_service_url": GRID_SERVICE_URL,
         "modo": "Esperando primera conexión del Grid" if not grid_conectado_primera_vez else "Monitoreo continuo activo",
+        "frecuencia": "Cada 1 hora (3600s)",
+        "analisis_batch": "Activado - todos los pares simultáneamente",
+        "recetas_maestras": {
+            "ETH/USDT": "ADX < 30, Bollinger > 0.025, Rango 10%",
+            "BTC/USDT": "ADX < 25, Bollinger > 0.035, Rango 7.5%",
+            "POL/USDT": "ADX < 35, Bollinger > 0.020, Rango 10%"
+        },
         "endpoints": {
             "health": "/health/",
             "grid_consulta": "/grid/status/{par} (usar ETH-USDT)",
+            "grid_batch": "/grid/batch/analysis (análisis de todos los pares)",
+            "multibot_status": "/grid/multibot/status",
+            "recipes_master": "/recipes/master",
             "documentacion": "/docs"
         }
     }
@@ -432,6 +479,120 @@ async def consultar_estado_inicial_grid(par: str):
         raise HTTPException(
             status_code=500,
             detail=f"Error interno: {str(e)}"
+        )
+
+@app.get("/grid/multibot/status")
+async def get_multibot_status():
+    """
+    Endpoint para obtener el estado completo del sistema multibot.
+    
+    Returns:
+        Estado actual de todas las configuraciones del grid
+    """
+    try:
+        notifier = get_multibot_notifier()
+        status = notifier.get_grid_status_summary()
+        
+        return {
+            "status": "success",
+            "data": status,
+            "timestamp": datetime.now().isoformat(),
+            "total_pairs_monitored": len(PARES_A_MONITOREAR),
+            "pairs_monitored": PARES_A_MONITOREAR
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo estado multibot: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo estado multibot: {str(e)}"
+        )
+
+@app.get("/recipes/master")
+async def get_master_recipes():
+    """
+    Endpoint para obtener información detallada de las recetas maestras.
+    
+    Returns:
+        Información detallada de todas las recetas maestras
+    """
+    try:
+        from .core.recipe_master import RecipeMaster
+        
+        recipes_summary = RecipeMaster.get_recipe_summary()
+        
+        return {
+            "status": "success",
+            "recipes": recipes_summary,
+            "total_recipes": len(recipes_summary),
+            "supported_pairs": RecipeMaster.get_all_supported_pairs(),
+            "timestamp": datetime.now().isoformat(),
+            "description": "Recetas maestras optimizadas por backtesting para cada par"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo recetas maestras: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo recetas maestras: {str(e)}"
+        )
+
+@app.get("/grid/batch/analysis")
+async def get_batch_analysis():
+    """
+    Endpoint para obtener análisis batch de todos los pares de una vez.
+    Mejora la eficiencia al evitar múltiples llamadas individuales.
+    
+    Returns:
+        Análisis completo de todos los pares monitoreados
+    """
+    try:
+        logger.info("🚀 ========== SOLICITUD DE ANÁLISIS BATCH ==========")
+        
+        # Ejecutar análisis batch
+        resultados_batch = decision_engine.analizar_todos_los_pares()
+        
+        if not resultados_batch:
+            raise HTTPException(
+                status_code=500,
+                detail="Error ejecutando análisis batch"
+            )
+        
+        # Preparar respuesta
+        response = {
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "total_pairs": len(resultados_batch),
+            "pairs_analyzed": list(resultados_batch.keys()),
+            "results": {},
+            "summary": {
+                "OPERAR_GRID": 0,
+                "PAUSAR_GRID": 0,
+                "ERROR": 0
+            }
+        }
+        
+        # Procesar resultados
+        for par, resultado in resultados_batch.items():
+            response["results"][par] = resultado
+            
+            if resultado.get('success', False):
+                decision = resultado.get('decision', 'ERROR')
+                response["summary"][decision] += 1
+            else:
+                response["summary"]["ERROR"] += 1
+        
+        logger.info(f"✅ Análisis batch completado: {response['summary']}")
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en análisis batch: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en análisis batch: {str(e)}"
         )
 
 # ============================================================================
