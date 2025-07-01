@@ -227,17 +227,60 @@ Modo de Trading:
                                 configs = obtener_configuraciones_bd(chat_id)
                                 
                                 if configs:
+                                    # Obtener decisiones del cerebro para cada par
+                                    try:
+                                        from services.grid.core.cerebro_integration import consultar_y_procesar_cerebro_batch
+                                        decisiones_cerebro = consultar_y_procesar_cerebro_batch()
+                                    except Exception as e:
+                                        logger.warning(f"⚠️ Error obteniendo decisiones del cerebro: {e}")
+                                        decisiones_cerebro = {}
+                                    
                                     message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
                                     message += f"🟡 MODO SANDBOX (Paper Trading)\n\n"
-                                    message += f"📊 Configuraciones Activas ({len(configs)} pares):\n"
+                                    message += f"📊 Estado de Configuraciones ({len(configs)} pares):\n"
                                     
                                     for config in configs:
-                                        message += f"• {config['pair']}: ${config['total_capital']:,.2f}\n"
+                                        pair = config['pair']
+                                        capital = config['total_capital']
+                                        
+                                        # Obtener decisión del cerebro para este par
+                                        decision_data = decisiones_cerebro.get(pair, {}) if decisiones_cerebro else {}
+                                        decision = decision_data.get('decision', 'NO_DECISION') if decision_data.get('success', False) else 'NO_DECISION'
+                                        
+                                        # Determinar icono y estado según decisión del cerebro
+                                        if decision == 'OPERAR_GRID':
+                                            icon = "🟢"
+                                            estado = "Operando"
+                                        elif decision == 'PAUSAR_GRID':
+                                            icon = "🔴"
+                                            estado = "Pausado (Cerebro)"
+                                        else:
+                                            icon = "🟡"
+                                            estado = "Standby"
+                                        
+                                        message += f"• {icon} {pair}: ${capital:,.2f} | {estado}\n"
+                                    
+                                    # Contar estados
+                                    operando = sum(1 for config in configs 
+                                                 if decisiones_cerebro.get(config['pair'], {}).get('success', False) and
+                                                 decisiones_cerebro.get(config['pair'], {}).get('decision') == 'OPERAR_GRID')
+                                    pausado = sum(1 for config in configs 
+                                                if decisiones_cerebro.get(config['pair'], {}).get('success', False) and
+                                                decisiones_cerebro.get(config['pair'], {}).get('decision') == 'PAUSAR_GRID')
+                                    standby = len(configs) - operando - pausado
+                                    
+                                    message += f"\n📈 Resumen:\n"
+                                    message += f"🟢 Operando: {operando} par{'es' if operando != 1 else ''}\n"
+                                    message += f"🔴 Pausado: {pausado} par{'es' if pausado != 1 else ''}\n"
+                                    message += f"🟡 Standby: {standby} par{'es' if standby != 1 else ''}\n"
                                     
                                     message += f"\n🛡️ Protecciones V2:\n"
                                     message += f"• Stop-Loss: ✅ (5.0%)\n"
                                     message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
                                     message += f"📈 Usa /status para monitorear el progreso."
+                                    
+                                    # Agregar separador antes del resumen
+                                    bot.send_message(chat_id, message)
                                 else:
                                     message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
                                     message += f"🟡 MODO SANDBOX (Paper Trading)\n\n"
@@ -247,6 +290,9 @@ Modo de Trading:
                                     message += f"• Stop-Loss: ✅ (5.0%)\n"
                                     message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
                                     message += f"📈 Usa /status para monitorear el progreso."
+                                    
+                                    # Agregar separador antes del resumen
+                                    bot.send_message(chat_id, message)
                             except Exception as e:
                                 logger.warning(f"⚠️ Error obteniendo configuraciones de BD: {e}")
                                 message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
@@ -257,6 +303,9 @@ Modo de Trading:
                                 message += f"• Stop-Loss: ✅ (5.0%)\n"
                                 message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
                                 message += f"📈 Usa /status para monitorear el progreso."
+                                
+                                # Agregar separador antes del resumen
+                                bot.send_message(chat_id, message)
                         bot.send_message(chat_id, message)
                     else:
                         bot.send_message(chat_id, "❌ Error iniciando multibot")
