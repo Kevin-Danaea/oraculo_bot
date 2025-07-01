@@ -14,6 +14,9 @@ from services.grid.schedulers.multibot_scheduler import (
     start_multibot_scheduler,
     stop_multibot_scheduler
 )
+from services.grid.core.trading_mode_manager import trading_mode_manager
+from services.grid.core.cerebro_integration import cerebro_client
+from services.grid.data.config_repository import get_all_active_configs_for_user
 from .base_handler import BaseHandler
 
 logger = get_logger(__name__)
@@ -60,8 +63,7 @@ Modo de Trading:
 """
             
             # Verificar estado actual y modo
-            from services.grid.core.cerebro_integration import obtener_configuracion_trading
-            trading_config = obtener_configuracion_trading()
+            trading_config = trading_mode_manager.get_config()
             modo_icon = "🟡" if trading_config['modo'] == 'SANDBOX' else "🟢"
             
             scheduler = get_multibot_scheduler()
@@ -99,10 +101,10 @@ Modo de Trading:
     def handle_start_bot_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /start_bot - V2 con modo manual"""
         try:
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+            is_productive = trading_mode_manager.is_productive()
             
             # LÓGICA DIFERENTE SEGÚN MODO
-            if MODO_PRODUCTIVO:
+            if is_productive:
                 # MODO PRODUCTIVO: Requiere configuración guardada
                 user_config = self.get_user_config(chat_id)
                 if not user_config:
@@ -139,48 +141,22 @@ Modo de Trading:
                     resultado_batch = None
                     
                     try:
-                        import httpx
-                        import asyncio
-                        cerebro_url = "http://localhost:8004/grid/batch/init"
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            response = loop.run_until_complete(
-                                asyncio.wait_for(
-                                    httpx.AsyncClient().get(cerebro_url, timeout=60.0),
-                                    timeout=60.0
-                                )
-                            )
-                            if response.status_code == 200:
-                                resultado_batch = response.json()
-                            else:
-                                bot.send_message(chat_id, f"⚠️ Error consultando batch inicial del cerebro: {response.status_code}")
-                                resultado_batch = None
-                        except asyncio.TimeoutError:
-                            bot.send_message(
-                                chat_id,
-                                f"⏰ El cerebro está tardando en responder (timeout 60s)\nContinuando en modo standalone..."
-                            )
-                            resultado_batch = None
-                        except Exception as e:
-                            bot.send_message(
-                                chat_id,
-                                f"⚠️ Error consultando batch inicial del cerebro: {str(e)}\nContinuando en modo standalone..."
-                            )
-                            resultado_batch = None
-                        # Procesar resultado batch
-                        if resultado_batch and resultado_batch.get('status') == 'success':
-                            results = resultado_batch.get('results', {})
-                            from services.grid.core.cerebro_integration import obtener_configuraciones_bd
-                            configs = obtener_configuraciones_bd(chat_id)
-                            # Ya no mostramos el resumen aquí - se mostrará al final
-                        else:
-                            bot.send_message(chat_id, "⚠️ No se pudo obtener el estado batch inicial del cerebro. Continuando en modo standalone...")
+                        resultado_batch = asyncio.run(cerebro_client.consultar_analisis_batch())
+                        if not resultado_batch:
+                             bot.send_message(chat_id, f"⚠️ Error consultando batch inicial del cerebro.")
                     except Exception as e:
                         bot.send_message(
                             chat_id,
-                            f"⚠️ No se pudo consultar al Cerebro: {str(e)}\nEl cerebro puede estar tardando en responder.\nContinuando en modo standalone..."
+                            f"⚠️ Error consultando batch inicial del cerebro: {str(e)}\nContinuando en modo standalone..."
                         )
+                    # Procesar resultado batch
+                    if resultado_batch and resultado_batch.get('status') == 'success':
+                        results = resultado_batch.get('results', {})
+                        configs = get_all_active_configs_for_user(chat_id)
+                        # Ya no mostramos el resumen aquí - se mostrará al final
+                    else:
+                        bot.send_message(chat_id, "⚠️ No se pudo obtener el estado batch inicial del cerebro. Continuando en modo standalone...")
+                    
                     # SEGUNDO: Iniciar el multibot
                     bot.send_message(chat_id, "🚀 Iniciando Multibot...")
                     success = start_multibot_scheduler()
@@ -241,7 +217,7 @@ Modo de Trading:
                         logger.warning(f"No se pudo enviar mensajes detallados por par: {e}")
                     
                     if success:
-                        if MODO_PRODUCTIVO and user_config:
+                        if is_productive and user_config:
                             message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
                             message += f"📊 Trading: {user_config.pair}\n"
                             message += f"💰 Capital: ${user_config.total_capital} USDT\n"
@@ -254,8 +230,7 @@ Modo de Trading:
                         else:
                             # MODO SANDBOX: Mostrar configuraciones reales de BD
                             try:
-                                from services.grid.core.cerebro_integration import obtener_configuraciones_bd
-                                configs = obtener_configuraciones_bd(chat_id)
+                                configs = get_all_active_configs_for_user(chat_id)
                                 
                                 if configs:
                                     # Obtener decisiones del cerebro para cada par
@@ -264,8 +239,7 @@ Modo de Trading:
                                         if 'results' in locals() and results:
                                             decisiones_cerebro = results
                                         else:
-                                            from services.grid.core.cerebro_integration import consultar_y_procesar_cerebro_batch
-                                            decisiones_cerebro = consultar_y_procesar_cerebro_batch()
+                                            decisiones_cerebro = asyncio.run(cerebro_client.consultar_y_procesar_batch())
                                     except Exception as e:
                                         logger.warning(f"⚠️ Error obteniendo decisiones del cerebro: {e}")
                                         decisiones_cerebro = {}
@@ -399,7 +373,7 @@ Modo de Trading:
         Comando /status: Muestra estado del grid bot con integración Cerebro
         """
         try:
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO, estado_cerebro, obtener_configuracion_trading
+            is_productive = trading_mode_manager.is_productive()
             
             # Obtener estado del scheduler
             scheduler = get_multibot_scheduler()
@@ -407,14 +381,14 @@ Modo de Trading:
             
             # Obtener estado del cerebro y modo de trading
             try:
-                cerebro_estado = estado_cerebro
-                config_trading = obtener_configuracion_trading()
+                cerebro_estado = cerebro_client.estado_cerebro
+                config_trading = trading_mode_manager.get_config()
             except ImportError:
                 cerebro_estado = {"decision": "No disponible", "fuente": "error"}
                 config_trading = {"modo": "No disponible"}
             
             # LÓGICA DIFERENTE SEGÚN MODO
-            if MODO_PRODUCTIVO:
+            if is_productive:
                 # MODO PRODUCTIVO: Requiere configuración guardada
                 user_config = self.get_user_config(chat_id)
                 
@@ -465,8 +439,7 @@ Usa /config para configurar el bot
             else:
                 # MODO SANDBOX: Usar configuraciones de la base de datos
                 try:
-                    from services.grid.core.cerebro_integration import obtener_configuraciones_bd
-                    configs = obtener_configuraciones_bd(chat_id)
+                    configs = get_all_active_configs_for_user(chat_id)
                     
                     if configs:
                         status_message = f"""
@@ -566,13 +539,11 @@ Usa /config para configurar los pares
         Comando /modo_productivo: Cambia a modo productivo (trading real)
         """
         try:
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
-            from services.grid.schedulers.multibot_scheduler import get_multibot_scheduler
             scheduler = get_multibot_scheduler()
             status = scheduler.get_status()
 
-            if MODO_PRODUCTIVO:
-                config = obtener_configuracion_trading()
+            if trading_mode_manager.is_productive():
+                config = trading_mode_manager.get_config()
                 message = f"""
 🟢 YA EN MODO PRODUCTIVO
 
@@ -592,7 +563,7 @@ Usa /config para configurar los pares
                 bot.send_message(chat_id, "✅ Multibot detenido correctamente.")
 
             # Cambiar a modo productivo
-            config = alternar_modo_trading()
+            config = trading_mode_manager.toggle_mode()
             message = f"""
 🟢 CAMBIADO A MODO PRODUCTIVO
 
@@ -622,13 +593,11 @@ Todas las operaciones afectarán tu cuenta real.
         Comando /modo_sandbox: Cambia a modo sandbox (paper trading)
         """
         try:
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO, alternar_modo_trading, obtener_configuracion_trading
-            from services.grid.schedulers.multibot_scheduler import get_multibot_scheduler
             scheduler = get_multibot_scheduler()
             status = scheduler.get_status()
 
-            if not MODO_PRODUCTIVO:
-                config = obtener_configuracion_trading()
+            if not trading_mode_manager.is_productive():
+                config = trading_mode_manager.get_config()
                 message = f"""
 🟡 YA EN MODO SANDBOX
 
@@ -648,7 +617,7 @@ Todas las operaciones afectarán tu cuenta real.
                 bot.send_message(chat_id, "✅ Multibot detenido correctamente.")
 
             # Cambiar a modo sandbox
-            config = alternar_modo_trading()
+            config = trading_mode_manager.toggle_mode()
             message = f"""
 🟡 CAMBIADO A MODO SANDBOX
 
@@ -678,7 +647,7 @@ No se usa dinero real.
         Comando /estado_cerebro: Muestra estado detallado del cerebro
         """
         try:
-            from services.grid.core.cerebro_integration import estado_cerebro
+            estado_cerebro = cerebro_client.estado_cerebro
             
             message = f"""
 🧠 ESTADO DETALLADO DEL CEREBRO
@@ -712,10 +681,10 @@ No se usa dinero real.
         MEJORADO: Usa nueva función de P&L con explicación detallada
         """
         try:
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+            is_productive = trading_mode_manager.is_productive()
             
             # LÓGICA DIFERENTE SEGÚN MODO
-            if MODO_PRODUCTIVO:
+            if is_productive:
                 # MODO PRODUCTIVO: Requiere configuración guardada
                 user_config = self.get_user_config(chat_id)
                 if not user_config:
@@ -751,11 +720,11 @@ No se usa dinero real.
                     balance = get_current_balance(exchange, pair)
                     
                     # Calcular P&L usando nueva función mejorada
-                    mode = "PRODUCTIVO" if MODO_PRODUCTIVO else "SANDBOX"
+                    mode = "PRODUCTIVO" if is_productive else "SANDBOX"
                     pnl_data = calculate_pnl_with_explanation(balance, initial_capital, mode)
                     
                     # Crear mensaje con información del modo
-                    modo_info = "🟢 PRODUCTIVO" if MODO_PRODUCTIVO else "🟡 SANDBOX (Paper Trading)"
+                    modo_info = "🟢 PRODUCTIVO" if is_productive else "🟡 SANDBOX (Paper Trading)"
                     
                     message = f"""
 💰 <b>BALANCE ACTUAL</b>

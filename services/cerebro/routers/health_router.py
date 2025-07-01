@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import Dict, Any
 import logging
 
+from ..core.recipe_master import PARES_A_MONITOREAR
+
 # ============================================================================
 # MODELOS PYDANTIC
 # ============================================================================
@@ -48,8 +50,6 @@ async def health_check():
         Estado de salud del servicio
     """
     try:
-        from ..core.config import CONFIGURACIONES_OPTIMAS
-        
         return HealthResponse(
             status="healthy",
             version="1.0.0",
@@ -81,7 +81,6 @@ async def detailed_health_check():
         Estado detallado del servicio
     """
     try:
-        from ..core.config import CONFIGURACIONES_OPTIMAS
         from ..core.decision_engine import DecisionEngine
         
         # Verificar componentes
@@ -96,7 +95,7 @@ async def detailed_health_check():
         
         # Verificar configuración
         try:
-            if CONFIGURACIONES_OPTIMAS:
+            if PARES_A_MONITOREAR:
                 components_status["configuration"] = "healthy"
             else:
                 components_status["configuration"] = "unhealthy: no configuration found"
@@ -114,8 +113,8 @@ async def detailed_health_check():
             "version": "1.0.0",
             "components": components_status,
             "configuration": {
-                "pares_configurados": list(CONFIGURACIONES_OPTIMAS.keys()) if CONFIGURACIONES_OPTIMAS else [],
-                "total_pares": len(CONFIGURACIONES_OPTIMAS) if CONFIGURACIONES_OPTIMAS else 0
+                "pares_configurados": PARES_A_MONITOREAR,
+                "total_pares": len(PARES_A_MONITOREAR)
             },
             "metrics": {
                 "memory_usage": "N/A",

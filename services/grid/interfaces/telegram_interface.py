@@ -9,6 +9,8 @@ from shared.services.logging_config import get_logger
 from shared.services.telegram_bot_service import TelegramBot
 from .handlers.basic_commands import BasicCommandsHandler
 from .handlers.config_flow import ConfigFlowHandler
+from ..core.trading_mode_manager import trading_mode_manager
+from ..data.config_repository import get_all_active_configs_for_user
 
 logger = get_logger(__name__)
 
@@ -138,10 +140,10 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
     - SANDBOX: Configuración fija (1000 USDT, ETH/USDT, etc.) - NO consulta BD
     - PRODUCTIVO: Configuración personalizada desde la base de datos. Si no hay, la crea con mínimos.
     """
-    from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+    is_productive = trading_mode_manager.is_productive()
     
     # CONFIGURACIÓN FIJA PARA MODO SANDBOX
-    if not MODO_PRODUCTIVO:
+    if not is_productive:
         logger.info("🟡 Usando configuración fija para MODO SANDBOX")
         return {
             'pair': 'ETH/USDT',
@@ -150,79 +152,40 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
             'price_range_percent': 10.0,  # Validado en backtesting
             'stop_loss_percent': 5.0,
             'enable_stop_loss': True,
-            'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
+            'enable_trailing_up': True,
             'modo': 'SANDBOX'
         }
     
     # CONFIGURACIÓN DINÁMICA PARA MODO PRODUCTIVO
     logger.info("🟢 Consultando configuración personalizada para MODO PRODUCTIVO")
     
-    # Crear una instancia temporal del handler para acceder a la funcionalidad
-    from shared.services.telegram_bot_service import TelegramBot
-    from shared.config.settings import settings
-    
-    temp_bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
-    interface = GridTelegramInterface(temp_bot)
-    
     try:
-        config = None
-        
-        # Buscar configuración específica del usuario si se proporciona chat_id
+        configs = []
         if chat_id:
-            config = interface.get_user_config(chat_id)
+            configs = get_all_active_configs_for_user(chat_id)
         
         # Si no se encuentra configuración específica, buscar cualquier configuración activa
-        if not config:
-            from shared.database.session import get_db_session
-            from shared.database.models import GridBotConfig
-            with get_db_session() as db:
-                config = db.query(GridBotConfig).filter(
-                    GridBotConfig.is_active == True
-                ).first()
-                # Si no hay configuración activa, crear una mínima por defecto
-                if not config:
-                    logger.warning("⚠️ No hay configuración activa, creando configuración mínima por defecto")
-                    from services.grid.interfaces.handlers.base_handler import BaseHandler
-                    base_handler = BaseHandler()
-                    min_config = base_handler.calculate_optimal_config('ETH/USDT', 750.0)
-                    # Guardar en la base de datos
-                    base_handler.save_user_config('default', min_config)
-                    config = db.query(GridBotConfig).filter(
-                        GridBotConfig.is_active == True
-                    ).first()
-        
-        if config:
-            logger.info(f"✅ Usando configuración personalizada: {config.pair} - ${config.total_capital} USDT")
-            # Acceder directamente a los valores del objeto
-            pair_value = config.pair
-            capital_value = config.total_capital
-            levels_value = config.grid_levels
-            range_value = config.price_range_percent
-            stop_loss_value = getattr(config, 'stop_loss_percent', 5.0)
-            enable_stop_loss_value = getattr(config, 'enable_stop_loss', True)
-            enable_trailing_value = getattr(config, 'enable_trailing_up', True)
-            
-            return {
-                'pair': pair_value,
-                'total_capital': capital_value,
-                'grid_levels': levels_value,
-                'price_range_percent': range_value,
-                'stop_loss_percent': stop_loss_value,
-                'enable_stop_loss': enable_stop_loss_value,
-                'enable_trailing_up': enable_trailing_value,
-                'modo': 'PRODUCTIVO'
-            }
+        if not configs:
+            from ..data.config_repository import get_all_active_configs
+            configs = get_all_active_configs()
+
+        if configs:
+            # Usar la primera configuración activa encontrada
+            config = configs[0]
+            logger.info(f"✅ Usando configuración personalizada: {config['pair']} - ${config['total_capital']} USDT")
+            config['modo'] = 'PRODUCTIVO'
+            return config
         else:
-            # Configuración por defecto como fallback para modo productivo
+            # Fallback a configuración mínima para modo productivo
             logger.warning("⚠️ No hay configuración personalizada, usando valores mínimos por defecto")
             return {
                 'pair': 'ETH/USDT',
-                'total_capital': 300.0,  # Capital mínimo para productivo (30 * $10)
-                'grid_levels': 30,  # Validado en backtesting
-                'price_range_percent': 10.0,  # Validado en backtesting
+                'total_capital': 300.0,
+                'grid_levels': 30,
+                'price_range_percent': 10.0,
                 'stop_loss_percent': 5.0,
                 'enable_stop_loss': True,
-                'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
+                'enable_trailing_up': True,
                 'modo': 'PRODUCTIVO'
             }
             
@@ -231,11 +194,11 @@ def get_dynamic_grid_config(chat_id: Optional[str] = None) -> Dict[str, Any]:
         # Fallback a configuración mínima para modo productivo
         return {
             'pair': 'ETH/USDT',
-            'total_capital': 300.0,  # Capital mínimo para productivo (30 * $10)
-            'grid_levels': 30,  # Validado en backtesting
-            'price_range_percent': 10.0,  # Validado en backtesting
+            'total_capital': 300.0,
+            'grid_levels': 30,
+            'price_range_percent': 10.0,
             'stop_loss_percent': 5.0,
             'enable_stop_loss': True,
-            'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
+            'enable_trailing_up': True,
             'modo': 'PRODUCTIVO'
         } 

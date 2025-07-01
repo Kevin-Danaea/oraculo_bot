@@ -4,6 +4,7 @@ Maneja el proceso paso a paso de configuración: selección de par, capital, con
 """
 from shared.services.telegram_bot_service import TelegramBot
 from .base_handler import BaseHandler
+from services.grid.core.trading_mode_manager import trading_mode_manager
 
 
 class ConfigFlowHandler(BaseHandler):
@@ -109,9 +110,9 @@ class ConfigFlowHandler(BaseHandler):
             bot.set_conversation_state(chat_id, "config_capital_input", state['data'])
             
             # Mostrar información específica del par
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+            is_productive = trading_mode_manager.is_productive()
             
-            if not MODO_PRODUCTIVO:  # Modo Sandbox
+            if not is_productive:  # Modo Sandbox
                 message = f"🟡 <b>CONFIGURANDO {selected_type} (MODO SANDBOX)</b>\n\n"
                 message += f"📊 <b>Par:</b> {pair_name}\n"
                 message += f"💰 <b>Capital actual:</b> $1000 USDT (fijo para sandbox)\n\n"
@@ -176,9 +177,9 @@ class ConfigFlowHandler(BaseHandler):
             pair_name = {'ETH': 'ETH/USDT', 'BTC': 'BTC/USDT', 'AVAX': 'AVAX/USDT'}[config_type]
             
             # Mostrar configuración final
-            from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+            is_productive = trading_mode_manager.is_productive()
             
-            if not MODO_PRODUCTIVO:  # Modo Sandbox
+            if not is_productive:  # Modo Sandbox
                 message = f"🟡 <b>CONFIGURACIÓN SANDBOX - {config_type}</b>\n\n"
                 message += f"📊 <b>Par:</b> {pair_name}\n"
                 message += f"💰 <b>Capital:</b> $1000 USDT (fijo para sandbox)\n"
@@ -235,8 +236,7 @@ class ConfigFlowHandler(BaseHandler):
                 if self.save_user_config(chat_id, config_data):
                     bot.clear_conversation_state(chat_id)
                     
-                    from services.grid.core.cerebro_integration import obtener_configuracion_trading
-                    trading_config = obtener_configuracion_trading()
+                    trading_config = trading_mode_manager.get_config()
                     
                     modo_icon = "🟡" if trading_config['modo'] == 'SANDBOX' else "🟢"
                     

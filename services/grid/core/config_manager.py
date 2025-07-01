@@ -8,6 +8,7 @@ import time
 from typing import Dict, Any, Optional
 from shared.services.logging_config import get_logger
 from shared.config.settings import settings
+from .trading_mode_manager import trading_mode_manager
 from ..strategies.grid_strategy import calculate_dynamic_profit_percentage
 
 logger = get_logger(__name__)
@@ -40,8 +41,8 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         ValueError: Si la configuración es inválida
     """
     try:
-        # Importar aquí para evitar dependencia circular
-        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+        # Validar modo de trading desde el manager centralizado
+        is_productive = trading_mode_manager.is_productive()
         
         # Validar campos requeridos
         required_fields = ['pair', 'total_capital']
@@ -61,7 +62,7 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         if total_capital <= 0:
             raise ValueError("El capital total debe ser mayor a 0")
         
-        if MODO_PRODUCTIVO:
+        if is_productive:
             # NUEVA FÓRMULA SIMPLIFICADA: $10 USDT por orden
             # Cada nivel del grid necesita $10 USDT para operar eficientemente
             capital_minimo_por_nivel = 10  # USDT por nivel (fórmula simplificada)
@@ -99,7 +100,7 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
             'capital_minimo_requerido': capital_minimo_requerido
         }
         
-        modo_desc = "PRODUCTIVO" if MODO_PRODUCTIVO else "SANDBOX"
+        modo_desc = "PRODUCTIVO" if is_productive else "SANDBOX"
         logger.info(f"✅ Configuración validada con parámetros fijos ({modo_desc}):")
         logger.info(f"   📊 Par: {pair}")
         logger.info(f"   💰 Capital: ${total_capital} USDT")
@@ -125,21 +126,13 @@ def get_exchange_connection() -> ccxt.Exchange:
         ConnectionError: Si no se puede conectar
     """
     try:
-        # Importar aquí para evitar dependencia circular
-        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+        # Obtener configuración de trading desde el manager
+        trade_config = trading_mode_manager.get_config()
         
-        if MODO_PRODUCTIVO:
-            # Modo productivo - usar credenciales reales
-            api_key = settings.BINANCE_API_KEY
-            api_secret = settings.BINANCE_API_SECRET
-            sandbox_mode = False
-            modo_desc = "PRODUCTIVO (dinero real)"
-        else:
-            # Modo sandbox - usar credenciales de paper trading
-            api_key = settings.PAPER_TRADING_API_KEY
-            api_secret = settings.PAPER_TRADING_SECRET_KEY
-            sandbox_mode = True
-            modo_desc = "SANDBOX (paper trading)"
+        api_key = trade_config['api_key']
+        api_secret = trade_config['api_secret']
+        sandbox_mode = trade_config['modo'] == 'SANDBOX'
+        modo_desc = f"{trade_config['modo']} ({'dinero real' if sandbox_mode is False else 'paper trading'})"
         
         if not api_key or not api_secret:
             raise ConnectionError(f"Las claves API de Binance para modo {modo_desc} no están configuradas")
@@ -148,11 +141,14 @@ def get_exchange_connection() -> ccxt.Exchange:
         exchange = ccxt.binance({
             'apiKey': api_key,
             'secret': api_secret,
+            'options': {
+                'defaultType': 'spot',
+            },
             'sandbox': sandbox_mode,
             'enableRateLimit': True,
             'timeout': 30000,  # 30 segundos timeout
-            'rateLimit': 1200,  # ms entre requests
         })
+        exchange.set_sandbox_mode(sandbox_mode)
         
         # Verificar conexión y permisos
         balance = exchange.fetch_balance()

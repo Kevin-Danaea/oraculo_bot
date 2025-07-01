@@ -9,6 +9,7 @@ from shared.database.session import get_db_session
 from shared.database.models import GridBotConfig
 from shared.services.logging_config import get_logger
 from shared.services.telegram_bot_service import TelegramBot
+from services.grid.core.trading_mode_manager import trading_mode_manager
 
 logger = get_logger(__name__)
 
@@ -222,7 +223,7 @@ class BaseHandler:
         - Stop loss activo (trailing activo para optimizar ganancias durante operación)
         - Capital mínimo: $10 USDT por orden (fórmula simplificada)
         """
-        from services.grid.core.cerebro_integration import MODO_PRODUCTIVO
+        is_productive = trading_mode_manager.is_productive()
         
         # PARÁMETROS ÓPTIMOS DEL BACKTESTING (FIJOS)
         grid_levels = 30  # Validado en backtesting
@@ -234,7 +235,7 @@ class BaseHandler:
         min_capital_required = grid_levels * capital_minimo_por_nivel  # 30 * 10 = $300
         
         # Configuración de capital según modo
-        if not MODO_PRODUCTIVO:  # Modo Sandbox
+        if not is_productive:  # Modo Sandbox
             # Sandbox siempre usa 1000 USDT
             final_capital = 1000.0
             stop_loss = 5.0
@@ -259,9 +260,9 @@ class BaseHandler:
             'stop_loss_percent': stop_loss,
             'enable_stop_loss': True,  # Siempre activado por defecto
             'enable_trailing_up': True,  # REACTIVADO: Optimiza ganancias durante operación
-            'capital_minimo_sugerido': min_capital_required if MODO_PRODUCTIVO else None,
+            'capital_minimo_sugerido': min_capital_required if is_productive else None,
             'capital_minimo_por_nivel': capital_minimo_por_nivel,
-            'modo_trading': 'SANDBOX' if not MODO_PRODUCTIVO else 'PRODUCTIVO',
+            'modo_trading': 'PRODUCTIVO' if is_productive else 'SANDBOX',
             'config_type': config_type  # Nuevo campo para identificar el tipo
         }
     

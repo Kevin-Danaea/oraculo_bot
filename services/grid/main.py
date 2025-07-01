@@ -18,13 +18,6 @@ from shared.services.logging_config import get_logger
 
 # Importar los nuevos módulos organizados
 from services.grid.core.service_manager import start_grid_service, stop_grid_service
-from services.grid.core.cerebro_integration import (
-    MODO_PRODUCTIVO,
-    estado_cerebro,
-    consultar_estado_inicial_cerebro,
-    obtener_configuracion_trading,
-    alternar_modo_trading
-)
 
 # Importar routers
 from services.grid.routers import health_router, cerebro_router, config_router
@@ -124,12 +117,7 @@ if __name__ == "__main__":
 # EXPORTAR PARA COMPATIBILIDAD
 # ============================================================================
 
-# Exportar variables y funciones para mantener compatibilidad con otros módulos
+# Se exportan los routers para que uvicorn los pueda usar
 __all__ = [
-    'app',
-    'MODO_PRODUCTIVO',
-    'estado_cerebro',
-    'consultar_estado_inicial_cerebro',
-    'obtener_configuracion_trading',
-    'alternar_modo_trading'
+    'app'
 ] 

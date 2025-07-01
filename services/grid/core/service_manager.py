@@ -13,7 +13,7 @@ from services.grid.schedulers.multibot_scheduler import (
     get_multibot_scheduler
 )
 from services.grid.core.telegram_service import start_telegram_bot, stop_telegram_bot
-from services.grid.core.cerebro_integration import obtener_configuracion_trading
+from services.grid.core.trading_mode_manager import trading_mode_manager
 
 logger = get_logger(__name__)
 
@@ -30,7 +30,7 @@ def start_grid_service() -> Any:
         logger.info("🤖 Iniciando Grid Worker...")
         
         # Mostrar configuración de trading activa
-        config = obtener_configuracion_trading()
+        config = trading_mode_manager.get_config()
         logger.info(f"💹 Modo de trading: {config['modo']} - {config['descripcion']}")
         
         # Inicializar base de datos (crear tablas si no existen)

@@ -8,12 +8,9 @@ from shared.services.logging_config import get_logger
 from services.grid.schedulers.multibot_scheduler import (
     get_multibot_scheduler
 )
-from services.grid.core.cerebro_integration import (
-    estado_cerebro,
-    obtener_configuracion_trading,
-    obtener_configuraciones_bd,
-    consultar_y_procesar_cerebro_batch
-)
+from services.grid.core.cerebro_integration import cerebro_client
+from services.grid.core.trading_mode_manager import trading_mode_manager
+from services.grid.data.config_repository import get_all_active_configs, get_all_active_configs_for_user
 from datetime import datetime
 
 logger = get_logger(__name__)
@@ -38,7 +35,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
     """
     try:
         # Actualizar estado global
-        estado_cerebro.update({
+        cerebro_client.estado_cerebro.update({
             "decision": decision.decision,
             "ultima_actualizacion": decision.timestamp,
             "fuente": "cerebro_notificacion_automatica"
@@ -66,7 +63,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                 
                 # Obtener configuración del par desde la base de datos (todas las configuraciones)
                 try:
-                    configs = obtener_configuraciones_bd("all")
+                    configs = get_all_active_configs()
                     
                     # Buscar configuración para este par
                     config_par = None
@@ -96,7 +93,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                     from shared.services.telegram_service import send_telegram_message
                     
                     # Obtener configuración del par para mostrar detalles
-                    configs = obtener_configuraciones_bd("all")
+                    configs = get_all_active_configs()
                     config_par = None
                     for config in configs:
                         if config['pair'] == decision.par:
@@ -163,7 +160,7 @@ async def recibir_decision_cerebro(decision: DecisionCerebro):
                     from shared.services.telegram_service import send_telegram_message
                     
                     # Obtener configuración del par para mostrar detalles
-                    configs = obtener_configuraciones_bd("all")
+                    configs = get_all_active_configs()
                     config_par = None
                     for config in configs:
                         if config['pair'] == decision.par:
@@ -211,12 +208,12 @@ def obtener_estado_cerebro():
     """
     Obtiene el estado actual de la decisión del Cerebro
     """
-    config = obtener_configuracion_trading()
+    config = trading_mode_manager.get_config()
     
     return {
-        "estado_cerebro": estado_cerebro,
+        "estado_cerebro": cerebro_client.estado_cerebro,
         "modo_trading": config["modo"],
-        "timestamp": estado_cerebro.get("ultima_actualizacion"),
+        "timestamp": cerebro_client.estado_cerebro.get("ultima_actualizacion"),
         "status": "active"
     }
 
@@ -233,7 +230,7 @@ async def get_batch_analysis():
         logger.info("🚀 ========== SOLICITUD DE ANÁLISIS BATCH DESDE GRID ==========")
         
         # Consultar análisis batch del cerebro
-        decisiones_batch = consultar_y_procesar_cerebro_batch()
+        decisiones_batch = await cerebro_client.consultar_y_procesar_batch()
         
         if not decisiones_batch:
             raise HTTPException(

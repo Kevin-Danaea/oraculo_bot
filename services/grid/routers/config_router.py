@@ -4,7 +4,7 @@ Router para configuración del servicio Grid
 
 from fastapi import APIRouter, HTTPException
 from shared.services.logging_config import get_logger
-from services.grid.core.cerebro_integration import alternar_modo_trading
+from services.grid.core.trading_mode_manager import trading_mode_manager
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/modo", tags=["Configuración"])
@@ -15,7 +15,7 @@ def alternar_modo_trading_endpoint():
     Alterna entre modo productivo y sandbox
     """
     try:
-        config = alternar_modo_trading()
+        config = trading_mode_manager.toggle_mode()
         
         return {
             "status": "success",

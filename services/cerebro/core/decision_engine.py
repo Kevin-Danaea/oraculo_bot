@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from .config import CONFIGURACIONES_OPTIMAS
+from .recipe_master import RecipeMaster, PARES_A_MONITOREAR
 from .data_collector import fetch_and_prepare_data, get_current_indicators
 from .multibot_notifier import get_multibot_notifier
 from shared.database.session import SessionLocal
@@ -50,10 +50,10 @@ class DecisionEngine:
             logger.info(f"🔍 Analizando {par}...")
             
             # Verificar que el par esté configurado
-            if par not in CONFIGURACIONES_OPTIMAS:
+            if par not in PARES_A_MONITOREAR:
                 raise ValueError(f"Par {par} no encontrado en la configuración")
             
-            config = CONFIGURACIONES_OPTIMAS[par]
+            recipe = RecipeMaster.get_recipe_for_pair(par)
             
             # Obtener datos históricos y calcular indicadores
             logger.info(f"📊 Obteniendo datos históricos para {par}...")
@@ -89,7 +89,7 @@ class DecisionEngine:
                 adx_actual=adx_actual,
                 volatilidad_actual=volatilidad_actual,
                 sentiment_promedio=sentiment_promedio,
-                config=config
+                config=recipe
             )
             
             # Generar razón de la decisión
@@ -98,7 +98,7 @@ class DecisionEngine:
                 adx_actual=adx_actual,
                 volatilidad_actual=volatilidad_actual,
                 sentiment_promedio=sentiment_promedio,
-                config=config
+                config=recipe
             )
             
             logger.info(f"🎯 Decisión para {par}: {decision}")
@@ -112,7 +112,7 @@ class DecisionEngine:
                 adx_actual=adx_actual,
                 volatilidad_actual=volatilidad_actual,
                 sentiment_promedio=sentiment_promedio,
-                config=config
+                config=recipe
             )
             
             # NOTA: La notificación al Grid se maneja desde el bucle principal (main.py)
@@ -127,7 +127,11 @@ class DecisionEngine:
                     "volatilidad_actual": volatilidad_actual,
                     "sentiment_promedio": sentiment_promedio
                 },
-                "umbrales": config,
+                "umbrales": {
+                    'adx_threshold': recipe['conditions']['adx_threshold'],
+                    'bollinger_bandwidth_threshold': recipe['conditions']['bollinger_bandwidth_threshold'],
+                    'sentiment_threshold': recipe['conditions']['sentiment_threshold'],
+                },
                 "timestamp": datetime.now(),
                 "success": True
             }
@@ -162,9 +166,10 @@ class DecisionEngine:
         Returns:
             Decisión: 'OPERAR_GRID' o 'PAUSAR_GRID'
         """
-        umbral_adx = config['UMBRAL_ADX']
-        umbral_volatilidad = config['UMBRAL_VOLATILIDAD']
-        umbral_sentimiento = config['UMBRAL_SENTIMIENTO']
+        conditions = config['conditions']
+        umbral_adx = conditions['adx_threshold']
+        umbral_volatilidad = conditions['bollinger_bandwidth_threshold']
+        umbral_sentimiento = conditions['sentiment_threshold']
         
         # Lógica de decisión: TODAS las condiciones deben cumplirse
         condicion_adx = adx_actual < umbral_adx
@@ -204,9 +209,10 @@ class DecisionEngine:
         Returns:
             Razón textual de la decisión
         """
-        umbral_adx = config['UMBRAL_ADX']
-        umbral_volatilidad = config['UMBRAL_VOLATILIDAD']
-        umbral_sentimiento = config['UMBRAL_SENTIMIENTO']
+        conditions = config['conditions']
+        umbral_adx = conditions['adx_threshold']
+        umbral_volatilidad = conditions['bollinger_bandwidth_threshold']
+        umbral_sentimiento = conditions['sentiment_threshold']
         
         condicion_adx = adx_actual < umbral_adx
         condicion_volatilidad = volatilidad_actual > umbral_volatilidad
@@ -273,9 +279,9 @@ class DecisionEngine:
                 existing.adx_actual = adx_actual  # type: ignore
                 existing.volatilidad_actual = volatilidad_actual  # type: ignore
                 existing.sentiment_promedio = sentiment_promedio  # type: ignore
-                existing.umbral_adx = config['UMBRAL_ADX']  # type: ignore
-                existing.umbral_volatilidad = config['UMBRAL_VOLATILIDAD']  # type: ignore
-                existing.umbral_sentimiento = config['UMBRAL_SENTIMIENTO']  # type: ignore
+                existing.umbral_adx = config['conditions']['adx_threshold']  # type: ignore
+                existing.umbral_volatilidad = config['conditions']['bollinger_bandwidth_threshold']  # type: ignore
+                existing.umbral_sentimiento = config['conditions']['sentiment_threshold']  # type: ignore
                 existing.timestamp = timestamp_now  # type: ignore
                 existing.updated_at = timestamp_now  # type: ignore
                 
@@ -290,9 +296,9 @@ class DecisionEngine:
                     adx_actual=adx_actual,
                     volatilidad_actual=volatilidad_actual,
                     sentiment_promedio=sentiment_promedio,
-                    umbral_adx=config['UMBRAL_ADX'],
-                    umbral_volatilidad=config['UMBRAL_VOLATILIDAD'],
-                    umbral_sentimiento=config['UMBRAL_SENTIMIENTO'],
+                    umbral_adx=config['conditions']['adx_threshold'],
+                    umbral_volatilidad=config['conditions']['bollinger_bandwidth_threshold'],
+                    umbral_sentimiento=config['conditions']['sentiment_threshold'],
                     timestamp=timestamp_now
                 )
                 db.add(nuevo_estado)
@@ -308,8 +314,6 @@ class DecisionEngine:
         finally:
             db.close()
     
-
-    
     def analizar_todos_los_pares(self) -> Dict[str, Dict[str, Any]]:
         """
         Analiza todos los pares configurados de una vez (análisis batch).
@@ -319,8 +323,6 @@ class DecisionEngine:
             Diccionario con resultados de análisis para todos los pares
         """
         try:
-            from .config import PARES_A_MONITOREAR
-            
             logger.info(f"🚀 ========== INICIANDO ANÁLISIS BATCH ==========")
             logger.info(f"📊 Pares a analizar: {PARES_A_MONITOREAR}")
             logger.info(f"🔢 Total pares: {len(PARES_A_MONITOREAR)}")

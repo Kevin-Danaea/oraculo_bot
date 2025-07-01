@@ -15,7 +15,8 @@ from shared.services.logging_config import get_logger
 from shared.database.session import get_db_session
 from shared.database.models import GridBotConfig
 from services.grid.core.trading_engine import run_grid_trading_bot
-from services.grid.core.cerebro_integration import consultar_y_procesar_cerebro_batch, obtener_configuraciones_bd
+from services.grid.core.cerebro_integration import cerebro_client
+from services.grid.data.config_repository import get_all_active_configs
 
 logger = get_logger(__name__)
 
@@ -247,7 +248,7 @@ class MultibotScheduler:
             logger.info("🧠 ========== VERIFICANDO DECISIONES DEL CEREBRO (BATCH) ==========")
             
             # Obtener TODAS las configuraciones activas de TODOS los usuarios
-            configuraciones = obtener_configuraciones_bd("all")
+            configuraciones = get_all_active_configs()
             
             if not configuraciones:
                 logger.warning("⚠️ No hay configuraciones activas para verificar")
@@ -256,12 +257,12 @@ class MultibotScheduler:
             logger.info(f"📊 Configuraciones a verificar: {len(configuraciones)}")
             
             # CONSULTA BATCH: Obtener todas las decisiones de una vez
-            decisiones_batch = consultar_y_procesar_cerebro_batch()
+            decisiones_batch = asyncio.run(cerebro_client.consultar_y_procesar_batch())
             
             if not decisiones_batch:
                 logger.warning("⚠️ No se pudieron obtener decisiones batch del cerebro")
                 logger.info("🔄 Reintentando con consultas individuales...")
-                self._check_cerebro_decisions_individual(configuraciones)
+                asyncio.run(self._check_cerebro_decisions_individual(configuraciones))
                 return
             
             logger.info(f"✅ Decisiones batch obtenidas: {len(decisiones_batch)} pares")
@@ -308,9 +309,9 @@ class MultibotScheduler:
         except Exception as e:
             logger.error(f"❌ Error en verificación batch del cerebro: {e}")
             logger.info("🔄 Reintentando con consultas individuales...")
-            self._check_cerebro_decisions_individual(configuraciones)
+            asyncio.run(self._check_cerebro_decisions_individual(configuraciones))
     
-    def _check_cerebro_decisions_individual(self, configuraciones):
+    async def _check_cerebro_decisions_individual(self, configuraciones):
         """
         Método de respaldo que usa consultas individuales si el batch falla.
         """
@@ -322,24 +323,7 @@ class MultibotScheduler:
                     par = config['pair']
                     
                     # Consultar decisión individual
-                    from services.grid.core.cerebro_integration import consultar_estado_inicial_cerebro
-                    
-                    # Crear un event loop si no existe
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            # Si el loop está corriendo, usar create_task
-                            task = loop.create_task(consultar_estado_inicial_cerebro())
-                            # Esperar un poco
-                            import time
-                            time.sleep(1)
-                            continue
-                        else:
-                            # Si el loop no está corriendo, ejecutar directamente
-                            resultado = loop.run_until_complete(consultar_estado_inicial_cerebro())
-                    except RuntimeError:
-                        # No hay event loop, crear uno nuevo
-                        resultado = asyncio.run(consultar_estado_inicial_cerebro())
+                    resultado = await cerebro_client.consultar_estado_inicial(par)
                     
                     if resultado and resultado.get('par') == par:
                         decision = resultado.get('decision', 'ERROR')

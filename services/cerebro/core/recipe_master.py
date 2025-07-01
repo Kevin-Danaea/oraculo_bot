@@ -3,72 +3,75 @@ Recetas Maestras del Cerebro - Condiciones específicas por par
 Define las condiciones optimizadas para cada par según backtesting y análisis.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+
 from shared.services.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+RECIPES = {
+    'ETH/USDT': {
+        'name': 'Receta Maestra ETH',
+        'conditions': {
+            'adx_threshold': 30,  # ADX debe ser menor a 30
+            'bollinger_bandwidth_threshold': 0.025,  # Ancho de banda > 0.025
+            'sentiment_threshold': -0.20,  # Sentimiento > -0.20
+        },
+        'grid_config': {
+            'price_range_percent': 10.0,
+            'grid_levels': 30
+        },
+        'description': 'Condiciones optimizadas para ETH/USDT basadas en backtesting'
+    },
+    'BTC/USDT': {
+        'name': 'Receta Maestra BTC',
+        'conditions': {
+            'adx_threshold': 25,  # ADX debe ser menor a 25
+            'bollinger_bandwidth_threshold': 0.035,  # Ancho de banda > 0.035
+            'sentiment_threshold': -0.20,  # Sentimiento > -0.20
+        },
+        'grid_config': {
+            'price_range_percent': 7.5,  # RECETA MAESTRA BTC
+            'grid_levels': 30
+        },
+        'description': 'Condiciones optimizadas para BTC/USDT basadas en backtesting'
+    },
+    'AVAX/USDT': {
+        'name': 'Receta Maestra AVAX',
+        'conditions': {
+            'adx_threshold': 35,  # ADX debe ser menor a 35
+            'bollinger_bandwidth_threshold': 0.020,  # Ancho de banda > 0.020
+            'sentiment_threshold': -0.20,  # Sentimiento > -0.20
+        },
+        'grid_config': {
+            'price_range_percent': 10.0,  # RECETA MAESTRA AVAX
+            'grid_levels': 30
+        },
+        'description': 'Condiciones optimizadas para AVAX/USDT basadas en backtesting'
+    }
+}
+
+PARES_A_MONITOREAR = list(RECIPES.keys())
 
 class RecipeMaster:
     """
     Maneja las recetas maestras para cada par de trading.
     Cada par tiene condiciones específicas optimizadas por backtesting.
     """
-    
+
     @staticmethod
     def get_recipe_for_pair(pair: str) -> Dict[str, Any]:
         """
         Obtiene la receta maestra para un par específico
-        
+
         Args:
-            pair: Par de trading (ej: 'ETH/USDT', 'BTC/USDT', 'POL/USDT')
-            
+            pair: Par de trading (ej: 'ETH/USDT', 'BTC/USDT', 'AVAX/USDT')
+
         Returns:
             Diccionario con la receta maestra del par
         """
-        recipes = {
-            'ETH/USDT': {
-                'name': 'Receta Maestra ETH',
-                'conditions': {
-                    'adx_threshold': 30,  # ADX debe ser menor a 30
-                    'bollinger_bandwidth_threshold': 0.025,  # Ancho de banda > 0.025
-                    'sentiment_threshold': -0.20,  # Sentimiento > -0.20
-                },
-                'grid_config': {
-                    'price_range_percent': 10.0,
-                    'grid_levels': 30
-                },
-                'description': 'Condiciones optimizadas para ETH/USDT basadas en backtesting'
-            },
-            'BTC/USDT': {
-                'name': 'Receta Maestra BTC',
-                'conditions': {
-                    'adx_threshold': 25,  # ADX debe ser menor a 25
-                    'bollinger_bandwidth_threshold': 0.035,  # Ancho de banda > 0.035
-                    'sentiment_threshold': -0.20,  # Sentimiento > -0.20
-                },
-                'grid_config': {
-                    'price_range_percent': 7.5,  # RECETA MAESTRA BTC
-                    'grid_levels': 30
-                },
-                'description': 'Condiciones optimizadas para BTC/USDT basadas en backtesting'
-            },
-            'AVAX/USDT': {
-                'name': 'Receta Maestra AVAX',
-                'conditions': {
-                    'adx_threshold': 35,  # ADX debe ser menor a 35
-                    'bollinger_bandwidth_threshold': 0.020,  # Ancho de banda > 0.020
-                    'sentiment_threshold': -0.20,  # Sentimiento > -0.20
-                },
-                'grid_config': {
-                    'price_range_percent': 10.0,  # RECETA MAESTRA AVAX
-                    'grid_levels': 30
-                },
-                'description': 'Condiciones optimizadas para AVAX/USDT basadas en backtesting'
-            }
-        }
-        
-        return recipes.get(pair, recipes['ETH/USDT'])  # Fallback a ETH si no existe
-    
+        return RECIPES.get(pair, RECIPES['ETH/USDT'])  # Fallback a ETH si no existe
+
     @staticmethod
     def evaluate_conditions(pair: str, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -162,7 +165,7 @@ class RecipeMaster:
     @staticmethod
     def get_all_supported_pairs() -> list:
         """Retorna todos los pares soportados con recetas maestras"""
-        return ['ETH/USDT', 'BTC/USDT', 'AVAX/USDT']
+        return PARES_A_MONITOREAR
     
     @staticmethod
     def get_recipe_summary() -> Dict[str, Any]:
