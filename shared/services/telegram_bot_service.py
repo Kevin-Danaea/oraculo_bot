@@ -102,6 +102,8 @@ class TelegramBot:
     
     def polling_thread(self):
         """El hilo que ejecuta el polling del bot."""
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        
         try:
             logger.info("🤖 Bot iniciado en modo polling con python-telegram-bot")
             # Agregamos stop_signals=[] para evitar que la librería
