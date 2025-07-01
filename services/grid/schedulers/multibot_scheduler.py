@@ -526,18 +526,23 @@ class MultibotScheduler:
 
             message += "--- <b>RESUMEN GENERAL</b> ---\n"
             exchange = get_exchange_connection()
-            all_configs = get_all_active_configs()
-            total_initial_capital = sum(c.get('total_capital', 0) for c in all_configs)
+            
+            # CORRECCIÓN P&L: Usar solo bots activos para el cálculo
+            status = self.get_status()
+            active_bots_configs = [bot['config'] for bot in status['active_bots']]
+            total_initial_capital = sum(c.get('total_capital', 0) for c in active_bots_configs)
 
             balance = exchange.fetch_balance()
             usdt_balance = balance.get('USDT', {}).get('free', 0)
             
+            # El valor total ahora se calcula basado en los activos de los bots que están corriendo
             total_value = usdt_balance
-            message += "🏦 <b>Balance de Cuenta:</b>\n"
+            message += "🏦 <b>Balance de Cuenta (Activos Relevantes):</b>\n"
             message += f"  • 💵 USDT: ${usdt_balance:.2f}\n"
 
             icon_map = {'ETH': '💎', 'BTC': '🟠', 'AVAX': '🔴'}
-            for config in all_configs:
+            # Iterar solo sobre los bots activos
+            for config in active_bots_configs:
                 pair = config['pair']
                 crypto_symbol = pair.split('/')[0]
                 crypto_balance = balance.get(crypto_symbol, {}).get('total', 0)
@@ -548,14 +553,14 @@ class MultibotScheduler:
                     icon = icon_map.get(crypto_symbol, '🪙')
                     message += f"  • {icon} {crypto_symbol}: {crypto_balance:.6f} (${crypto_value:.2f})\n"
             
-            message += f"  • <b>Total Estimado:</b> ${total_value:.2f}\n\n"
+            message += f"  • <b>Total Estimado (Activos en Juego):</b> ${total_value:.2f}\n\n"
 
             if total_initial_capital > 0:
                 pnl_vs_initial = total_value - total_initial_capital
                 pnl_percentage = (pnl_vs_initial / total_initial_capital) * 100
                 pnl_icon = "💹" if pnl_vs_initial >= 0 else "🔻"
-                message += f"{pnl_icon} <b>P&L vs Capital Inicial:</b> ${pnl_vs_initial:.2f} ({pnl_percentage:.2f}%)\n"
-                message += f"   <i>(Capital Inicial Total: ${total_initial_capital:.2f})</i>\n\n"
+                message += f"{pnl_icon} <b>P&L vs Capital Inicial (Activo):</b> ${pnl_vs_initial:.2f} ({pnl_percentage:.2f}%)\n"
+                message += f"   <i>(Capital Inicial Activo: ${total_initial_capital:.2f})</i>\n\n"
             
             message += f"✅ <b>Ganancia Realizada (este período):</b> ${total_realized_pnl:.2f}\n"
             message += f"\n🕐 <i>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</i>"

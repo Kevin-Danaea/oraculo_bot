@@ -99,9 +99,13 @@ def create_initial_buy_orders(exchange: ccxt.Exchange, config: Dict[str, Any],
     try:
         pair = config['pair']
         total_capital = config['total_capital']
-        capital_per_order = total_capital / len(buy_prices)
         
-        logger.info(f"💰 Capital por orden: ${capital_per_order:.2f}")
+        # CORRECCIÓN: El capital total se debe distribuir entre TODOS los niveles del grid (compras + ventas),
+        # no solo entre las órdenes de compra, para no sobreexponer el capital inicial.
+        grid_levels = config.get('grid_levels', 30)
+        capital_per_order = total_capital / grid_levels
+        
+        logger.info(f"💰 Capital por orden: ${capital_per_order:.2f} (Total: ${total_capital} / {grid_levels} niveles totales)")
         
         successful_orders = 0
         for price in buy_prices:
