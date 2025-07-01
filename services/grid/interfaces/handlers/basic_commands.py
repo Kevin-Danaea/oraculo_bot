@@ -166,10 +166,10 @@ Modo de Trading:
                         # Procesar resultado batch
                         if resultado_batch and resultado_batch.get('status') == 'success':
                             results = resultado_batch.get('results', {})
-                            # Mostrar resumen y mensajes detallados de todos los pares
                             from services.grid.core.cerebro_integration import obtener_configuraciones_bd
                             configs = obtener_configuraciones_bd(chat_id)
                             if configs:
+                                # Mostrar solo el resumen (una vez)
                                 message = f"🚀 ¡Grid Bot iniciado exitosamente!\n\n"
                                 message += f"🟡 MODO SANDBOX (Paper Trading)\n\n"
                                 message += f"📊 Estado de Configuraciones ({len(configs)} pares):\n"
@@ -201,66 +201,8 @@ Modo de Trading:
                                 message += f"• Trailing Up: ✅ (Optimiza ganancias)\n\n"
                                 message += f"📈 Usa /status para monitorear el progreso."
                                 bot.send_message(chat_id, message)
-                                # Mensajes detallados por par
-                                for config in configs:
-                                    pair = config['pair']
-                                    capital = config['total_capital']
-                                    decision_data = results.get(pair, {})
-                                    if not decision_data.get('success', False):
-                                        continue
-                                    decision = decision_data.get('decision', 'NO_DECISION')
-                                    indicadores = decision_data.get('indicadores', {})
-                                    razon = decision_data.get('razon', '')
-                                    # Obtener número de órdenes creadas y total esperado
-                                    ordenes_creadas = None
-                                    ordenes_totales = None
-                                    try:
-                                        # Intentar obtener del scheduler el número de órdenes creadas para el par
-                                        scheduler = get_multibot_scheduler()
-                                        bot_status = scheduler.get_status()
-                                        active_bot = next((b for b in bot_status['active_bots'] if b['pair'] == pair), None)
-                                        if active_bot and 'ordenes_creadas' in active_bot and 'ordenes_totales' in active_bot:
-                                            ordenes_creadas = active_bot['ordenes_creadas']
-                                            ordenes_totales = active_bot['ordenes_totales']
-                                        else:
-                                            # Fallback: usar niveles de grid como total esperado
-                                            ordenes_totales = config.get('grid_levels', None)
-                                    except Exception as e:
-                                        logger.warning(f"No se pudo obtener número de órdenes para {pair}: {e}")
-                                    if decision == 'OPERAR_GRID':
-                                        start_message = f"🚀 <b>GRID BOT AUTORIZADO</b>\n\n"
-                                        start_message += f"📊 Par: {pair}\n"
-                                        start_message += f"💰 Capital: ${capital:,.2f}\n"
-                                        start_message += f"🎯 Niveles: {config['grid_levels']}\n"
-                                        start_message += f"📈 Rango: {config['price_range_percent']}%\n"
-                                        start_message += f"📈 ADX: {indicadores.get('adx_actual', 0):.2f}\n"
-                                        start_message += f"📊 Volatilidad: {indicadores.get('volatilidad_actual', 0):.4f}\n"
-                                        start_message += f"💬 Sentimiento: {indicadores.get('sentiment_promedio', 0):.3f}\n\n"
-                                        start_message += f"✅ <b>Razón de autorización:</b>\n"
-                                        start_message += f"• {razon}\n\n"
-                                        start_message += f"🟢 El bot está operando automáticamente"
-                                        if ordenes_creadas is not None and ordenes_totales is not None:
-                                            start_message += f"\n📦 Órdenes creadas: {ordenes_creadas}/{ordenes_totales}"
-                                        elif ordenes_totales is not None:
-                                            start_message += f"\n📦 Órdenes creadas: ?/{ordenes_totales}"
-                                        bot.send_message(chat_id, start_message)
-                                    elif decision == 'PAUSAR_GRID':
-                                        pause_message = f"⏸️ <b>GRID BOT PAUSADO</b>\n\n"
-                                        pause_message += f"📊 Par: {pair}\n"
-                                        pause_message += f"💰 Capital: ${capital:,.2f}\n"
-                                        pause_message += f"🎯 Niveles: {config['grid_levels']}\n"
-                                        pause_message += f"📈 Rango: {config['price_range_percent']}%\n"
-                                        pause_message += f"📈 ADX: {indicadores.get('adx_actual', 0):.2f}\n"
-                                        pause_message += f"📊 Volatilidad: {indicadores.get('volatilidad_actual', 0):.4f}\n"
-                                        pause_message += f"💬 Sentimiento: {indicadores.get('sentiment_promedio', 0):.3f}\n\n"
-                                        pause_message += f"🛑 <b>Razón de pausa:</b>\n"
-                                        pause_message += f"• {razon}\n\n"
-                                        pause_message += f"🔄 El bot se reactivará automáticamente cuando el Cerebro autorice"
-                                        if ordenes_creadas is not None and ordenes_totales is not None:
-                                            pause_message += f"\n📦 Órdenes creadas: {ordenes_creadas}/{ordenes_totales}"
-                                        elif ordenes_totales is not None:
-                                            pause_message += f"\n📦 Órdenes creadas: ?/{ordenes_totales}"
-                                        bot.send_message(chat_id, pause_message)
+                            else:
+                                bot.send_message(chat_id, "⚠️ Sin configuraciones activas. Usa /config para configurar los pares.")
                         else:
                             bot.send_message(chat_id, "⚠️ No se pudo obtener el estado batch inicial del cerebro. Continuando en modo standalone...")
                     except Exception as e:
@@ -271,6 +213,61 @@ Modo de Trading:
                     # SEGUNDO: Iniciar el multibot
                     bot.send_message(chat_id, "🚀 Iniciando Multibot...")
                     success = start_multibot_scheduler()
+                    # Esperar unos segundos para que las órdenes se creen
+                    time.sleep(3)
+                    # Consultar estado actualizado del scheduler
+                    try:
+                        scheduler = get_multibot_scheduler()
+                        bot_status = scheduler.get_status()
+                        active_bots = bot_status.get('active_bots', [])
+                        # Enviar mensajes detallados por par (solo una vez, después de crear órdenes)
+                        for active_bot in active_bots:
+                            pair = active_bot.get('pair')
+                            config = next((c for c in configs if c['pair'] == pair), None)
+                            if not config:
+                                continue
+                            capital = config['total_capital']
+                            decision = active_bot.get('last_decision', 'NO_DECISION')
+                            indicadores = active_bot.get('indicadores', {}) if 'indicadores' in active_bot else {}
+                            razon = active_bot.get('razon', '') if 'razon' in active_bot else ''
+                            ordenes_creadas = active_bot.get('ordenes_creadas')
+                            ordenes_totales = active_bot.get('ordenes_totales', config.get('grid_levels'))
+                            if decision == 'OPERAR_GRID':
+                                start_message = f"🚀 <b>GRID BOT AUTORIZADO</b>\n\n"
+                                start_message += f"📊 Par: {pair}\n"
+                                start_message += f"💰 Capital: ${capital:,.2f}\n"
+                                start_message += f"🎯 Niveles: {config['grid_levels']}\n"
+                                start_message += f"📈 Rango: {config['price_range_percent']}%\n"
+                                start_message += f"📈 ADX: {indicadores.get('adx_actual', 0):.2f}\n"
+                                start_message += f"📊 Volatilidad: {indicadores.get('volatilidad_actual', 0):.4f}\n"
+                                start_message += f"💬 Sentimiento: {indicadores.get('sentiment_promedio', 0):.3f}\n\n"
+                                start_message += f"✅ <b>Razón de autorización:</b>\n"
+                                start_message += f"• {razon}\n\n"
+                                start_message += f"🟢 El bot está operando automáticamente"
+                                if ordenes_creadas is not None and ordenes_totales is not None:
+                                    start_message += f"\n📦 Órdenes creadas: {ordenes_creadas}/{ordenes_totales}"
+                                elif ordenes_totales is not None:
+                                    start_message += f"\n📦 Órdenes creadas: ?/{ordenes_totales}"
+                                bot.send_message(chat_id, start_message)
+                            elif decision == 'PAUSAR_GRID':
+                                pause_message = f"⏸️ <b>GRID BOT PAUSADO</b>\n\n"
+                                pause_message += f"📊 Par: {pair}\n"
+                                pause_message += f"💰 Capital: ${capital:,.2f}\n"
+                                pause_message += f"🎯 Niveles: {config['grid_levels']}\n"
+                                pause_message += f"📈 Rango: {config['price_range_percent']}%\n"
+                                pause_message += f"📈 ADX: {indicadores.get('adx_actual', 0):.2f}\n"
+                                pause_message += f"📊 Volatilidad: {indicadores.get('volatilidad_actual', 0):.4f}\n"
+                                pause_message += f"💬 Sentimiento: {indicadores.get('sentiment_promedio', 0):.3f}\n\n"
+                                pause_message += f"🛑 <b>Razón de pausa:</b>\n"
+                                pause_message += f"• {razon}\n\n"
+                                pause_message += f"🔄 El bot se reactivará automáticamente cuando el Cerebro autorice"
+                                if ordenes_creadas is not None and ordenes_totales is not None:
+                                    pause_message += f"\n📦 Órdenes creadas: {ordenes_creadas}/{ordenes_totales}"
+                                elif ordenes_totales is not None:
+                                    pause_message += f"\n📦 Órdenes creadas: ?/{ordenes_totales}"
+                                bot.send_message(chat_id, pause_message)
+                    except Exception as e:
+                        logger.warning(f"No se pudo enviar mensajes detallados por par: {e}")
                     
                     if success:
                         if MODO_PRODUCTIVO and user_config:
@@ -371,7 +368,7 @@ Modo de Trading:
                                 bot.send_message(chat_id, message)
                     else:
                         bot.send_message(chat_id, "❌ Error iniciando multibot")
-                        
+                    
                 except Exception as e:
                     self.send_error_message(bot, chat_id, "start_bot_async", e)
             
@@ -483,7 +480,7 @@ Usa /config para configurar el bot
 🔄 Estado del Sistema:
 • Scheduler: {'🟢 Activo' if is_running else '🔴 Inactivo'}
 • Modo Trading: {config_trading.get('modo', 'No disponible')}
-• Modo Operación: �� AUTÓNOMO (Responde a decisiones del Cerebro)
+• Modo Operación: 🧠 AUTÓNOMO (Responde a decisiones del Cerebro)
 
 🧠 Estado del Cerebro:
 • Decisión: {cerebro_estado.get('decision', 'No disponible')}
