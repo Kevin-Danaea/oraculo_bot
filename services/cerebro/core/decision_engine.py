@@ -7,6 +7,7 @@ según la lógica específica de ADX y volatilidad.
 """
 
 import logging
+import html
 from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -225,8 +226,9 @@ class DecisionEngine:
             condicion_sentimiento = True
             sentiment_text = "Sentimiento (N/A) - usando valor por defecto"
         
+        razon_str = ""
         if decision == "OPERAR_GRID":
-            return f"ADX ({adx_actual:.1f}) < {umbral_adx} Y Volatilidad ({volatilidad_actual:.3f}) > {umbral_volatilidad} Y {sentiment_text}"
+            razon_str = f"ADX ({adx_actual:.1f}) < {umbral_adx} Y Volatilidad ({volatilidad_actual:.3f}) > {umbral_volatilidad} Y {sentiment_text}"
         else:
             razones = []
             if not condicion_adx:
@@ -234,9 +236,12 @@ class DecisionEngine:
             if not condicion_volatilidad:
                 razones.append(f"Volatilidad ({volatilidad_actual:.3f}) <= {umbral_volatilidad}")
             if not condicion_sentimiento:
-                razones.append(f"Sentimiento ({sentiment_promedio:.3f}) <= {umbral_sentimiento}")
+                sentiment_val_str = f"{sentiment_promedio:.3f}" if sentiment_promedio is not None else "N/A"
+                razones.append(f"Sentimiento ({sentiment_val_str}) <= {umbral_sentimiento}")
             
-            return "Condiciones no cumplidas: " + " Y ".join(razones)
+            razon_str = "Condiciones no cumplidas: " + " Y ".join(razones)
+
+        return html.escape(razon_str)
     
     def _actualizar_estado_bd(
         self,

@@ -38,8 +38,8 @@ def run_grid_trading_bot(config: Dict[str, Any]) -> None:
         # Validar configuración
         validated_config = validate_config(config)
         
-        # Intentar cargar estado previo
-        saved_orders, saved_config = load_bot_state()
+        # Intentar cargar estado previo para el par específico
+        saved_orders, saved_config = load_bot_state(validated_config['pair'])
         
         # Conectar con exchange (necesario para cancelar órdenes si es requerido)
         exchange = get_exchange_connection()
@@ -49,7 +49,7 @@ def run_grid_trading_bot(config: Dict[str, Any]) -> None:
             if config_has_significant_changes(saved_config, validated_config):
                 logger.info("🔄 Detectados cambios significativos - Reiniciando bot...")
                 # No enviar notificación de reinicio - el cerebro se encarga de las notificaciones
-                reset_bot_for_new_config(exchange, saved_orders, send_notification=False)
+                reset_bot_for_new_config(exchange, saved_orders, validated_config, send_notification=False)
                 # Después del reset, inicializar desde cero
                 saved_orders, saved_config = [], None
         

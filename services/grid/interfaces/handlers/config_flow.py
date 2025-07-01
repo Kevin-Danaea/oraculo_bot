@@ -10,7 +10,7 @@ from services.grid.core.trading_mode_manager import trading_mode_manager
 class ConfigFlowHandler(BaseHandler):
     """Handler para el flujo de configuración del Grid Bot"""
     
-    def handle_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_config_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /config - Muestra configuraciones actuales y permite modificar capital"""
         try:
             # Limpiar estados de conversación previos
@@ -64,17 +64,17 @@ class ConfigFlowHandler(BaseHandler):
             }
             bot.set_conversation_state(chat_id, "config_type_selection", config_data)
             
-            bot.send_message(chat_id, message)
+            await bot.send_message(chat_id, message)
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "config", e)
+            await self.send_error_message(bot, chat_id, "config", e)
     
-    def handle_config_type_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_config_type_selection(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja la selección del par a configurar (ETH, BTC, AVAX)"""
         try:
             state = bot.get_conversation_state(chat_id)
             if state is None:
-                bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
+                await bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
                 return
             
             # Mapeo de números y nombres a tipos de configuración
@@ -89,7 +89,7 @@ class ConfigFlowHandler(BaseHandler):
             selected_type = config_mapping.get(user_input)
             
             if not selected_type:
-                bot.send_message(
+                await bot.send_message(
                     chat_id,
                     "❌ Opción no válida.\n\n"
                     "💡 Opciones disponibles:\n"
@@ -139,27 +139,27 @@ class ConfigFlowHandler(BaseHandler):
                     message += f"• Para 30 niveles ($10 USDT por orden)\n"
                     message += f"• ⚠️ Trading con dinero real"
             
-            bot.send_message(chat_id, message)
+            await bot.send_message(chat_id, message)
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "seleccionando par", e)
+            await self.send_error_message(bot, chat_id, "seleccionando par", e)
     
-    def handle_capital_input(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_capital_input(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja la entrada del capital durante la configuración"""
         try:
             state = bot.get_conversation_state(chat_id)
             if state is None:
-                bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
+                await bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
                 return
             
             # Parsear capital
             try:
                 capital = float(message_text.strip())
                 if capital <= 0:
-                    bot.send_message(chat_id, "❌ El capital debe ser mayor a 0. Intenta de nuevo.")
+                    await bot.send_message(chat_id, "❌ El capital debe ser mayor a 0. Intenta de nuevo.")
                     return
             except ValueError:
-                bot.send_message(
+                await bot.send_message(
                     chat_id, 
                     "❌ Capital inválido. Escribe un número válido.\n\n"
                     "💡 Ejemplos: <code>500</code>, <code>1000.5</code>"
@@ -211,17 +211,17 @@ class ConfigFlowHandler(BaseHandler):
             message += "✅ <b>¿Confirmar esta configuración?</b>\n"
             message += "Responde <code>SI</code> para confirmar o <code>NO</code> para cancelar."
             
-            bot.send_message(chat_id, message)
+            await bot.send_message(chat_id, message)
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "configurando capital", e)
+            await self.send_error_message(bot, chat_id, "configurando capital", e)
     
-    def handle_config_confirmation(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_config_confirmation(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja la confirmación de la configuración"""
         try:
             state = bot.get_conversation_state(chat_id)
             if state is None:
-                bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
+                await bot.send_message(chat_id, "❌ Error: Estado de conversación perdido. Usa /config para empezar de nuevo.")
                 return
             
             response = message_text.strip().lower()
@@ -261,19 +261,19 @@ class ConfigFlowHandler(BaseHandler):
                     
                     message += "🚀 Usa /start_bot para iniciar el trading inteligente"
                     
-                    bot.send_message(chat_id, message)
+                    await bot.send_message(chat_id, message)
                 else:
-                    bot.send_message(chat_id, "❌ Error guardando configuración. Intenta de nuevo.")
+                    await bot.send_message(chat_id, "❌ Error guardando configuración. Intenta de nuevo.")
                     
             elif response in ['no', 'cancelar', 'cancel']:
                 bot.clear_conversation_state(chat_id)
-                bot.send_message(chat_id, "❌ Configuración cancelada. Usa /config para empezar de nuevo.")
+                await bot.send_message(chat_id, "❌ Configuración cancelada. Usa /config para empezar de nuevo.")
             else:
-                bot.send_message(
+                await bot.send_message(
                     chat_id,
                     "❓ Respuesta no entendida.\n\n"
                     "Responde <code>sí</code> para confirmar o <code>no</code> para cancelar:"
                 )
                 
         except Exception as e:
-            self.send_error_message(bot, chat_id, "confirmando configuración", e) 
+            await self.send_error_message(bot, chat_id, "confirmando configuración", e) 

@@ -308,15 +308,17 @@ async def get_batch_analysis(force: bool = False):
 @app.get("/grid/batch/init")
 async def grid_batch_init():
     """
-    Endpoint para inicializar el monitoreo batch y devolver el primer análisis de todos los pares.
+    Endpoint para inicializar el monitoreo batch y devolver el primer análisis.
     """
     try:
-        if not cerebro_service.grid_is_connected:
-            await cerebro_service.start()
-        
-        response = await cerebro_service.get_batch_analysis(force=True)
-        cerebro_service.grid_is_connected = True # Mark as connected after first batch init
+        if cerebro_service.is_running():
+            logger.info("✅ Cerebro ya está activo. Devolviendo último análisis cacheado.")
+            return await cerebro_service.get_batch_analysis(force=False)
+
+        # Inicia el servicio, que correrá el primer análisis y luego el bucle.
+        response = await cerebro_service.start()
         return response
+        
     except HTTPException:
         raise
     except Exception as e:

@@ -7,6 +7,7 @@ import httpx
 import asyncio
 from typing import Dict, Optional, Any
 from shared.services.logging_config import get_logger
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -58,16 +59,27 @@ class CerebroClient:
     async def consultar_analisis_batch(self) -> Optional[Dict[str, Any]]:
         """
         Consulta el análisis batch del cerebro para obtener todas las decisiones de una vez.
+        ESTA FUNCIÓN AHORA LLAMA AL NUEVO ENDPOINT DE INICIALIZACIÓN.
         """
         try:
             logger.info("🚀 ========== CONSULTANDO ANÁLISIS BATCH DEL CEREBRO ==========")
-            cerebro_url = f"{CEREBRO_URL}/grid/batch/analysis"
+            # Ahora apunta al nuevo endpoint de inicialización que activa el bucle del cerebro
+            cerebro_url = f"{CEREBRO_URL}/grid/batch/init"
             
             async with httpx.AsyncClient() as client:
-                response = await client.get(cerebro_url, timeout=60.0)
+                response = await client.get(cerebro_url, timeout=120.0) # Timeout más largo para primer análisis
                 
                 if response.status_code == 200:
                     data = response.json()
+                    summary = data.get('summary', {})
+                    
+                    # Actualizar estado para el comando /status
+                    self.estado_cerebro.update({
+                        "decision": f"Batch: {summary.get('OPERAR_GRID', 0)} op, {summary.get('PAUSAR_GRID', 0)} pa",
+                        "ultima_actualizacion": datetime.now().isoformat(),
+                        "fuente": "batch_analysis"
+                    })
+                    
                     logger.info(f"✅ Análisis batch recibido: {data.get('summary', {})}")
                     return data
                 else:

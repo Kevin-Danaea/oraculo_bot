@@ -14,6 +14,7 @@ from services.grid.schedulers.multibot_scheduler import (
 )
 from services.grid.core.telegram_service import start_telegram_bot, stop_telegram_bot
 from services.grid.core.trading_mode_manager import trading_mode_manager
+from services.grid.core.startup_manager import initialize_standby_mode, cleanup_orphaned_orders
 
 logger = get_logger(__name__)
 
@@ -28,6 +29,9 @@ def start_grid_service() -> Any:
         # Configurar logging
         setup_logging()
         logger.info("🤖 Iniciando Grid Worker...")
+        
+        # REALIZAR LIMPIEZA DE ÓRDENES Y ARRANCAR EN STANDBY
+        initialize_standby_mode()
         
         # Mostrar configuración de trading activa
         config = trading_mode_manager.get_config()
@@ -85,6 +89,10 @@ def stop_grid_service():
         
         # Detener scheduler
         stop_multibot_scheduler()
+        
+        # Realizar limpieza de órdenes al apagar para un cierre limpio
+        logger.info("🧹 Realizando limpieza de órdenes en apagado...")
+        cleanup_orphaned_orders(context='shutdown')
         
         logger.info("✅ Grid Worker detenido correctamente")
         

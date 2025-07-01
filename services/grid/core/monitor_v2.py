@@ -12,6 +12,7 @@ from shared.services.logging_config import get_logger
 from shared.services.telegram_service import send_telegram_message, send_grid_trade_notification, send_grid_hourly_summary
 from .config_manager import reconnect_exchange
 from .state_manager import save_bot_state, cancel_all_active_orders
+from .trade_aggregator import trade_aggregator
 from ..strategies.advanced_strategies import (
     should_trigger_stop_loss,
     should_trigger_trailing_up, 
@@ -53,23 +54,28 @@ def get_grid_boundaries(active_orders: List[Dict[str, Any]]) -> Tuple[Optional[f
     return lowest_buy, highest_sell
 
 
-def check_manual_stop_requested() -> bool:
+def check_manual_stop_requested(pair: str) -> bool:
     """
-    Verifica si se ha solicitado una parada manual del bot.
-    Usa el multibot scheduler para verificar el estado.
+    Verifica si se ha solicitado una parada manual para un bot específico.
+    El bot debe detenerse si su par ya no está en la lista de bots activos del scheduler.
     
+    Args:
+        pair: Par de trading del bot que está verificando.
+        
     Returns:
-        True si se debe detener el bot, False si debe continuar
+        True si se debe detener el bot, False si debe continuar.
     """
     try:
-        # Importar multibot scheduler
         from ..schedulers.multibot_scheduler import get_multibot_scheduler
         scheduler = get_multibot_scheduler()
         status = scheduler.get_status()
-        return status['total_active_bots'] == 0
+        
+        # El bot debe detenerse si su par ya NO está en la lista de bots activos.
+        return pair not in status.get('active_pairs', [])
+        
     except Exception as e:
         logger.warning(f"⚠️ No se pudo verificar estado del multibot scheduler: {e}")
-        return False
+        return False # Por seguridad, no detener si hay error
 
 
 def handle_manual_stop_cleanup(exchange: ccxt.Exchange, active_orders: List[Dict[str, Any]], 
@@ -93,9 +99,12 @@ def handle_manual_stop_cleanup(exchange: ccxt.Exchange, active_orders: List[Dict
         # Cancelar todas las órdenes activas
         cancelled_count = cancel_all_active_orders(exchange, active_orders)
         
-        # Limpiar estado guardado
+        # Limpiar estado guardado para el par específico
         from .state_manager import clear_bot_state
-        clear_bot_state()
+        if config.get('pair'):
+            clear_bot_state(config['pair'])
+        else:
+            logger.warning("⚠️ No se pudo limpiar el estado: 'pair' no encontrado en config.")
         
         # Enviar notificación de parada limpia
         pair = config.get('pair', 'N/A')
@@ -191,8 +200,8 @@ def check_and_process_filled_orders_v2(exchange: ccxt.Exchange, active_orders: L
                 trades_executed += 1
                 logger.info(f"✅ Trade ejecutado: {order_info['type']} {order_info['quantity']:.6f} a ${order_info['price']}")
                 
-                # Enviar notificación
-                send_grid_trade_notification(order_info, config, exchange)
+                # Agregar trade al agregador para el resumen periódico
+                trade_aggregator.add_trade(order_info['pair'], order_info)
                 
                 if order_info['type'] == 'buy':
                     # Crear orden de venta correspondiente
@@ -242,9 +251,9 @@ def monitor_grid_orders_v2(exchange: ccxt.Exchange, active_orders: List[Dict[str
             cycle_count += 1
             
             try:
-                # 0. VERIFICAR PARADA MANUAL (NUEVO FIX) ⭐
-                if check_manual_stop_requested():
-                    logger.info("🛑 Parada manual detectada - Iniciando limpieza...")
+                # 0. VERIFICAR PARADA MANUAL (CORREGIDO PARA MULTIBOT) ⭐
+                if check_manual_stop_requested(config['pair']):
+                    logger.info(f"🛑 Parada manual detectada para {config['pair']} - Iniciando limpieza...")
                     handle_manual_stop_cleanup(exchange, active_orders, config)
                     bot_should_stop = True
                     break
@@ -274,12 +283,9 @@ def monitor_grid_orders_v2(exchange: ccxt.Exchange, active_orders: List[Dict[str
                     save_bot_state(active_orders, config)
                     last_state_save = time.time()
                 
-                # 4. Enviar resumen periódico
+                # 4. Enviar resumen periódico (DESACTIVADO, ahora lo maneja el scheduler)
                 if cycle_count >= STATUS_REPORT_CYCLES:
-                    if trades_in_period > 0:
-                        send_grid_hourly_summary(active_orders, config, trades_in_period, exchange)
-                        logger.info(f"📊 Resumen enviado - Trades: {trades_in_period}, Órdenes activas: {len(active_orders)}")
-                    
+                    logger.info(f"📊 Ciclo de resumen alcanzado. Trades en período: {trades_in_period}. El resumen ahora es manejado centralmente.")
                     cycle_count = 0
                     trades_in_period = 0
                 

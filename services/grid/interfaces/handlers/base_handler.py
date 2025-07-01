@@ -266,14 +266,14 @@ class BaseHandler:
             'config_type': config_type  # Nuevo campo para identificar el tipo
         }
     
-    def send_error_message(self, bot: TelegramBot, chat_id: str, operation: str, error: Optional[Exception] = None):
+    async def send_error_message(self, bot: TelegramBot, chat_id: str, operation: str, error: Optional[Exception] = None):
         """Envía un mensaje de error estandarizado"""
         error_msg = f"❌ Error en {operation}"
         if error:
             logger.error(f"❌ Error en {operation}: {error}")
         else:
             logger.error(f"❌ Error en {operation}")
-        bot.send_message(chat_id, error_msg)
+        await bot.send_message(chat_id, error_msg)
     
     def format_timestamp(self, timestamp: datetime) -> str:
         """Formatea un timestamp para mostrar en Telegram"""
@@ -283,6 +283,9 @@ class BaseHandler:
         """Valida que el usuario tenga configuración y la retorna, sino envía mensaje de error"""
         user_config = self.get_user_config(chat_id)
         if not user_config:
-            bot.send_message(chat_id, "⚠️ Primero configura el bot con /config")
-            return None
+            # Esta función es llamada desde sync y async contexts.
+            # No se puede enviar mensaje aquí directamente si el llamador es sync.
+            # La validación con mensaje de error se debe hacer en el handler del comando.
+            # Aquí solo validamos.
+            pass
         return user_config 

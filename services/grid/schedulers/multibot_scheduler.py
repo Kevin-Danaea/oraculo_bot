@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import asyncio
+import html
 
 from shared.services.logging_config import get_logger
 from shared.database.session import get_db_session
@@ -17,6 +18,9 @@ from shared.database.models import GridBotConfig
 from services.grid.core.trading_engine import run_grid_trading_bot
 from services.grid.core.cerebro_integration import cerebro_client
 from services.grid.data.config_repository import get_all_active_configs
+from services.grid.core.trade_aggregator import trade_aggregator
+from services.grid.core.config_manager import get_exchange_connection
+from shared.services.telegram_service import send_telegram_message
 
 logger = get_logger(__name__)
 
@@ -27,11 +31,13 @@ class MultibotScheduler:
     """
     
     def __init__(self):
-        """Inicializa el scheduler multibot"""
-        self.scheduler = BackgroundScheduler()
-        self.bot_threads: Dict[str, threading.Thread] = {}
-        self.bot_running: Dict[str, bool] = {}
-        self.bot_configs: Dict[str, Dict[str, Any]] = {}
+        """Inicializa el scheduler multibot."""
+        self.scheduler = BackgroundScheduler(daemon=True)
+        self.active_bots: Dict[str, Dict[str, Any]] = {}
+        self.lock = threading.Lock()
+        self.last_cerebro_check = None
+        self.cerebro_check_job = None
+        self.trade_summary_job = None
         
         # Configurar scheduler
         self._setup_scheduler()
@@ -56,6 +62,15 @@ class MultibotScheduler:
                 trigger=IntervalTrigger(hours=1),
                 id='cerebro_decisions_check',
                 name='Cerebro Decisions Check',
+                replace_existing=True
+            )
+            
+            # Tarea para enviar resumen de actividad cada 30 minutos
+            self.scheduler.add_job(
+                func=self.send_periodic_trade_summary,
+                trigger=IntervalTrigger(minutes=30),
+                id='periodic_trade_summary',
+                name='Periodic Trade Summary',
                 replace_existing=True
             )
             
@@ -99,7 +114,7 @@ class MultibotScheduler:
     
     def start_bot_for_pair(self, pair: str, config: Dict[str, Any]) -> bool:
         """
-        Inicia un bot específico para un par
+        Inicia un bot específico para un par en un hilo separado.
         
         Args:
             pair: Par de trading (ej: 'ETH/USDT')
@@ -108,17 +123,13 @@ class MultibotScheduler:
         Returns:
             True si se inició correctamente
         """
-        try:
-            if self.bot_running.get(pair, False):
+        with self.lock:
+            if pair in self.active_bots:
                 logger.warning(f"⚠️ Bot para {pair} ya está ejecutándose")
                 return False
             
             logger.info(f"🚀 Iniciando bot para {pair}...")
             
-            # Guardar configuración
-            self.bot_configs[pair] = config
-            
-            # Crear y ejecutar hilo del bot
             bot_thread = threading.Thread(
                 target=self._run_bot_for_pair,
                 args=(pair, config),
@@ -126,8 +137,11 @@ class MultibotScheduler:
                 name=f"GridBot-{pair.replace('/', '-')}"
             )
             
-            self.bot_threads[pair] = bot_thread
-            self.bot_running[pair] = True
+            self.active_bots[pair] = {
+                'thread': bot_thread,
+                'config': config,
+                'status': 'running'  # Estado: 'running' o 'stopping'
+            }
             
             bot_thread.start()
             
@@ -136,71 +150,71 @@ class MultibotScheduler:
             
             logger.info(f"✅ Bot para {pair} iniciado correctamente")
             return True
-            
-        except Exception as e:
-            logger.error(f"❌ Error iniciando bot para {pair}: {e}")
-            return False
     
     def stop_bot_for_pair(self, pair: str) -> bool:
         """
-        Detiene un bot específico para un par
+        Señala a un bot específico que debe detenerse.
         
         Args:
             pair: Par de trading
             
         Returns:
-            True si se detuvo correctamente
+            True si la señal se envió correctamente
         """
-        try:
-            if not self.bot_running.get(pair, False):
+        with self.lock:
+            if pair not in self.active_bots:
                 logger.warning(f"⚠️ Bot para {pair} no está ejecutándose")
                 return False
             
-            logger.info(f"🛑 Deteniendo bot para {pair}...")
+            logger.info(f"🛑 Señalando parada para bot {pair}...")
             
-            # Señalar detención
-            self.bot_running[pair] = False
+            # Señalar detención. El hilo del bot se encargará de la limpieza.
+            self.active_bots[pair]['status'] = 'stopping'
             
-            # Esperar a que termine el hilo
-            if pair in self.bot_threads:
-                thread = self.bot_threads[pair]
-                if thread.is_alive():
-                    thread.join(timeout=30)
-                    if thread.is_alive():
-                        logger.warning(f"⚠️ Bot para {pair} no terminó en el tiempo esperado")
-                        return False
-            
-            # Limpiar referencias
-            self.bot_threads.pop(pair, None)
-            self.bot_configs.pop(pair, None)
-            
-            # Actualizar estado en base de datos
-            self._update_bot_status_in_db(pair, False, 'PAUSAR_GRID')
-            
-            logger.info(f"✅ Bot para {pair} detenido correctamente")
+            # NO esperamos (join) aquí para no bloquear el hilo principal.
+            # El hilo del bot se auto-limpiará de la lista de `active_bots`.
             return True
-            
-        except Exception as e:
-            logger.error(f"❌ Error deteniendo bot para {pair}: {e}")
-            return False
     
     def stop_all_bots(self):
-        """Detiene todos los bots activos"""
-        try:
-            active_pairs = list(self.bot_running.keys())
-            logger.info(f"🛑 Deteniendo {len(active_pairs)} bots activos...")
+        """
+        Señala a todos los bots en ejecución que deben detenerse.
+        """
+        with self.lock:
+            if not self.active_bots:
+                logger.info("ℹ️ No hay bots activos para detener")
+                return
             
-            for pair in active_pairs:
-                self.stop_bot_for_pair(pair)
+            logger.info(f"🛑 Señalando parada para {len(self.active_bots)} bots...")
+            pairs_to_stop = list(self.active_bots.keys())
             
-            logger.info("✅ Todos los bots detenidos")
+            for pair in pairs_to_stop:
+                if pair in self.active_bots:
+                    self.active_bots[pair]['status'] = 'stopping'
+
+    def force_stop_and_clear_all(self):
+        """
+        Forzosamente detiene todos los bots y limpia el estado interno.
+        Esto es para reinicios y cambios de modo, no para una parada normal.
+        """
+        with self.lock:
+            if not self.active_bots:
+                return
+
+            pairs_to_stop = list(self.active_bots.keys())
+            logger.warning(f"🚨 Forzando parada y limpieza de {len(pairs_to_stop)} bots.")
             
-        except Exception as e:
-            logger.error(f"❌ Error deteniendo todos los bots: {e}")
-    
+            # Señal para que el hilo muera en su próximo ciclo de verificación
+            for pair in pairs_to_stop:
+                if pair in self.active_bots:
+                    self.active_bots[pair]['status'] = 'stopping' 
+            
+            # Limpiar el diccionario para permitir que los nuevos bots se inicien inmediatamente
+            self.active_bots.clear()
+            logger.info("✅ Diccionario de bots activos del scheduler limpiado forzosamente.")
+
     def _run_bot_for_pair(self, pair: str, config: Dict[str, Any]):
         """
-        Ejecuta el bot para un par específico
+        Wrapper que se ejecuta en un hilo para manejar el ciclo de vida de un bot.
         
         Args:
             pair: Par de trading
@@ -208,36 +222,42 @@ class MultibotScheduler:
         """
         try:
             logger.info(f"🤖 Ejecutando bot para {pair} con configuración: {config}")
-            
-            # Ejecutar el grid trading bot
             run_grid_trading_bot(config)
-            
         except Exception as e:
-            logger.error(f"❌ Error ejecutando bot para {pair}: {e}")
+            logger.error(f"❌ Error fatal en hilo del bot para {pair}: {e}")
         finally:
-            self.bot_running[pair] = False
-            logger.info(f"🛑 Bot para {pair} terminado")
+            logger.info(f"🛑 Hilo del bot para {pair} terminado")
+            with self.lock:
+                # Limpiar el bot de la lista de activos
+                if pair in self.active_bots:
+                    self.active_bots.pop(pair, None)
+            
+            # Actualizar estado en la base de datos a 'no ejecutándose'
+            self._update_bot_status_in_db(pair, False, 'PAUSAR_GRID')
     
     def _check_all_bots_health(self):
-        """Verifica la salud de todos los bots activos"""
-        try:
-            active_pairs = list(self.bot_running.keys())
+        """Verifica la salud de todos los bots activos y reinicia si es necesario."""
+        with self.lock:
+            dead_bots_pairs = []
+            active_pairs = list(self.active_bots.keys())
             
             for pair in active_pairs:
-                if not self.bot_running.get(pair, False):
-                    continue
-                
-                thread = self.bot_threads.get(pair)
-                if not thread or not thread.is_alive():
-                    logger.warning(f"⚠️ Bot para {pair} se detuvo inesperadamente")
-                    # Reiniciar bot si es necesario
-                    self._restart_bot_if_needed(pair)
-                else:
-                    logger.debug(f"✅ Bot para {pair} ejecutándose correctamente")
+                bot_data = self.active_bots.get(pair)
+                if not bot_data or not bot_data['thread'].is_alive():
+                    logger.warning(f"⚠️ Bot para {pair} se detuvo inesperadamente (hilo muerto).")
+                    dead_bots_pairs.append(pair)
+            
+            # Sacar del lock para llamar a la función de reinicio
+            if dead_bots_pairs:
+                logger.info(f"Encontrados {len(dead_bots_pairs)} bots muertos para procesar.")
+
+        # Fuera del lock para evitar deadlocks
+        for pair in dead_bots_pairs:
+            with self.lock:
+                self.active_bots.pop(pair, None)  # Asegurar que se elimina
+            logger.info(f"Bot muerto {pair} eliminado de la lista activa.")
+            self._restart_bot_if_needed(pair)
                     
-        except Exception as e:
-            logger.error(f"❌ Error verificando salud de bots: {e}")
-    
     def check_cerebro_decisions(self):
         """
         Verifica las decisiones del cerebro para todos los pares configurados.
@@ -309,6 +329,8 @@ class MultibotScheduler:
         except Exception as e:
             logger.error(f"❌ Error en verificación batch del cerebro: {e}")
             logger.info("🔄 Reintentando con consultas individuales...")
+            # La variable 'configuraciones' ya fue definida en el bloque 'try'.
+            # Podemos usarla directamente para el fallback a consultas individuales.
             asyncio.run(self._check_cerebro_decisions_individual(configuraciones))
     
     async def _check_cerebro_decisions_individual(self, configuraciones):
@@ -358,7 +380,8 @@ class MultibotScheduler:
         """
         try:
             par = config['pair']
-            is_running = config.get('is_running', False)
+            with self.lock:
+                is_running = par in self.active_bots
             cambio_aplicado = False
             
             if decision == "OPERAR_GRID":
@@ -387,19 +410,22 @@ class MultibotScheduler:
             return False
     
     def _restart_bot_if_needed(self, pair: str):
-        """Reinicia un bot si es necesario"""
+        """Reinicia un bot si se detuvo pero debería estar corriendo."""
         try:
-            # Verificar si debe estar ejecutándose según la base de datos
+            logger.info(f"🔄 Verificando si el bot para {pair} debe ser reiniciado...")
             with get_db_session() as db:
-                config = db.query(GridBotConfig).filter(
+                config_db = db.query(GridBotConfig).filter(
                     GridBotConfig.pair == pair,
-                    GridBotConfig.is_active == True
+                    GridBotConfig.is_active
                 ).first()
                 
-                if config and getattr(config, 'last_decision', 'NO_DECISION') == 'OPERAR_GRID':
-                    logger.info(f"🔄 Reiniciando bot para {pair}...")
-                    config_dict = config.to_dict()
+                if config_db and config_db.last_decision == 'OPERAR_GRID': # type: ignore
+                    logger.info(f"✅ Decisión es OPERAR_GRID. Reiniciando bot para {pair}...")
+                    
+                    config_dict = {c.key: getattr(config_db, c.key) for c in config_db.__table__.columns}
                     self.start_bot_for_pair(pair, config_dict)
+                else:
+                    logger.info(f"ℹ️ No es necesario reiniciar el bot para {pair}. Decisión actual: {config_db.last_decision if config_db else 'N/A'}")
                     
         except Exception as e:
             logger.error(f"❌ Error reiniciando bot para {pair}: {e}")
@@ -410,7 +436,7 @@ class MultibotScheduler:
             with get_db_session() as db:
                 config = db.query(GridBotConfig).filter(
                     GridBotConfig.pair == pair,
-                    GridBotConfig.is_active == True
+                    GridBotConfig.is_active
                 ).first()
                 
                 if config:
@@ -432,8 +458,6 @@ class MultibotScheduler:
             total_configuraciones: Total de configuraciones verificadas
         """
         try:
-            from shared.services.telegram_service import send_telegram_message
-            
             # Solo enviar resumen si hay cambios o es la primera verificación
             if cambios_aplicados > 0:
                 message = f"🧠 <b>RESUMEN CEREBRO - DECISIONES APLICADAS</b>\n\n"
@@ -455,34 +479,156 @@ class MultibotScheduler:
         except Exception as e:
             logger.error(f"❌ Error enviando resumen del cerebro: {e}")
     
-    def get_status(self) -> Dict[str, Any]:
-        """Obtiene el estado completo del sistema multibot"""
+    def send_periodic_trade_summary(self):
+        """
+        Envía un resumen periódico de toda la actividad de trading.
+        Se ejecuta cada 30 minutos y consolida todos los movimientos.
+        """
+        summary = trade_aggregator.get_and_clear_summary()
+        if not any(trades['buys'] or trades['sells'] for trades in summary.values()):
+            logger.info("ℹ️ No hay trades en este período para resumir.")
+            return
+
         try:
-            active_bots = []
-            for pair, is_running in self.bot_running.items():
-                if is_running:
-                    thread = self.bot_threads.get(pair)
-                    active_bots.append({
-                        'pair': pair,
-                        'running': True,
-                        'thread_alive': thread.is_alive() if thread else False,
-                        'config': self.bot_configs.get(pair, {})
-                    })
+            message = "🕒 <b>GRID BOT - RESUMEN DE ACTIVIDAD</b> 🕒\n\n"
+            total_realized_pnl = 0.0
+
+            for pair, trades in summary.items():
+                buys = trades.get('buys', [])
+                sells = trades.get('sells', [])
+
+                if not buys and not sells:
+                    continue
+
+                message += f"--- <b>{pair}</b> ---\n"
+                message += f"📈 <b>Trades:</b> {len(buys)} compras, {len(sells)} ventas\n"
+
+                buy_volume = sum(b.get('quantity', 0) * b.get('price', 0) for b in buys)
+                sell_volume = sum(s.get('quantity', 0) * s.get('price', 0) for s in sells)
+
+                message += f"💰 <b>Vol. Comprado:</b> ${buy_volume:.2f}\n"
+                message += f"💰 <b>Vol. Vendido:</b> ${sell_volume:.2f}\n"
+
+                pair_pnl = 0.0
+                sell_details = ""
+                for trade in sells:
+                    buy_price = trade.get('buy_price')
+                    if buy_price:
+                        pnl = (trade.get('price', 0) - buy_price) * trade.get('quantity', 0)
+                        pair_pnl += pnl
+                        sell_details += f"  - Venta de {trade.get('quantity', 0):.4f} a ${trade.get('price', 0):.2f} (Ganancia: ${pnl:.2f})\n"
+                
+                total_realized_pnl += pair_pnl
+                message += f"✅ <b>Ganancia Realizada:</b> ${pair_pnl:.2f}\n"
+                if sell_details:
+                    message += f"   <b>Detalle de Ventas:</b>\n{sell_details}"
+                message += "\n"
+
+            message += "--- <b>RESUMEN GENERAL</b> ---\n"
+            exchange = get_exchange_connection()
+            all_configs = get_all_active_configs()
+            total_initial_capital = sum(c.get('total_capital', 0) for c in all_configs)
+
+            balance = exchange.fetch_balance()
+            usdt_balance = balance.get('USDT', {}).get('free', 0)
             
+            total_value = usdt_balance
+            message += "🏦 <b>Balance de Cuenta:</b>\n"
+            message += f"  • 💵 USDT: ${usdt_balance:.2f}\n"
+
+            icon_map = {'ETH': '💎', 'BTC': '🟠', 'AVAX': '🔴'}
+            for config in all_configs:
+                pair = config['pair']
+                crypto_symbol = pair.split('/')[0]
+                crypto_balance = balance.get(crypto_symbol, {}).get('total', 0)
+                if crypto_balance > 1e-5:
+                    current_price = exchange.fetch_ticker(pair)['last']
+                    crypto_value = crypto_balance * current_price
+                    total_value += crypto_value
+                    icon = icon_map.get(crypto_symbol, '🪙')
+                    message += f"  • {icon} {crypto_symbol}: {crypto_balance:.6f} (${crypto_value:.2f})\n"
+            
+            message += f"  • <b>Total Estimado:</b> ${total_value:.2f}\n\n"
+
+            if total_initial_capital > 0:
+                pnl_vs_initial = total_value - total_initial_capital
+                pnl_percentage = (pnl_vs_initial / total_initial_capital) * 100
+                pnl_icon = "💹" if pnl_vs_initial >= 0 else "🔻"
+                message += f"{pnl_icon} <b>P&L vs Capital Inicial:</b> ${pnl_vs_initial:.2f} ({pnl_percentage:.2f}%)\n"
+                message += f"   <i>(Capital Inicial Total: ${total_initial_capital:.2f})</i>\n\n"
+            
+            message += f"✅ <b>Ganancia Realizada (este período):</b> ${total_realized_pnl:.2f}\n"
+            message += f"\n🕐 <i>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</i>"
+            
+            send_telegram_message(message)
+            logger.info("✅ Resumen periódico de trades enviado correctamente.")
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando resumen periódico de trades: {e}")
+    
+    def _enviar_resumen_cerebro_detallado(
+        self, 
+        bots_iniciados: List[Dict[str, Any]], 
+        bots_pausados: List[Dict[str, Any]], 
+        total_configuraciones: int
+    ):
+        """
+        Envía un resumen detallado de los cambios aplicados por el Cerebro.
+        """
+        try:
+            
+            message = "🧠 <b>RESUMEN PERIÓDICO - CEREBRO</b>\n\n"
+            message += "El sistema ha aplicado automáticamente las siguientes decisiones:\n\n"
+
+            if bots_iniciados:
+                message += "🚀 <b>Bots Iniciados:</b>\n"
+                for bot in bots_iniciados:
+                    message += f"  • <b>{bot['par']}</b>: {html.escape(bot['razon'])}\n"
+                message += "\n"
+
+            if bots_pausados:
+                message += "⏸️ <b>Bots Pausados:</b>\n"
+                for bot in bots_pausados:
+                    message += f"  • <b>{bot['par']}</b>: {html.escape(bot['razon'])}\n"
+                message += "\n"
+            
+            status = self.get_status()
+            message += f"📊 <b>Estado Actual:</b> {status['total_active_bots']} de {total_configuraciones} bots ejecutándose.\n"
+            message += f"⏰ Próximo análisis en ~1 hora."
+            
+            send_telegram_message(message)
+            logger.info("✅ Resumen de decisiones del Cerebro enviado a Telegram")
+            
+        except ImportError:
+            logger.error("❌ No se pudo enviar resumen del cerebro (error de importación)")
+        except Exception as e:
+            logger.error(f"❌ Error enviando resumen del Cerebro: {e}")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Obtiene el estado completo del sistema multibot de forma thread-safe."""
+        with self.lock:
+            active_bots_info = []
+            
+            # Crear una copia para evitar errores de concurrencia al iterar
+            active_bots_copy = list(self.active_bots.items())
+            
+            for pair, data in active_bots_copy:
+                thread = data.get('thread')
+                active_bots_info.append({
+                    'pair': pair,
+                    'running': data.get('status') == 'running',
+                    'thread_alive': thread.is_alive() if thread else False,
+                    'config': data.get('config', {})
+                })
+            
+            # La lista de pares activos que el monitor necesita
+            active_pairs = [pair for pair, data in active_bots_copy if data.get('status') == 'running']
+
             return {
                 'scheduler_running': self.scheduler.running,
-                'active_bots': active_bots,
-                'total_active_bots': len(active_bots),
-                'timestamp': datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo estado multibot: {e}")
-            return {
-                'scheduler_running': False,
-                'active_bots': [],
-                'total_active_bots': 0,
-                'error': str(e),
+                'active_bots': active_bots_info,
+                'total_active_bots': len(active_bots_info),
+                'active_pairs': active_pairs,  # Para que `check_manual_stop_requested` funcione
                 'timestamp': datetime.now().isoformat()
             }
 

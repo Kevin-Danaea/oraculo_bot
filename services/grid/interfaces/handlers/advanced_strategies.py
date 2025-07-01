@@ -9,7 +9,7 @@ from .base_handler import BaseHandler
 class AdvancedStrategiesHandler(BaseHandler):
     """Handler para estrategias avanzadas del Grid Bot V2"""
     
-    def handle_enable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_enable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /enable_stop_loss"""
         try:
             user_config = self.validate_config_exists(bot, chat_id)
@@ -22,14 +22,14 @@ class AdvancedStrategiesHandler(BaseHandler):
                 message += f"📉 Se activará si el precio baja {getattr(user_config, 'stop_loss_percent', 5.0)}% debajo del nivel más bajo\n"
                 message += f"⚠️ El bot se detendrá automáticamente si se activa\n\n"
                 message += f"💡 Usa /set_stop_loss X para cambiar el porcentaje"
-                bot.send_message(chat_id, message)
+                await bot.send_message(chat_id, message)
             else:
-                bot.send_message(chat_id, "❌ Error activando stop-loss")
+                await bot.send_message(chat_id, "❌ Error activando stop-loss")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "habilitando stop-loss", e)
+            await self.send_error_message(bot, chat_id, "habilitando stop-loss", e)
 
-    def handle_disable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_disable_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /disable_stop_loss"""
         try:
             user_config = self.validate_config_exists(bot, chat_id)
@@ -41,14 +41,14 @@ class AdvancedStrategiesHandler(BaseHandler):
                 message = "🚫 <b>STOP-LOSS DESACTIVADO</b>\n\n"
                 message += f"⚠️ <b>ATENCIÓN:</b> El bot NO se protegerá contra caídas bruscas\n"
                 message += f"💡 Usa /enable_stop_loss para reactivar la protección"
-                bot.send_message(chat_id, message)
+                await bot.send_message(chat_id, message)
             else:
-                bot.send_message(chat_id, "❌ Error desactivando stop-loss")
+                await bot.send_message(chat_id, "❌ Error desactivando stop-loss")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "deshabilitando stop-loss", e)
+            await self.send_error_message(bot, chat_id, "deshabilitando stop-loss", e)
 
-    def handle_enable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_enable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /enable_trailing"""
         try:
             user_config = self.validate_config_exists(bot, chat_id)
@@ -61,14 +61,14 @@ class AdvancedStrategiesHandler(BaseHandler):
                 message += f"🚀 El bot seguirá tendencias alcistas automáticamente\n"
                 message += f"🎯 Reposicionará el grid si el precio rompe el límite superior\n\n"
                 message += f"💡 Esto mantiene al bot activo en mercados alcistas"
-                bot.send_message(chat_id, message)
+                await bot.send_message(chat_id, message)
             else:
-                bot.send_message(chat_id, "❌ Error activando trailing up")
+                await bot.send_message(chat_id, "❌ Error activando trailing up")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "habilitando trailing up", e)
+            await self.send_error_message(bot, chat_id, "habilitando trailing up", e)
 
-    def handle_disable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_disable_trailing_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /disable_trailing"""
         try:
             user_config = self.validate_config_exists(bot, chat_id)
@@ -81,14 +81,14 @@ class AdvancedStrategiesHandler(BaseHandler):
                 message += f"📊 El bot mantendrá su grid fijo sin reposicionarse\n"
                 message += f"⚠️ Puede quedarse fuera del mercado en tendencias alcistas\n\n"
                 message += f"💡 Usa /enable_trailing para reactivar"
-                bot.send_message(chat_id, message)
+                await bot.send_message(chat_id, message)
             else:
-                bot.send_message(chat_id, "❌ Error desactivando trailing up")
+                await bot.send_message(chat_id, "❌ Error desactivando trailing up")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "deshabilitando trailing up", e)
+            await self.send_error_message(bot, chat_id, "deshabilitando trailing up", e)
 
-    def handle_set_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_set_stop_loss_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /set_stop_loss X"""
         try:
             user_config = self.validate_config_exists(bot, chat_id)
@@ -98,7 +98,7 @@ class AdvancedStrategiesHandler(BaseHandler):
             # Extraer porcentaje del mensaje
             parts = message_text.strip().split()
             if len(parts) != 2:
-                bot.send_message(
+                await bot.send_message(
                     chat_id, 
                     "❌ Formato incorrecto.\n\n"
                     "✅ Uso correcto: <code>/set_stop_loss 3.5</code>\n"
@@ -109,7 +109,7 @@ class AdvancedStrategiesHandler(BaseHandler):
             try:
                 new_percentage = float(parts[1])
                 if new_percentage < 0.1 or new_percentage > 20:
-                    bot.send_message(
+                    await bot.send_message(
                         chat_id,
                         "❌ El porcentaje debe estar entre 0.1% y 20%\n\n"
                         "💡 Valores recomendados:\n"
@@ -119,7 +119,7 @@ class AdvancedStrategiesHandler(BaseHandler):
                     )
                     return
             except ValueError:
-                bot.send_message(chat_id, "❌ Porcentaje inválido. Usa números como: 3.5")
+                await bot.send_message(chat_id, "❌ Porcentaje inválido. Usa números como: 3.5")
                 return
             
             # Actualizar en base de datos
@@ -133,14 +133,14 @@ class AdvancedStrategiesHandler(BaseHandler):
                 message += f"📉 <b>Nuevo porcentaje:</b> {new_percentage}%\n"
                 message += f"🛡️ <b>Estado:</b> Activado automáticamente\n\n"
                 message += f"💡 El bot se detendrá si el precio baja {new_percentage}% debajo del nivel más bajo"
-                bot.send_message(chat_id, message)
+                await bot.send_message(chat_id, message)
             else:
-                bot.send_message(chat_id, "❌ Error configurando stop-loss")
+                await bot.send_message(chat_id, "❌ Error configurando stop-loss")
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "configurando stop-loss", e)
+            await self.send_error_message(bot, chat_id, "configurando stop-loss", e)
 
-    def handle_protections_command(self, chat_id: str, message_text: str, bot: TelegramBot):
+    async def handle_protections_command(self, chat_id: str, message_text: str, bot: TelegramBot):
         """Maneja el comando /protections"""
         try:
             user_config = self.validate_config_exists(bot, chat_id)
@@ -181,7 +181,7 @@ class AdvancedStrategiesHandler(BaseHandler):
             message += f"Par: {user_config.pair} | Capital: ${user_config.total_capital}\n"
             message += f"Niveles: {user_config.grid_levels} | Rango: ±{user_config.price_range_percent}%"
             
-            bot.send_message(chat_id, message)
+            await bot.send_message(chat_id, message)
             
         except Exception as e:
-            self.send_error_message(bot, chat_id, "mostrando protecciones", e) 
+            await self.send_error_message(bot, chat_id, "mostrando protecciones", e) 

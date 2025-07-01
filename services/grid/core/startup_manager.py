@@ -4,12 +4,19 @@ Maneja la limpieza de órdenes huérfanas y el modo standby al reiniciar el serv
 """
 
 import ccxt
+import glob
+import json
+import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from shared.services.logging_config import get_logger
 from shared.services.telegram_service import send_telegram_message
 from .config_manager import get_exchange_connection, reconnect_exchange
-from .state_manager import load_bot_state, clear_bot_state
+from .state_manager import (
+    clear_all_bot_states, 
+    get_state_file_path, 
+    cancel_all_active_orders
+)
 
 logger = get_logger(__name__)
 
@@ -30,16 +37,19 @@ BOT_ORDER_IDENTIFIERS = [
 ]
 
 
-def cleanup_orphaned_orders() -> Dict[str, Any]:
+def cleanup_orphaned_orders(context: str = "startup") -> Dict[str, Any]:
     """
     Limpia todas las órdenes huérfanas que puedan haber quedado de sesiones anteriores.
-    Se ejecuta automáticamente al reiniciar el servicio.
+    Se ejecuta automáticamente al reiniciar o detener el servicio.
     
     Nuevo comportamiento mejorado:
     1. Primero intenta cancelar órdenes guardadas localmente
     2. Luego consulta TODAS las órdenes abiertas en Binance 
     3. Identifica y cancela órdenes que pertenezcan al bot
     
+    Args:
+        context: Contexto de ejecución ('startup' o 'shutdown')
+
     Returns:
         Diccionario con el resultado de la limpieza
     """
@@ -86,10 +96,12 @@ def cleanup_orphaned_orders() -> Dict[str, Any]:
         # 4. Consolidar resultados
         cleanup_result['orders_found'] = cleanup_result['local_orders_found'] + cleanup_result['binance_orders_found']
         cleanup_result['orders_cancelled'] = cleanup_result['local_orders_cancelled'] + cleanup_result['binance_orders_cancelled']
-        cleanup_result['success'] = True
         
-        # 5. Limpiar estado guardado
-        clear_bot_state()
+        # 5. Limpiar TODOS los estados guardados INCONDICIONALMENTE
+        # Esto es CRÍTICO para asegurar que el bot siempre inicie en un estado limpio,
+        # previniendo que se carguen órdenes de sesiones anteriores.
+        clear_all_bot_states()
+        cleanup_result['success'] = True
         
         logger.info(f"✅ ========== LIMPIEZA COMPLETA FINALIZADA ==========")
         logger.info(f"📊 Total órdenes encontradas: {cleanup_result['orders_found']}")
@@ -98,8 +110,7 @@ def cleanup_orphaned_orders() -> Dict[str, Any]:
         logger.info(f"   - Binance: {cleanup_result['binance_orders_cancelled']}")
         
         # 6. Enviar notificación de limpieza
-        saved_orders, saved_config = load_bot_state()
-        send_cleanup_notification(cleanup_result, saved_config)
+        send_cleanup_notification(cleanup_result, None, context=context)
         
         return cleanup_result
         
@@ -127,39 +138,36 @@ def cleanup_local_saved_orders(exchange) -> Dict[str, Any]:
     }
     
     try:
-        # Cargar estado previo para obtener órdenes activas
-        saved_orders, saved_config = load_bot_state()
+        # Cargar estado previo de TODOS los pares
+        state_files_pattern = get_state_file_path('*')
+        state_files = glob.glob(state_files_pattern)
         
-        if not saved_orders:
+        if not state_files:
             logger.info("ℹ️ No hay órdenes guardadas localmente para limpiar")
             return local_result
-        
-        local_result['orders_found'] = len(saved_orders)
-        logger.info(f"🔍 Encontradas {len(saved_orders)} órdenes guardadas localmente")
-        
-        # Verificar y cancelar órdenes una por una
-        cancelled_count = 0
-        for order_info in saved_orders:
+
+        all_saved_orders = []
+        for state_file in state_files:
             try:
-                # Verificar si la orden aún está activa
-                order_status = exchange.fetch_order(order_info['id'], order_info['pair'])
-                
-                if order_status['status'] in ['open', 'pending']:
-                    # Cancelar orden activa
-                    exchange.cancel_order(order_info['id'], order_info['pair'])
-                    cancelled_count += 1
-                    logger.info(f"🚫 [LOCAL] Orden cancelada: {order_info['type']} {order_info['quantity']:.6f} a ${order_info['price']}")
-                else:
-                    logger.info(f"ℹ️ [LOCAL] Orden ya completada: {order_info['id']}")
-                    
-            except ccxt.OrderNotFound:
-                logger.info(f"ℹ️ [LOCAL] Orden no encontrada (posiblemente ya ejecutada): {order_info['id']}")
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    saved_orders = state.get('active_orders', [])
+                    if saved_orders:
+                        all_saved_orders.extend(saved_orders)
             except Exception as e:
-                error_msg = f"Error procesando orden local {order_info['id']}: {str(e)}"
-                logger.error(f"❌ {error_msg}")
-                local_result['errors'].append(error_msg)
+                logger.error(f"❌ Error leyendo archivo de estado {state_file}: {e}")
         
+        if not all_saved_orders:
+            logger.info("ℹ️ No se encontraron órdenes activas en los archivos de estado locales.")
+            return local_result
+
+        local_result['orders_found'] = len(all_saved_orders)
+        logger.info(f"🔍 Encontradas {len(all_saved_orders)} órdenes guardadas localmente en total")
+        
+        # Usar la función genérica de cancelación que ya tenemos
+        cancelled_count = cancel_all_active_orders(exchange, all_saved_orders)
         local_result['orders_cancelled'] = cancelled_count
+        
         return local_result
         
     except Exception as e:
@@ -340,20 +348,28 @@ def is_grid_like_order(order: Dict[str, Any]) -> bool:
         return False
 
 
-def send_cleanup_notification(cleanup_result: Dict[str, Any], config: Optional[Dict[str, Any]]) -> None:
+def send_cleanup_notification(
+    cleanup_result: Dict[str, Any], 
+    config: Optional[Dict[str, Any]],
+    context: str = "startup"
+) -> None:
     """
     Envía notificación mejorada sobre la limpieza de órdenes al arrancar el servicio.
     
     Args:
         cleanup_result: Resultado de la limpieza
         config: Configuración del bot si estaba disponible
+        context: Contexto para personalizar el mensaje ('startup' o 'shutdown')
     """
     try:
         if not cleanup_result['exchange_connected']:
             # Si no se pudo conectar, no enviar notificación
             return
         
-        message = "🔄 <b>SERVICIO GRID BOT REINICIADO</b>\n\n"
+        if context == 'shutdown':
+            message = "🛑 <b>SERVICIO GRID BOT DETENIDO</b>\n\n"
+        else:
+            message = "🔄 <b>SERVICIO GRID BOT REINICIADO</b>\n\n"
         
         if cleanup_result['success']:
             total_cancelled = cleanup_result['orders_cancelled']
