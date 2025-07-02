@@ -31,14 +31,13 @@ def start_news_service():
         scheduler.start()
         
         logger.info("✅ News Worker iniciado correctamente")
-        logger.info("📰 Recopilador de Reddit: Cada hora")
-        logger.info("🧠 Análisis de sentimientos enriquecido: Cada 4 horas")
+        logger.info("📰🔄 Pipeline unificado de recolección y análisis de sentimiento: Cada hora")
         
         # Enviar notificación de inicio con características específicas
         features = [
-            "📰 Recopilación de Reddit desde 9 subreddits crypto",
+            "📰 Recopilación de Reddit desde múltiples subreddits crypto",
             "🧠 Análisis enriquecido con Google Gemini (score + emoción + categoría)", 
-            "🔄 Ejecución programada automática",
+            "🔄 Pipeline unificado de recolección y análisis cada hora para sentimiento casi en tiempo real",
             "🌐 Health endpoint en puerto 8000"
         ]
         send_service_startup_notification("News Worker", features)
@@ -118,8 +117,9 @@ def health_check():
             "scheduler_running": is_running,
             "active_jobs": jobs_count,
             "features": [
-                "📰 Reddit collection from 9 crypto subreddits every hour",
-                "🧠 Enriched sentiment analysis every 4 hours (score + emotion + category)"
+                "📰 Reddit collection from multiple crypto subreddits",
+                "🧠 Enriched sentiment analysis (score + emotion + category)",
+                "🔄 Unified pipeline for collection and analysis every hour"
             ]
         }
     except Exception as e:

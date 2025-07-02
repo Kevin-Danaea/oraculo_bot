@@ -5,7 +5,6 @@ Maneja la recolección de Reddit y análisis de sentimientos.
 from apscheduler.schedulers.background import BackgroundScheduler
 from shared.services.logging_config import get_logger
 from shared.database.session import SessionLocal
-from shared.database import models
 from services.news.services import reddit_service, sentiment_service
 
 logger = get_logger(__name__)
@@ -13,70 +12,52 @@ logger = get_logger(__name__)
 # Instancia global del scheduler
 _scheduler = None
 
-def run_collection_job():
+def run_news_pipeline_job():
     """
-    Tarea que recolecta noticias desde Reddit. Se ejecuta cada hora.
+    Tarea unificada que primero recolecta noticias y luego las analiza.
+    Se ejecuta cada hora para tener datos de sentimiento casi en tiempo real.
     """
-    logger.info("Iniciando job de recolección de noticias desde Reddit...")
+    logger.info("🚀 Iniciando pipeline de noticias: Recolección y Análisis.")
     db = SessionLocal()
     try:
-        # El servicio de Reddit ahora maneja directamente la BD
+        # Paso 1: Recolectar noticias de Reddit
+        logger.info("Iniciando job de recolección de noticias desde Reddit...")
         reddit_service.fetch_and_store_posts(db)
-    finally:
-        db.close()
-    logger.info("Job de recolección de noticias desde Reddit finalizado.")
+        logger.info("Job de recolección de noticias desde Reddit finalizado.")
 
-def run_sentiment_analysis_job():
-    """
-    Tarea que busca noticias sin análisis de sentimiento, las procesa y actualiza la BD.
-    Se ejecuta cada 4 horas para no saturar la API del LLM.
-    Ahora con análisis enriquecido: sentiment_score, primary_emotion y key_entity.
-    """
-    logger.info("Iniciando job de análisis de sentimiento enriquecido...")
-    db = SessionLocal()
-    try:
-        # Usar la función del servicio que maneja toda la lógica
+        # Paso 2: Analizar sentimientos de las noticias recolectadas
+        logger.info("Iniciando job de análisis de sentimiento enriquecido...")
         result = sentiment_service.analyze_sentiment(db)
-        
         if result["success"]:
             logger.info(f"✅ {result['message']}")
         else:
             logger.error(f"❌ Error en análisis de sentimientos: {result.get('error', 'Error desconocido')}")
-            
+
     except Exception as e:
-        logger.error(f"💥 Error inesperado en job de análisis de sentimiento: {e}")
+        logger.error(f"💥 Error inesperado en el pipeline de noticias: {e}")
     finally:
         db.close()
-    logger.info("Job de análisis de sentimiento finalizado.")
+    logger.info("🏁 Pipeline de noticias finalizado.")
 
 def setup_news_scheduler():
     """
-    Configura y retorna el scheduler de noticias con todas las tareas programadas.
+    Configura y retorna el scheduler de noticias con una tarea unificada.
     """
     global _scheduler
     
     if _scheduler is None:
         _scheduler = BackgroundScheduler()
         
-        # Tarea 1: Recolectar noticias cada hora desde Reddit
+        # Tarea Unificada: Recolectar y analizar noticias cada hora
         _scheduler.add_job(
-            run_collection_job, 
+            run_news_pipeline_job, 
             'interval', 
             hours=1, 
-            id='reddit_collector',
-            name='Reddit News Collection'
+            id='news_pipeline',
+            name='News Collection and Sentiment Analysis'
         )
         
-        # Tarea 2: Analizar sentimiento cada 4 horas
-        _scheduler.add_job(
-            run_sentiment_analysis_job, 
-            'interval', 
-            hours=4, 
-            id='sentiment_analyzer',
-            name='Sentiment Analysis'
-        )
-        
-        logger.info("✅ News scheduler configurado con 2 tareas")
+        logger.info("✅ News scheduler configurado con 1 tarea unificada (recolección + análisis cada hora)")
     
     return _scheduler
 
