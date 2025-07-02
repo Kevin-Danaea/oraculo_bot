@@ -24,7 +24,7 @@ def start_hype_service():
         logger.info("🎯 Iniciando Hype Radar Worker...")
         
         # Inicializar base de datos (crear tablas si no existen)
-        logger.info("🗄️ Inicializando base de datos...")
+        logger.info("🗄️ Inicializando base de datos para Hype Radar...")
         init_database()
         
         # Verificar que la tabla HypeEvent funciona correctamente

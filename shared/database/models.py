@@ -2,7 +2,8 @@
 Modelos de base de datos compartidos entre todos los microservicios.
 Define la estructura de tablas para sentimientos y análisis.
 """
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -239,4 +240,32 @@ class EstrategiaStatus(Base):
             'timestamp': self.timestamp.isoformat() if self.timestamp is not None else None,
             'created_at': self.created_at.isoformat() if self.created_at is not None else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at is not None else None
-        } 
+        }
+
+
+# --- Modelos para Hype Radar (NUEVO) ---
+
+class HypeScan(Base):
+    """
+    Registra una ejecución del escaneo del Hype Radar.
+    """
+    __tablename__ = 'hype_scans'
+    id = Column(Integer, primary_key=True, index=True)
+    scan_timestamp = Column(DateTime(timezone=True), default=datetime.utcnow)
+    subreddits_scanned = Column(Integer)
+    posts_analyzed = Column(Integer)
+    tickers_mentioned = Column(Integer)
+    # Relación uno a muchos con las menciones
+    mentions = relationship("HypeMention", back_populates="scan")
+
+class HypeMention(Base):
+    """
+    Registra las menciones de un ticker específico en un escaneo.
+    """
+    __tablename__ = 'hype_mentions'
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(Integer, ForeignKey('hype_scans.id'))
+    ticker = Column(String, index=True)
+    mention_count = Column(Integer)
+    # Relación muchos a uno con el escaneo
+    scan = relationship("HypeScan", back_populates="mentions") 

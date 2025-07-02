@@ -17,6 +17,8 @@ from shared.config.settings import settings
 from shared.services.logging_config import get_logger
 from shared.database import models
 from shared.database.session import SessionLocal
+from services.hype.core.hype_analytics import analyze_and_alert_by_volume, configure_hype_threshold
+from services.hype.core.notifications import send_hype_alert_notification
 
 logger = get_logger(__name__)
 
@@ -116,13 +118,13 @@ def extract_tickers_from_text(text: str) -> List[str]:
     
     return found_tickers
 
-def scan_subreddit_for_hype(subreddit_name: str, time_window_hours: int = 1) -> Dict[str, Any]:
+def scan_subreddit_for_hype(subreddit_name: str, time_window_hours: int = 24) -> Dict[str, Any]:
     """
     Escanea un subreddit específico buscando menciones de tickers en posts recientes.
     
     Args:
         subreddit_name: Nombre del subreddit a escanear
-        time_window_hours: Ventana de tiempo en horas para considerar posts "recientes"
+        time_window_hours: Ventana de tiempo en horas para considerar posts "recientes" (ampliado a 24h)
         
     Returns:
         Dict con estadísticas de menciones encontradas
@@ -131,21 +133,18 @@ def scan_subreddit_for_hype(subreddit_name: str, time_window_hours: int = 1) -> 
         reddit = get_reddit_instance()
         subreddit = reddit.subreddit(subreddit_name)
         
-        # Calcular tiempo límite
-        time_limit = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
-        
         ticker_mentions = Counter()
         posts_analyzed = 0
         posts_with_mentions = 0
         
         logger.info(f"🔍 Escaneando r/{subreddit_name} (últimas {time_window_hours}h)...")
         
-        # Analizar posts nuevos y calientes
-        for post_source in [subreddit.new(limit=50), subreddit.hot(limit=25)]:
+        # Analizar posts nuevos y calientes (límites aumentados)
+        for post_source in [subreddit.new(limit=100), subreddit.hot(limit=50)]:
             for submission in post_source:
                 # Verificar que el post sea reciente
                 post_time = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
-                if post_time < time_limit:
+                if post_time < datetime.now(timezone.utc) - timedelta(hours=time_window_hours):
                     continue
                 
                 posts_analyzed += 1
@@ -181,12 +180,12 @@ def scan_subreddit_for_hype(subreddit_name: str, time_window_hours: int = 1) -> 
             'scan_timestamp': datetime.now(timezone.utc).isoformat()
         }
 
-def run_full_hype_scan(time_window_hours: int = 1) -> Dict[str, Any]:
+def run_full_hype_scan(time_window_hours: int = 24) -> Dict[str, Any]:
     """
     Ejecuta un escaneo completo de todos los subreddits de hype.
     
     Args:
-        time_window_hours: Ventana de tiempo en horas para el análisis
+        time_window_hours: Ventana de tiempo en horas para el análisis (ampliado a 24h)
         
     Returns:
         Dict con resultados agregados del escaneo
@@ -253,77 +252,77 @@ def run_full_hype_scan(time_window_hours: int = 1) -> Dict[str, Any]:
         return final_result
         
     except Exception as e:
-        logger.error(f"💥 Error en escaneo completo del hype radar: {e}")
-        return {
-            'success': False,
-            'error': str(e),
-            'scan_timestamp': datetime.now(timezone.utc).isoformat()
-        }
+        logger.error(f"💥 Error en el escaneo completo: {e}")
+        return {"success": False, "error": str(e)}
 
-# Función principal para integración con scheduler
 def execute_hype_radar_scan(db: Optional[Session] = None) -> Dict[str, Any]:
     """
-    Función principal para ejecutar el escaneo del hype radar.
-    Esta función será llamada por el scheduler.
-    
-    Args:
-        db: Sesión de base de datos (opcional, para futuras integraciones)
-        
-    Returns:
-        Dict con resultados del escaneo
+    Punto de entrada principal para el job del scheduler.
+    1. Ejecuta el escaneo completo de Reddit.
+    2. Pasa los resultados al Hype Analyzer para detectar alertas.
+    3. Guarda los resultados en la base de datos.
+    4. Envía notificaciones de alerta si es necesario.
     """
-    if db is None:
-        db = SessionLocal()
-        
     try:
-        # Ejecutar escaneo completo
-        result = run_full_hype_scan(time_window_hours=3)
+        # 1. Ejecutar el escaneo (ventana de 24h)
+        scan_result = run_full_hype_scan(time_window_hours=24)
+        if not scan_result.get('success', False):
+            return scan_result
+
+        # 2. Analizar resultados para generar alertas por volumen de menciones
+        ticker_mentions_24h = scan_result.get('all_ticker_mentions', {})
+        alerts_to_send = analyze_and_alert_by_volume(ticker_mentions_24h)
         
-        # Si el escaneo fue exitoso, analizar tendencias y enviar alertas
-        if result.get('success', False):
-            ticker_mentions = result.get('all_ticker_mentions', {})
-            
-            # Analizar tendencias usando el nuevo módulo de analytics
-            from services.hype.core.hype_analytics import analyze_hype_trends
-            from services.hype.core.notifications import send_hype_alert
-            
-            alerts_to_send = analyze_hype_trends(ticker_mentions)
-            
-            # Enviar alertas de hype si las hay
-            alerts_sent = 0
-            for alert_data in alerts_to_send:
-                success = send_hype_alert(
-                    ticker=alert_data['ticker'],
-                    current_mentions=alert_data['current_mentions'],
-                    avg_mentions=alert_data['avg_mentions'],
-                    velocity_percent=alert_data['velocity_percent'],
-                    threshold=alert_data['threshold']
-                )
-                if success:
-                    alerts_sent += 1
-            
-            # Añadir información de alertas al resultado
-            result['alerts_analyzed'] = len(alerts_to_send)
-            result['alerts_sent'] = alerts_sent
-            
-            if alerts_sent > 0:
-                logger.info(f"🚨 {alerts_sent} alertas de hype enviadas exitosamente")
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"💥 Error en execute_hype_radar_scan: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
-    finally:
+        # 3. Guardar en base de datos (si se proporciona una sesión)
         if db:
-            db.close()
+            try:
+                # Crear un único registro de escaneo
+                new_scan = models.HypeScan(
+                    scan_timestamp=datetime.now(timezone.utc),
+                    subreddits_scanned=scan_result.get('subreddits_scanned', 0),
+                    posts_analyzed=scan_result.get('total_posts_analyzed', 0),
+                    tickers_mentioned=scan_result.get('unique_tickers_mentioned', 0)
+                )
+                db.add(new_scan)
+                db.flush() # Para obtener el ID del scan
+
+                # Crear registros de menciones para este escaneo
+                for ticker, count in ticker_mentions_24h.items():
+                    new_mention = models.HypeMention(
+                        scan_id=new_scan.id,
+                        ticker=ticker,
+                        mention_count=count
+                    )
+                    db.add(new_mention)
+                
+                db.commit()
+                logger.info(f"💾 Resultados del escaneo guardados en la BD (Scan ID: {new_scan.id})")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"❌ Error guardando resultados del Hype Radar en BD: {e}")
+
+        # 4. Enviar notificaciones de alerta
+        alerts_sent_count = 0
+        if alerts_to_send:
+            for alert in alerts_to_send:
+                send_hype_alert_notification(
+                    ticker=alert['ticker'],
+                    mentions_24h=alert['total_mentions_24h'],
+                    threshold=alert['threshold']
+                )
+                alerts_sent_count += 1
+        
+        # Devolver resultado final combinado
+        scan_result['alerts_sent'] = alerts_sent_count
+        return scan_result
+
+    except Exception as e:
+        logger.error(f"💥 Error fatal en execute_hype_radar_scan: {e}")
+        return {"success": False, "error": str(e)}
 
 def get_hype_trends_summary(hours: int = 24) -> Dict[str, Any]:
     """
-    Obtiene un resumen de las tendencias de hype detectadas.
+    Obtiene un resumen de tendencias de hype desde la base de datos.
     
     Args:
         hours: Número de horas a incluir en el resumen
@@ -358,28 +357,11 @@ def get_hype_trends_summary(hours: int = 24) -> Dict[str, Any]:
 def configure_hype_alerts(threshold_percent: float = 500.0) -> Dict[str, Any]:
     """
     Configura el umbral de alertas de hype.
-    
-    Args:
-        threshold_percent: Nuevo umbral en porcentaje
-        
-    Returns:
-        Dict con resultado de la configuración
+    NOTA: Ahora configura el umbral de menciones, no el porcentaje.
     """
     try:
-        from services.hype.core.hype_analytics import configure_hype_threshold
-        
-        configure_hype_threshold(threshold_percent)
-        
-        logger.info(f"⚙️ Umbral de hype configurado a {threshold_percent}%")
-        return {
-            'success': True,
-            'new_threshold': threshold_percent,
-            'message': f'Umbral actualizado a {threshold_percent}%'
-        }
-        
+        # La función en analytics espera un entero, hacemos la conversión.
+        configure_hype_threshold(int(threshold_percent))
+        return {"success": True, "message": f"Umbral de hype actualizado a {int(threshold_percent)} menciones."}
     except Exception as e:
-        logger.error(f"❌ Error configurando umbral de hype: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        } 
+        return {"success": False, "error": str(e)} 

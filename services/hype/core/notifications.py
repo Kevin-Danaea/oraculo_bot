@@ -35,7 +35,7 @@ def send_telegram_alert(message: str) -> bool:
 
 def format_hype_alert(ticker: str, current_mentions: int, avg_mentions: float, velocity_percent: float, threshold: float) -> str:
     """
-    Formatea una alerta de hype con información detallada.
+    (LEGACY) Formatea una alerta de hype con información detallada.
     
     Args:
         ticker: Símbolo de la criptomoneda
@@ -97,7 +97,7 @@ def send_hype_alert(
     source_subreddit: Optional[str] = None
 ) -> bool:
     """
-    Genera y envía una alerta de hype completa, guardándola también en la base de datos.
+    (LEGACY) Genera y envía una alerta de hype completa, guardándola también en la base de datos.
     
     Args:
         ticker: Símbolo de la criptomoneda
@@ -301,4 +301,49 @@ def send_system_alert(message: str, alert_type: str = "INFO") -> bool:
         
     except Exception as e:
         logger.error(f"❌ Error enviando alerta del sistema: {e}")
+        return False
+
+def format_volume_hype_alert(ticker: str, mentions_24h: int, threshold: int) -> str:
+    """
+    Formatea una alerta de hype basada en el volumen de menciones en 24h.
+    """
+    try:
+        if mentions_24h >= threshold * 3:
+            alert_level = "🚨 HYPE EXTREMO (VOLUMEN)"
+            emoji = "🚀🚀🚀"
+        elif mentions_24h >= threshold * 2:
+            alert_level = "🚨 HYPE ALTO (VOLUMEN)"
+            emoji = "🔥🔥"
+        else:
+            alert_level = "⚠️ ALERTA DE HYPE (VOLUMEN)"
+            emoji = "🔥"
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        message = f"<b>{alert_level}</b>\n\n"
+        message += f"{emoji} <b>TICKER:</b> ${ticker}\n"
+        message += f"📈 <b>Menciones (24h):</b> {mentions_24h}\n"
+        message += f"📊 <b>Umbral de alerta:</b> {threshold} menciones\n\n"
+        
+        if mentions_24h >= threshold * 2:
+            message += "🎯 <b>TENDENCIA SOSTENIDA DETECTADA</b>\n"
+            message += "💡 Actividad de menciones muy por encima de lo normal.\n\n"
+        
+        message += f"⏰ <i>{timestamp}</i>\n"
+        message += f"🤖 <i>Hype Radar Alert System (Volume)</i>"
+        
+        return message
+    except Exception as e:
+        logger.error(f"❌ Error formateando alerta de hype por volumen: {e}")
+        return f"🚨 ALERTA DE HYPE (VOLUMEN): ${ticker} ({mentions_24h} menciones)"
+
+def send_hype_alert_notification(ticker: str, mentions_24h: int, threshold: int) -> bool:
+    """
+    Genera y envía una alerta de hype basada en el volumen de menciones.
+    """
+    try:
+        formatted_message = format_volume_hype_alert(ticker, mentions_24h, threshold)
+        return send_telegram_alert(formatted_message)
+    except Exception as e:
+        logger.error(f"❌ Error en send_volume_hype_alert para ${ticker}: {e}")
         return False 
