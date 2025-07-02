@@ -28,7 +28,7 @@ class HypeTrendAnalyzer:
     
     def __init__(self):
         """Inicializa el analizador con estructuras de datos para cooldown y resúmenes."""
-        self.last_alert_timestamp = defaultdict(lambda: None)  # Cooldown para evitar spam
+        self.last_alert_timestamp = {}  # Cooldown para evitar spam
         self.total_alerts_sent = 0
         self.last_scan_mentions = {}  # Almacena el resultado del último escaneo
         self.lock = threading.Lock()  # Para thread safety
