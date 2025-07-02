@@ -54,13 +54,13 @@ def start_hype_service():
         
         # Enviar notificación de inicio con características específicas
         features = [
-            "🎯 Detección de tendencias de memecoins/altcoins",
-            "📡 Monitoreo de 9 subreddits de alto riesgo",
-            "🔍 Análisis de ~45+ tickers populares",
-            "⏰ Escaneos cada 5 minutos con ventana de 3h ⚡",
-            "🌐 Health endpoint en puerto 8000"
+            "🎯 Detección de Hype en subreddits de alto riesgo",
+            "⚡️ Alertas en tiempo real cada 5 minutos (sin escritura en BD)",
+            "💾 Registro histórico de tendencias cada 24 horas (con escritura en BD)",
+            "📊 Resumen diario de tickers más mencionados",
+            "🌐 Health endpoint en puerto 8002"
         ]
-        send_service_startup_notification("Hype Radar Worker", features)
+        send_service_startup_notification("Hype Radar", features)
         
         return scheduler
         
@@ -124,7 +124,7 @@ def read_root():
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    """Health check específico para el hype radar worker."""
+    """Health check específico para el hype worker."""
     try:
         scheduler = get_hype_scheduler()
         is_running = scheduler.running if scheduler else False
@@ -132,18 +132,14 @@ def health_check():
         jobs_count = len(scheduler.get_jobs()) if scheduler and is_running else 0
         
         return {
-            "worker": "hype_radar",
+            "worker": "hype",
             "status": "healthy" if is_running else "stopped",
             "scheduler_running": is_running,
             "active_jobs": jobs_count,
-            "monitoring_features": [
-                "🎯 9 subreddits de alto riesgo",
-                "🔍 ~45+ tickers populares",
-                "⏰ Escaneos cada 5 minutos ⚡"
-            ],
-            "subreddits_monitored": [
-                "SatoshiStreetBets", "CryptoMoonShots", "CryptoCurrencyTrading",
-                "altcoin", "CryptoHorde", "CryptoBets", "CryptoPumping"
+            "features": [
+                "⚡️ Real-time alerting job (every 5 mins, no DB write)",
+                "💾 Historical logging job (every 24 hours, with DB write)",
+                "📊 Daily summary job (at 23:00 UTC-6)"
             ]
         }
     except Exception as e:
