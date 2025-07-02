@@ -14,7 +14,7 @@ import html
 
 from shared.services.logging_config import get_logger
 from shared.database.session import get_db_session
-from shared.database.models import GridBotConfig
+from shared.database.models import GridBotConfig, EstrategiaStatus
 from services.grid.core.trading_engine import run_grid_trading_bot
 from services.grid.core.cerebro_integration import cerebro_client
 from services.grid.data.config_repository import get_all_active_configs
@@ -419,6 +419,16 @@ class MultibotScheduler:
                     GridBotConfig.is_active
                 ).first()
                 
+                # Verificar que existe una estrategia GRID para este par
+                estrategia_status = db.query(EstrategiaStatus).filter(
+                    EstrategiaStatus.par == pair,
+                    EstrategiaStatus.estrategia == "GRID"
+                ).order_by(EstrategiaStatus.timestamp.desc()).first()
+                
+                if not estrategia_status:
+                    logger.warning(f"⚠️ No se encontró estrategia GRID para {pair} en estrategia_status")
+                    return False
+                
                 if config_db and config_db.last_decision == 'OPERAR_GRID': # type: ignore
                     logger.info(f"✅ Decisión es OPERAR_GRID. Reiniciando bot para {pair}...")
                     
@@ -434,6 +444,16 @@ class MultibotScheduler:
         """Actualiza el estado del bot en la base de datos"""
         try:
             with get_db_session() as db:
+                # Verificar que existe una estrategia GRID para este par
+                estrategia_status = db.query(EstrategiaStatus).filter(
+                    EstrategiaStatus.par == pair,
+                    EstrategiaStatus.estrategia == "GRID"
+                ).order_by(EstrategiaStatus.timestamp.desc()).first()
+                
+                if not estrategia_status:
+                    logger.warning(f"⚠️ No se encontró estrategia GRID para {pair} en estrategia_status")
+                    return
+                
                 config = db.query(GridBotConfig).filter(
                     GridBotConfig.pair == pair,
                     GridBotConfig.is_active

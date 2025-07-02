@@ -5,7 +5,7 @@ Configuration Repository
 Handles database operations related to Grid Bot configurations.
 """
 from shared.database.session import get_db_session
-from shared.database.models import GridBotConfig
+from shared.database.models import GridBotConfig, EstrategiaStatus
 from shared.services.logging_config import get_logger
 from datetime import datetime
 from typing import List, Dict, Any
@@ -16,12 +16,14 @@ logger = get_logger(__name__)
 def get_all_active_configs_for_user(chat_id: str) -> List[Dict[str, Any]]:
     """
     Gets all active and configured grid bot configurations for a specific user.
+    Only returns configurations that have a corresponding GRID strategy in estrategia_status.
     """
     return _get_configs(chat_id=chat_id, only_active=True)
 
 def get_all_active_configs() -> List[Dict[str, Any]]:
     """
     Gets all active and configured grid bot configurations in the system.
+    Only returns configurations that have a corresponding GRID strategy in estrategia_status.
     """
     return _get_configs(chat_id="all", only_active=True)
 
@@ -29,6 +31,7 @@ def get_all_active_configs() -> List[Dict[str, Any]]:
 def _get_configs(chat_id: str, only_active: bool) -> List[Dict[str, Any]]:
     """
     Internal function to fetch configurations from the database.
+    Only returns configurations that have a corresponding GRID strategy in estrategia_status.
     
     Args:
         chat_id: The user's chat_id, or "all" for all users.
@@ -53,21 +56,31 @@ def _get_configs(chat_id: str, only_active: bool) -> List[Dict[str, Any]]:
                 logger.warning(f"⚠️ No se encontraron configuraciones para los criterios: chat_id={chat_id}, active={only_active}")
                 return []
 
-            logger.info(f"✅ Encontradas {len(configs)} configuraciones para chat_id: {chat_id}")
-
-            configuraciones = []
+            # Filtrar solo configuraciones que tienen estrategia GRID
+            configuraciones_filtradas = []
             for config in configs:
-                configuraciones.append({
-                    'pair': config.pair,
-                    'config_type': config.config_type,
-                    'total_capital': config.total_capital,
-                    'grid_levels': config.grid_levels,
-                    'price_range_percent': config.price_range_percent,
-                    'last_decision': getattr(config, 'last_decision', 'NO_DECISION'),
-                    'is_running': getattr(config, 'is_running', False),
-                    'telegram_chat_id': config.telegram_chat_id
-                })
-            return configuraciones
+                # Verificar que existe una estrategia GRID para este par
+                estrategia_status = db.query(EstrategiaStatus).filter(
+                    EstrategiaStatus.par == config.pair,
+                    EstrategiaStatus.estrategia == "GRID"
+                ).order_by(EstrategiaStatus.timestamp.desc()).first()
+                
+                if estrategia_status:
+                    configuraciones_filtradas.append({
+                        'pair': config.pair,
+                        'config_type': config.config_type,
+                        'total_capital': config.total_capital,
+                        'grid_levels': config.grid_levels,
+                        'price_range_percent': config.price_range_percent,
+                        'last_decision': getattr(config, 'last_decision', 'NO_DECISION'),
+                        'is_running': getattr(config, 'is_running', False),
+                        'telegram_chat_id': config.telegram_chat_id
+                    })
+                else:
+                    logger.info(f"ℹ️ Configuración {config.pair} ignorada - no tiene estrategia GRID en estrategia_status")
+
+            logger.info(f"✅ Encontradas {len(configuraciones_filtradas)} configuraciones GRID para chat_id: {chat_id}")
+            return configuraciones_filtradas
             
     except Exception as e:
         logger.error(f"❌ Error obteniendo configuraciones de BD: {e}")

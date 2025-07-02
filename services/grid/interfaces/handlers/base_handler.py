@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, cast
 from datetime import datetime
 
 from shared.database.session import get_db_session
-from shared.database.models import GridBotConfig
+from shared.database.models import GridBotConfig, EstrategiaStatus
 from shared.services.logging_config import get_logger
 from shared.services.telegram_bot_service import TelegramBot
 from services.grid.core.trading_mode_manager import trading_mode_manager
@@ -25,39 +25,77 @@ class BaseHandler:
         pass
     
     def get_user_config(self, chat_id: str) -> Optional[GridBotConfig]:
-        """Obtiene la configuración activa del usuario"""
+        """Obtiene la configuración activa del usuario que tenga estrategia GRID"""
         try:
             with get_db_session() as db:
                 config = db.query(GridBotConfig).filter(
                     GridBotConfig.telegram_chat_id == chat_id,
                     GridBotConfig.is_active == True
                 ).first()
+                
+                if config:
+                    # Verificar que existe una estrategia GRID para este par
+                    estrategia_status = db.query(EstrategiaStatus).filter(
+                        EstrategiaStatus.par == config.pair,
+                        EstrategiaStatus.estrategia == "GRID"
+                    ).order_by(EstrategiaStatus.timestamp.desc()).first()
+                    
+                    if not estrategia_status:
+                        logger.warning(f"⚠️ Configuración {config.pair} ignorada - no tiene estrategia GRID")
+                        return None
+                
                 return config
         except Exception as e:
             logger.error(f"❌ Error obteniendo configuración del usuario: {e}")
             return None
     
     def get_user_config_by_type(self, chat_id: str, config_type: str) -> Optional[GridBotConfig]:
-        """Obtiene la configuración específica de un tipo (ETH, BTC, AVAX)"""
+        """Obtiene la configuración específica de un tipo (ETH, BTC, AVAX) que tenga estrategia GRID"""
         try:
             with get_db_session() as db:
                 config = db.query(GridBotConfig).filter(
                     GridBotConfig.telegram_chat_id == chat_id,
                     GridBotConfig.config_type == config_type
                 ).first()
+                
+                if config:
+                    # Verificar que existe una estrategia GRID para este par
+                    estrategia_status = db.query(EstrategiaStatus).filter(
+                        EstrategiaStatus.par == config.pair,
+                        EstrategiaStatus.estrategia == "GRID"
+                    ).order_by(EstrategiaStatus.timestamp.desc()).first()
+                    
+                    if not estrategia_status:
+                        logger.warning(f"⚠️ Configuración {config.pair} ignorada - no tiene estrategia GRID")
+                        return None
+                
                 return config
         except Exception as e:
             logger.error(f"❌ Error obteniendo configuración {config_type} del usuario: {e}")
             return None
     
     def get_all_user_configs(self, chat_id: str) -> list:
-        """Obtiene todas las configuraciones del usuario (ETH, BTC, AVAX)"""
+        """Obtiene todas las configuraciones del usuario (ETH, BTC, AVAX) que tengan estrategia GRID"""
         try:
             with get_db_session() as db:
                 configs = db.query(GridBotConfig).filter(
                     GridBotConfig.telegram_chat_id == chat_id
                 ).all()
-                return configs
+                
+                # Filtrar solo configuraciones que tienen estrategia GRID
+                configuraciones_filtradas = []
+                for config in configs:
+                    estrategia_status = db.query(EstrategiaStatus).filter(
+                        EstrategiaStatus.par == config.pair,
+                        EstrategiaStatus.estrategia == "GRID"
+                    ).order_by(EstrategiaStatus.timestamp.desc()).first()
+                    
+                    if estrategia_status:
+                        configuraciones_filtradas.append(config)
+                    else:
+                        logger.info(f"ℹ️ Configuración {config.pair} ignorada - no tiene estrategia GRID")
+                
+                return configuraciones_filtradas
         except Exception as e:
             logger.error(f"❌ Error obteniendo todas las configuraciones del usuario: {e}")
             return []
