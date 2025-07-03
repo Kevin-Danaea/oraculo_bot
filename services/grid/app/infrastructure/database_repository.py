@@ -1,7 +1,7 @@
 """
 Repositorio de base de datos para el servicio Grid.
 """
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -21,9 +21,41 @@ class DatabaseGridRepository(GridRepository):
         logger.info("✅ DatabaseGridRepository inicializado.")
 
     def get_active_configs(self) -> List[GridConfig]:
-        """Obtiene todas las configuraciones activas de grid trading."""
+        """
+        Obtiene configuraciones que están actualmente ejecutándose (is_running=True).
+        CONFIA en el caso de uso de transiciones para gestionar is_running correctamente.
+        """
         try:
-            # Consultar configuraciones activas que tienen estrategia GRID en estrategia_status
+            configs = self.db.query(GridBotConfig).filter(
+                and_(
+                    GridBotConfig.is_active == True,
+                    GridBotConfig.is_configured == True,
+                    GridBotConfig.is_running == True  # El caso de uso ya gestionó las transiciones
+                )
+            ).all()
+            
+            active_configs = []
+            for config in configs:
+                # SOLO convertir a entidad, sin validar decisiones
+                # El is_running=True ya garantiza que debe monitorearse
+                active_configs.append(self._map_config_to_entity(config))
+            
+            logger.info(f"📊 Encontradas {len(active_configs)} configuraciones ejecutándose")
+            return active_configs
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo configuraciones activas: {e}")
+            return []
+
+    def get_configs_with_decisions(self) -> List[Tuple[GridConfig, str, str]]:
+        """
+        Obtiene TODAS las configuraciones con sus decisiones actuales y estado anterior.
+        SOLO consulta datos, sin evaluar lógica de decisiones.
+        
+        Returns:
+            List[Tuple[GridConfig, current_decision, previous_state]]
+        """
+        try:
             configs = self.db.query(GridBotConfig).filter(
                 and_(
                     GridBotConfig.is_active == True,
@@ -31,9 +63,9 @@ class DatabaseGridRepository(GridRepository):
                 )
             ).all()
             
-            # Filtrar solo aquellas que tienen una estrategia GRID activa
-            active_configs = []
+            configs_with_decisions = []
             for config in configs:
+                # Obtener decisión actual del Cerebro (SOLO consulta, sin lógica)
                 estrategia = self.db.query(EstrategiaStatus).filter(
                     and_(
                         EstrategiaStatus.par == config.pair,
@@ -42,17 +74,28 @@ class DatabaseGridRepository(GridRepository):
                 ).order_by(EstrategiaStatus.timestamp.desc()).first()
                 
                 if estrategia:
-                    active_configs.append(self._map_config_to_entity(config))
+                    current_decision = estrategia.decision
+                    previous_state = getattr(config, 'last_decision', 'NO_DECISION')
+                    
+                    grid_config = self._map_config_to_entity(config)
+                    configs_with_decisions.append((grid_config, current_decision, previous_state))
+                else:
+                    # Si no hay estrategia, incluir con decisión vacía
+                    current_decision = "NO_STRATEGY"
+                    previous_state = getattr(config, 'last_decision', 'NO_DECISION')
+                    
+                    grid_config = self._map_config_to_entity(config)
+                    configs_with_decisions.append((grid_config, current_decision, previous_state))
             
-            logger.info(f"📊 Encontradas {len(active_configs)} configuraciones activas")
-            return active_configs
+            logger.info(f"📋 Consultadas {len(configs_with_decisions)} configuraciones con decisiones")
+            return configs_with_decisions
             
         except Exception as e:
-            logger.error(f"❌ Error obteniendo configuraciones activas: {e}")
+            logger.error(f"❌ Error obteniendo configuraciones con decisiones: {e}")
             return []
 
     def get_config_by_pair(self, pair: str) -> Optional[GridConfig]:
-        """Obtiene la configuración para un par específico."""
+        """Obtiene la configuración para un par específico. SOLO consulta datos."""
         try:
             config = self.db.query(GridBotConfig).filter(
                 and_(
@@ -63,16 +106,9 @@ class DatabaseGridRepository(GridRepository):
             ).first()
             
             if config:
-                # Verificar que existe estrategia GRID
-                estrategia = self.db.query(EstrategiaStatus).filter(
-                    and_(
-                        EstrategiaStatus.par == pair,
-                        EstrategiaStatus.estrategia == "GRID"
-                    )
-                ).order_by(EstrategiaStatus.timestamp.desc()).first()
-                
-                if estrategia:
-                    return self._map_config_to_entity(config)
+                # SOLO retornar la configuración sin validar estrategias
+                # Las validaciones de decisiones son responsabilidad de los casos de uso
+                return self._map_config_to_entity(config)
             
             return None
             
@@ -153,6 +189,26 @@ class DatabaseGridRepository(GridRepository):
             
         except Exception as e:
             logger.error(f"❌ Error actualizando estado de orden {order_id}: {e}")
+
+    def cancel_all_orders_for_pair(self, pair: str) -> int:
+        """
+        Marca como canceladas todas las órdenes activas de un par en BD.
+        Retorna el número de órdenes canceladas.
+        """
+        try:
+            # Por ahora solo loggeamos ya que no tenemos tabla de órdenes implementada
+            # En una implementación completa, aquí marcaríamos órdenes como 'cancelled'
+            logger.info(f"🚫 Cancelando todas las órdenes de {pair} en BD")
+            
+            # Simulamos que se cancelaron algunas órdenes
+            cancelled_count = 0  # En implementación real: UPDATE orders SET status='cancelled' WHERE pair=pair AND status='open'
+            
+            logger.info(f"✅ {cancelled_count} órdenes canceladas en BD para {pair}")
+            return cancelled_count
+            
+        except Exception as e:
+            logger.error(f"❌ Error cancelando órdenes en BD para {pair}: {e}")
+            return 0
 
     def _map_config_to_entity(self, config: GridBotConfig) -> GridConfig:
         """Convierte un modelo de BD a entidad de dominio."""

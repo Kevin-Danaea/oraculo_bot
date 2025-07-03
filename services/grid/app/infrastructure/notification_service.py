@@ -76,36 +76,69 @@ class TelegramGridNotificationService(NotificationService):
     def send_bot_status_notification(self, pair: str, status: str, reason: str) -> None:
         """Envía notificación de cambio de estado del bot."""
         try:
-            status_emoji = "🟢" if status == "started" else "🔴"
-            status_text = "INICIADO" if status == "started" else "DETENIDO"
-            
-            message = (
-                f"{status_emoji} <b>BOT GRID {status_text}</b>\n\n"
-                f"💱 <b>Par:</b> {pair}\n"
-                f"📋 <b>Estado:</b> {status_text}\n"
-                f"💭 <b>Razón:</b> {reason}\n\n"
-                f"⏰ <i>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</i>"
-            )
-            
+            message = f"""
+🤖 CAMBIO DE ESTADO DEL BOT
+
+📊 Par: {pair}
+🔄 Estado: {status}
+💭 Razón: {reason}
+⏰ Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
             self.telegram_service.send_message(message)
-            logger.info(f"✅ Notificación de estado enviada: {pair} -> {status}")
             
         except Exception as e:
             logger.error(f"❌ Error enviando notificación de estado: {e}")
 
-    def send_grid_summary(self, active_bots: int, total_trades: int, total_profit: float) -> None:
-        """Envía resumen del estado general de los bots."""
+    def send_grid_activation_notification(self, pair: str) -> None:
+        """Envía notificación de activación de bot de grid."""
         try:
-            message = (
-                f"📊 <b>RESUMEN GRID TRADING</b>\n\n"
-                f"🤖 <b>Bots activos:</b> {active_bots}\n"
-                f"💼 <b>Trades totales:</b> {total_trades}\n"
-                f"💰 <b>Ganancia total:</b> ${total_profit:.2f} USDT\n\n"
-                f"⏰ <i>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</i>"
-            )
-            
+            message = f"""
+🚀 BOT DE GRID ACTIVADO
+
+📊 Par: {pair}
+✅ Estado: ACTIVO
+🏗️ Grilla inicial en creación
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+El bot comenzará a operar según las decisiones del Cerebro.
+"""
             self.telegram_service.send_message(message)
-            logger.info(f"✅ Resumen de grid enviado: {active_bots} bots, ${total_profit:.2f}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando notificación de activación: {e}")
+
+    def send_grid_pause_notification(self, pair: str, cancelled_orders: int) -> None:
+        """Envía notificación de pausa de bot de grid."""
+        try:
+            message = f"""
+⏸️ BOT DE GRID PAUSADO
+
+📊 Par: {pair}
+🛑 Estado: PAUSADO
+🚫 Órdenes canceladas: {cancelled_orders}
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+El bot se ha pausado según decisión del Cerebro.
+"""
+            self.telegram_service.send_message(message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando notificación de pausa: {e}")
+
+    def send_grid_summary(self, active_bots: int, total_trades: int, total_profit: float) -> None:
+        """Envía resumen de actividad de grid trading."""
+        try:
+            message = f"""
+📊 RESUMEN DE GRID TRADING
+
+🤖 Bots activos: {active_bots}
+🔄 Trades ejecutados: {total_trades}
+💰 Ganancia total: ${total_profit:.4f} USDT
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Resumen del ciclo de monitoreo completado.
+"""
+            self.telegram_service.send_message(message)
             
         except Exception as e:
             logger.error(f"❌ Error enviando resumen de grid: {e}") 
