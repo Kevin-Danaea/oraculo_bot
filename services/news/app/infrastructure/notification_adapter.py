@@ -5,7 +5,7 @@ Implementación concreta de la interfaz NotificationService.
 from typing import List
 
 from app.domain.interfaces import NotificationService
-from shared.services.telegram_service import send_service_startup_notification, send_telegram_message
+from shared.services import telegram_service
 from shared.services.logging_config import get_logger
 
 
@@ -26,7 +26,19 @@ class TelegramNotificationService(NotificationService):
             features: Lista de características del servicio
         """
         try:
-            send_service_startup_notification(service_name, features)
+            # Formatear mensaje de inicio
+            features_text = "\n".join([f"   • {feature}" for feature in features])
+            message = f"""
+🚀 <b>{service_name}</b> iniciado correctamente
+
+<b>📅 Estado:</b> ✅ Operativo
+<b>🎯 Características:</b>
+{features_text}
+
+El servicio está listo para procesar solicitudes.
+            """.strip()
+            
+            telegram_service.send_message(message)
             logger.info(f"✅ Notificación de inicio enviada para {service_name}")
         except Exception as e:
             logger.error(f"Error enviando notificación de inicio: {e}")
@@ -41,8 +53,8 @@ class TelegramNotificationService(NotificationService):
             error: Descripción del error
         """
         try:
-            message = f"❌ ERROR en {service_name}:\n{error}"
-            send_telegram_message(message)
+            message = f"❌ <b>ERROR en {service_name}:</b>\n{error}"
+            telegram_service.send_message(message)
             logger.info(f"✅ Notificación de error enviada para {service_name}")
         except Exception as e:
             logger.error(f"Error enviando notificación de error: {e}") 
