@@ -23,5 +23,5 @@ alwaysApply: true
 - Todos deben importar la carpeta shared si necesitan un servicio o modelo de base de datos especifico, sino, no es necesario.
 - Todos los archivos deben mantener la misma funcionalidad a menos que se indique lo contrario.
 - Siempre debe ser lo mas alineado a la arquitectura SOLID y arquitecturuas limpias.
-- Todos los archivos y funcionalidades a migrar estan en /services-to-migrate
-
+- Todos los archivos y funcionalidades a migrar estan en /services-to-migrate.
+- Ignorar todos los diff que salgan al revisar archivos.
