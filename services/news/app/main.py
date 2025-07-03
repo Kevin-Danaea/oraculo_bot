@@ -198,3 +198,4 @@ def health_check() -> Dict[str, Any]:
             "status": "error",
             "error": str(e)
         }
+ 
