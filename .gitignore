@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 /scripts
+/services-to-migrate
 
 # C extensions
 *.so

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  news:
+    build:
+      context: .
+      dockerfile: services/news/Dockerfile
+    container_name: oraculo-news
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    volumes:
+      - ./logs:/app/logs  # Para persistir logs si es necesario
+    restart: unless-stopped
+    networks:
+      - oraculo-network
+
+networks:
+  oraculo-network:
+    driver: bridge 

@@ -1,0 +1,1 @@
+# Infrastructure layer - External services, adapters, and implementations 
