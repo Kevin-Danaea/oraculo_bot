@@ -105,6 +105,26 @@ class ExchangeService(ABC):
         """Obtiene el modo de trading actual."""
         pass
 
+    @abstractmethod
+    def switch_to_sandbox(self) -> None:
+        """Cambia el exchange a modo sandbox."""
+        pass
+
+    @abstractmethod
+    def switch_to_production(self) -> None:
+        """Cambia el exchange a modo producción."""
+        pass
+
+    @abstractmethod
+    def cancel_all_orders(self) -> int:
+        """Cancela todas las órdenes abiertas en el exchange. Retorna el número de órdenes canceladas."""
+        pass
+
+    @abstractmethod
+    def sell_all_positions(self) -> Dict[str, Decimal]:
+        """Vende todas las posiciones abiertas en el exchange. Retorna un diccionario con los montos vendidos por moneda."""
+        pass
+
 class NotificationService(ABC):
     """Interfaz para servicios de notificación."""
 

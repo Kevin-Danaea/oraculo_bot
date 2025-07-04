@@ -3,29 +3,5 @@ description:
 globs: 
 alwaysApply: false
 ---
-- El refactor tiene que tener la misma arquitectura de los demas refactors.
-    """
-    /services/news/
-    |-- Dockerfile
-    |-- requirements.txt
-    |-- app/
-    |   |-- __init__.py
-    |   |-- domain/
-    |   |   |-- __init__.py
-    |   |-- application/
-    |   |   |-- __init__.py
-    |   |-- infrastructure/
-    |   |   |-- __init__.py
-    |   |-- main.py
-    """
-- GRID debera dejar de consultar al cerebro en su primer peticion, de momento debera consultar en su primer encendido la base de datos para ver que orden esta guardada ahi de la tabla grid_bot_config.
-- GRID debera ser solamente un trabajador que monitorea cada hora el tablero (la base de datos) para ver si hay nuevas ordenes.
-- La logica de ejecutar ordenes de compra y venta, asi como las notificaciones debera ser el mismo funcionamiento.
-- Deberemos simplificar x1000 como trabaja GRID para que solo sea un trabajador.
-- GRID actualmente debera soportar 3 monedas pero estar preparado por si en base de datos encuentra otra moneda poder operar facilmente con ella.
-- Hay una config que dice que el minimo de compra es de 0.001, el minimo de compra siempre seran 10 USDT sin importar el par, es decir 10 USDT convertido a BTC, ETH, AVA, etc. 
-- La demas funcionalidad que solo sea operar debera de persistir.
-- No debera tener ya endpoints solamente el de health.
-- El monitoreo a la base de datos sera cada hora.
-- Todo lo demas debera funcionar pero sin tanta complejidad siguiendo este path de que solo sigue ordenes.
 
+- 

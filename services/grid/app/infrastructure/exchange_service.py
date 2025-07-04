@@ -19,29 +19,30 @@ class BinanceExchangeService(ExchangeService):
 
     def __init__(self):
         """Inicializa la conexión con Binance."""
+        # Modo actual: 'sandbox' o 'production'
+        self.mode = getattr(settings, 'TRADING_MODE', 'sandbox')
         self.exchange = None
         self._initialize_exchange()
-        logger.info("✅ BinanceExchangeService inicializado.")
+        logger.info(f"✅ BinanceExchangeService inicializado en modo {self.mode.upper()}.")
 
     def _initialize_exchange(self):
-        """Inicializa la conexión con el exchange."""
+        """Inicializa la conexión con el exchange según self.mode."""
         try:
-            # Determinar si usar sandbox o producción
-            sandbox = getattr(settings, 'TRADING_MODE', 'sandbox') == 'sandbox'
-            
+            sandbox = self.mode == 'sandbox'
+            # Seleccionar credenciales según modo
+            api_key = settings.PAPER_TRADING_API_KEY if sandbox else settings.BINANCE_API_KEY
+            secret = settings.PAPER_TRADING_SECRET_KEY if sandbox else settings.BINANCE_API_SECRET
             self.exchange = ccxt.binance({
-                'apiKey': getattr(settings, 'BINANCE_API_KEY', ''),
-                'secret': getattr(settings, 'BINANCE_SECRET_KEY', ''),
+                'apiKey': api_key,
+                'secret': secret,
                 'sandbox': sandbox,
                 'enableRateLimit': True,
                 'options': {
-                    'defaultType': 'spot'  # Spot trading
+                    'defaultType': 'spot'
                 }
             })
-            
-            mode = "SANDBOX" if sandbox else "PRODUCCIÓN"
-            logger.info(f"🔗 Conectado a Binance en modo {mode}")
-            
+            mode_str = "SANDBOX" if sandbox else "PRODUCCIÓN"
+            logger.info(f"🔗 Conectado a Binance en modo {mode_str} con {'PAPER' if sandbox else 'PRODUCTION'} keys")
         except Exception as e:
             logger.error(f"❌ Error inicializando exchange: {e}")
             self.exchange = None
@@ -179,20 +180,20 @@ class BinanceExchangeService(ExchangeService):
             return Decimal(MIN_ORDER_VALUE_USDT)
 
     def switch_to_sandbox(self):
-        """Cambia el exchange a modo sandbox."""
+        """Cambia el exchange a modo sandbox y actualiza credenciales."""
         try:
-            if self.exchange:
-                self.exchange.sandbox = True  # type: ignore
-                logger.info("🧪 Cambiado a modo SANDBOX")
+            self.mode = 'sandbox'
+            self._initialize_exchange()
+            logger.info("🧪 Cambiado a modo SANDBOX y actualizadas credenciales Paper Trading")
         except Exception as e:
             logger.error(f"❌ Error cambiando a sandbox: {e}")
 
     def switch_to_production(self):
-        """Cambia el exchange a modo producción."""
+        """Cambia el exchange a modo producción y actualiza credenciales."""
         try:
-            if self.exchange:
-                self.exchange.sandbox = False  # type: ignore
-                logger.info("🚀 Cambiado a modo PRODUCCIÓN")
+            self.mode = 'production'
+            self._initialize_exchange()
+            logger.info("🚀 Cambiado a modo PRODUCCIÓN y actualizadas credenciales de producción")
         except Exception as e:
             logger.error(f"❌ Error cambiando a producción: {e}")
 
@@ -200,4 +201,48 @@ class BinanceExchangeService(ExchangeService):
         """Obtiene el modo de trading actual."""
         if not self.exchange:
             return "disconnected"
-        return "sandbox" if getattr(self.exchange, 'sandbox', False) else "production" 
+        return "sandbox" if getattr(self.exchange, 'sandbox', False) else "production"
+
+    def cancel_all_orders(self) -> int:
+        """Cancela todas las órdenes abiertas en el exchange. Retorna el número de órdenes canceladas."""
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            open_orders = self.exchange.fetch_open_orders()
+            count = 0
+            for order in open_orders:
+                # Convertir id y symbol a str estándar
+                order_id = str(order['id'])
+                pair = str(order['symbol'])
+                self.exchange.cancel_order(order_id, pair)
+                count += 1
+            logger.info(f"✅ Canceladas {count} órdenes abiertas")
+            return count
+        except Exception as e:
+            logger.error(f"❌ Error cancelando todas las órdenes: {e}")
+            return 0
+
+    def sell_all_positions(self) -> Dict[str, Decimal]:
+        """Vende todas las posiciones abiertas en el exchange. Retorna un dict con montos vendidos por moneda."""
+        sold = {}
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            balances = self.exchange.fetch_balance()
+            for currency, info in balances.items():
+                free = Decimal(str(info.get('free', 0)))
+                # Solo liquidar posiciones distintas a USDT y mayor a cero
+                if currency == 'USDT' or free <= 0:
+                    continue
+                pair = f"{currency}/USDT"
+                # Obtener precio de mercado para venta
+                ticker = self.exchange.fetch_ticker(pair)
+                price = Decimal(str(ticker['last']))
+                # Crear orden de mercado para vender toda la posición
+                self.exchange.create_order(symbol=pair, type='market', side='sell', amount=float(free))
+                sold[currency] = free
+                logger.info(f"🧹 Vendida posición {free} {currency} en mercado ({pair})")
+            return sold
+        except Exception as e:
+            logger.error(f"❌ Error vendiendo posiciones: {e}")
+            return sold 

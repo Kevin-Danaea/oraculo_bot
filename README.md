@@ -441,3 +441,50 @@ GET  /alerts/test      - Probar sistema de alertas
 
 **🔮 Oráculo Cripto Bot V2.5** - Trading Inteligente + Análisis de Noticias + Detección de Tendencias  
 *Desarrollado con 💚 para traders crypto* 
+
+## Servicio Grid Trading (Arquitectura 2025)
+
+### Flujo Híbrido Tiempo-Real + Gestión Horaria
+
+| Frecuencia | Caso de uso | Responsabilidad |
+|------------|-------------|-----------------|
+| **Cada `REALTIME_MONITOR_INTERVAL_SECONDS` segundos** | `RealTimeGridMonitorUseCase` | • Detecta fills inmediatamente<br>• Crea órdenes complementarias al instante<br>• Envía notificaciones de trades |
+| **Cada `MONITORING_INTERVAL_HOURS` horas** | `ManageGridTransitionsUseCase` | • Pausar/activar bots según decisiones del Cerebro<br>• Limpia la caché del monitor RT<br>• Envía resúmenes de actividad |
+
+### Scheduler Híbrido
+El archivo `services/grid/app/infrastructure/scheduler.py` coordina ambos casos de uso mediante `apscheduler`.
+
+```python
+# Intervalos configurables en services/grid/app/config.py
+REALTIME_MONITOR_INTERVAL_SECONDS = 10   # ⚡ Monitor RT
+MONITORING_INTERVAL_HOURS = 1            # ⏰ Gestión horaria
+```
+
+### Estructura de Carpetas (Clean Architecture)
+```
+services/grid/
+└── app/
+    ├── domain/
+    ├── application/
+    │   ├── realtime_grid_monitor_use_case.py
+    │   ├── manage_grid_transitions_use_case.py
+    │   └── service_lifecycle_use_case.py
+    ├── infrastructure/
+    │   ├── scheduler.py  ← Scheduler híbrido
+    │   └── ...
+    └── config.py
+```
+
+### Cambios Importantes
+1. **Eliminados módulos legacy** (`MonitorGridOrdersUseCase`, `GetSystemStatusUseCase`).
+2. **Nuevo caso de uso** `RealTimeGridMonitorUseCase` para tiempo real.
+3. **Constantes de configuración** añadidas: `REALTIME_MONITOR_INTERVAL_SECONDS`, `REALTIME_CACHE_EXPIRY_MINUTES`.
+4. **Scheduler** ahora crea dos jobs: tiempo real y gestión horaria.
+
+> Para iniciar el servicio Grid:
+>
+> ```bash
+> python services/grid/app/main.py  # arranca GridScheduler.start()
+> ```
+
+--- 

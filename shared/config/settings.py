@@ -32,8 +32,10 @@ class Settings(BaseSettings):
     # Configuración para Sandbox
     PAPER_TRADING_API_KEY: str = ""
     PAPER_TRADING_SECRET_KEY: str = ""
+    # Modo de trading: 'sandbox' o 'production'
+    TRADING_MODE: str = "sandbox"
     
-    # Configuración para notificaciones de Telegram
+    # Configuración para notificaciones de Telegrams
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 

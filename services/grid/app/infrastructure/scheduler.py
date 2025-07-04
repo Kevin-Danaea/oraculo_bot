@@ -7,7 +7,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 
-from app.application.monitor_grid_orders_use_case import MonitorGridOrdersUseCase
 from app.application.manage_grid_transitions_use_case import ManageGridTransitionsUseCase
 from app.application.realtime_grid_monitor_use_case import RealTimeGridMonitorUseCase
 from app.infrastructure.database_repository import DatabaseGridRepository
@@ -63,14 +62,6 @@ class GridScheduler:
             
             # NUEVO: Monitor en tiempo real
             self.realtime_monitor_use_case = RealTimeGridMonitorUseCase(
-                grid_repository=self.grid_repository,
-                exchange_service=self.exchange_service,
-                notification_service=self.notification_service,
-                grid_calculator=self.grid_calculator
-            )
-            
-            # Monitor legacy (mantener por compatibilidad)
-            self.monitor_use_case = MonitorGridOrdersUseCase(
                 grid_repository=self.grid_repository,
                 exchange_service=self.exchange_service,
                 notification_service=self.notification_service,
