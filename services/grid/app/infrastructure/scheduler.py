@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.application.manage_grid_transitions_use_case import ManageGridTransitionsUseCase
 from app.application.realtime_grid_monitor_use_case import RealTimeGridMonitorUseCase
+from app.application.trading_stats_use_case import TradingStatsUseCase
 from app.infrastructure.database_repository import DatabaseGridRepository
 from app.infrastructure.exchange_service import BinanceExchangeService
 from app.infrastructure.notification_service import TelegramGridNotificationService
@@ -65,6 +66,13 @@ class GridScheduler:
                 grid_repository=self.grid_repository,
                 exchange_service=self.exchange_service,
                 notification_service=self.notification_service,
+                grid_calculator=self.grid_calculator
+            )
+            
+            # NUEVO: Estadísticas de trading para notificaciones
+            self.trading_stats_use_case = TradingStatsUseCase(
+                grid_repository=self.grid_repository,
+                exchange_service=self.exchange_service,
                 grid_calculator=self.grid_calculator
             )
             
@@ -155,18 +163,18 @@ class GridScheduler:
             logger.info("🧹 PASO 2: Limpiando cache del monitor tiempo real...")
             self.realtime_monitor_use_case.clear_cache()
             
-            # PASO 3: Obtener estadísticas de actividad
-            logger.info("📊 PASO 3: Obteniendo estadísticas...")
+            # PASO 3: Verificar cambios de decisión y enviar notificaciones
+            logger.info("📊 PASO 3: Verificando cambios de decisión...")
+            configs_with_decisions = self.trading_stats_use_case.get_decision_changes()
+            self.notification_service.send_decision_change_notification(configs_with_decisions)
+            
+            # PASO 4: Generar y enviar resumen periódico de trading
+            logger.info("📊 PASO 4: Generando resumen periódico de trading...")
+            trading_summary = self.trading_stats_use_case.generate_trading_summary()
+            self.notification_service.send_periodic_trading_summary(trading_summary)
+            
             active_configs = self.grid_repository.get_active_configs()
             total_active_bots = len(active_configs)
-            
-            # Enviar resumen si hubo cambios significativos
-            if activations > 0 or pauses > 0 or total_active_bots > 0:
-                self.notification_service.send_grid_summary(
-                    active_bots=total_active_bots,
-                    total_trades=0,  # Se calculará en futuras versiones
-                    total_profit=0.0
-                )
                 
             logger.info(f"✅ Gestión horaria completada: {total_active_bots} bots activos")
             logger.info("✅ ========== GESTIÓN HORARIA COMPLETADA ==========")

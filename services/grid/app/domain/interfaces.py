@@ -199,6 +199,31 @@ class NotificationService(ABC):
         """Envía resumen de actividad de grid trading."""
         pass
 
+    @abstractmethod
+    def send_decision_change_notification(self, configs_with_decisions: List[tuple]) -> None:
+        """Envía notificación cuando hay cambios de decisión en la base de datos."""
+        pass
+
+    @abstractmethod
+    def send_periodic_trading_summary(self, trading_stats: Dict[str, Any]) -> bool:
+        """Envía resumen periódico de trading (cada 2 horas)."""
+        pass
+
+    @abstractmethod
+    def send_risk_event_notification(self, event_type: str, pair: str, details: Dict[str, Any]) -> None:
+        """Envía notificación específica para eventos de riesgo."""
+        pass
+
+    @abstractmethod
+    def set_summary_interval(self, hours: int) -> None:
+        """Configura el intervalo para resúmenes periódicos."""
+        pass
+
+    @abstractmethod
+    def force_send_summary(self) -> bool:
+        """Fuerza el envío de un resumen inmediatamente."""
+        pass
+
 class GridCalculator(ABC):
     """Interfaz para cálculos de grid trading."""
 
@@ -220,4 +245,29 @@ class GridCalculator(ABC):
     @abstractmethod
     def should_create_sell_order(self, current_price: Decimal, existing_orders: List[GridOrder], grid_levels: List[Decimal]) -> Optional[Decimal]:
         """Determina si se debe crear una orden de venta y a qué precio."""
+        pass
+
+    @abstractmethod
+    def calculate_stop_loss_price(self, entry_price: Decimal, config: GridConfig, side: str) -> Optional[Decimal]:
+        """Calcula el precio de stop loss."""
+        pass
+
+    @abstractmethod
+    def check_stop_loss_triggered(self, current_price: Decimal, last_buy_price: Decimal, config: GridConfig) -> bool:
+        """Verifica si se debe activar el stop loss."""
+        pass
+
+    @abstractmethod
+    def check_trailing_up_triggered(self, current_price: Decimal, highest_sell_price: Decimal, config: GridConfig) -> bool:
+        """Verifica si se debe activar el trailing up."""
+        pass
+
+    @abstractmethod
+    def get_highest_sell_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
+        """Obtiene el precio más alto de las órdenes de venta activas."""
+        pass
+
+    @abstractmethod
+    def get_last_buy_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
+        """Obtiene el precio de la última orden de compra ejecutada."""
         pass 

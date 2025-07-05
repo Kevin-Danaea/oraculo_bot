@@ -3,6 +3,7 @@ Calculador de Grid Trading - Cálculos matemáticos de la grilla.
 """
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
+from datetime import datetime
 
 from app.domain.interfaces import GridCalculator
 from app.domain.entities import GridConfig, GridOrder
@@ -191,6 +192,119 @@ class GridTradingCalculator(GridCalculator):
             
         except Exception as e:
             logger.error(f"❌ Error calculando stop loss: {e}")
+            return None
+
+    def check_stop_loss_triggered(self, current_price: Decimal, last_buy_price: Decimal, config: GridConfig) -> bool:
+        """
+        Verifica si se debe activar el stop loss (4% por defecto).
+        
+        Args:
+            current_price: Precio actual del mercado
+            last_buy_price: Precio de la última orden de compra ejecutada
+            config: Configuración del bot
+            
+        Returns:
+            True si se debe activar stop loss
+        """
+        try:
+            if not config.enable_stop_loss:
+                return False
+            
+            # Calcular porcentaje de caída desde la última compra
+            price_drop_percent = (last_buy_price - current_price) / last_buy_price * 100
+            
+            # Stop loss se activa si el precio cae más del porcentaje configurado por par
+            stop_loss_percent = config.stop_loss_percent
+            
+            triggered = price_drop_percent >= stop_loss_percent
+            
+            if triggered:
+                logger.warning(f"🚨 STOP LOSS ACTIVADO: Precio actual ${current_price:.4f}, última compra ${last_buy_price:.4f}, caída {price_drop_percent:.2f}%")
+            
+            return triggered
+            
+        except Exception as e:
+            logger.error(f"❌ Error verificando stop loss: {e}")
+            return False
+
+    def check_trailing_up_triggered(self, current_price: Decimal, highest_sell_price: Decimal, config: GridConfig) -> bool:
+        """
+        Verifica si se debe activar el trailing up (5% por defecto).
+        
+        Args:
+            current_price: Precio actual del mercado
+            highest_sell_price: Precio más alto de las órdenes de venta activas
+            config: Configuración del bot
+            
+        Returns:
+            True si se debe activar trailing up
+        """
+        try:
+            if not config.enable_trailing_up:
+                return False
+            
+            # Calcular porcentaje de subida desde el nivel más alto de venta
+            price_rise_percent = (current_price - highest_sell_price) / highest_sell_price * 100
+            
+            # Trailing up se activa si el precio sube más del 5% (configuración fija)
+            trailing_up_percent = 5.0  # Por defecto 5%
+            
+            triggered = price_rise_percent >= trailing_up_percent
+            
+            if triggered:
+                logger.info(f"📈 TRAILING UP ACTIVADO: Precio actual ${current_price:.4f}, nivel más alto venta ${highest_sell_price:.4f}, subida {price_rise_percent:.2f}%")
+            
+            return triggered
+            
+        except Exception as e:
+            logger.error(f"❌ Error verificando trailing up: {e}")
+            return False
+
+    def get_highest_sell_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
+        """
+        Obtiene el precio más alto de las órdenes de venta activas.
+        
+        Args:
+            active_orders: Lista de órdenes activas
+            
+        Returns:
+            Precio más alto de venta o None si no hay órdenes de venta
+        """
+        try:
+            sell_orders = [order for order in active_orders if order.side == 'sell' and order.status == 'open']
+            
+            if not sell_orders:
+                return None
+            
+            highest_price = max(order.price for order in sell_orders)
+            return highest_price
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo precio más alto de venta: {e}")
+            return None
+
+    def get_last_buy_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
+        """
+        Obtiene el precio de la última orden de compra ejecutada.
+        
+        Args:
+            active_orders: Lista de órdenes activas
+            
+        Returns:
+            Precio de la última compra o None si no hay compras
+        """
+        try:
+            buy_orders = [order for order in active_orders if order.side == 'buy' and order.status == 'filled']
+            
+            if not buy_orders:
+                return None
+            
+            # Ordenar por timestamp y obtener la más reciente
+            latest_buy = max(buy_orders, key=lambda x: x.filled_at if x.filled_at else x.created_at if x.created_at else datetime.min)
+            return latest_buy.price
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo precio de última compra: {e}")
             return None
 
     def is_price_in_grid_range(self, price: Decimal, grid_levels: List[Decimal]) -> bool:

@@ -11,6 +11,7 @@ from app.domain.interfaces import GridRepository, ExchangeService, NotificationS
 from app.domain.entities import GridConfig, GridOrder, GridTrade, GridStep
 from app.config import MIN_ORDER_VALUE_USDT, REALTIME_CACHE_EXPIRY_MINUTES
 from shared.services.logging_config import get_logger
+from .risk_management_use_case import RiskManagementUseCase
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,14 @@ class RealTimeGridMonitorUseCase:
         self.exchange_service = exchange_service
         self.notification_service = notification_service
         self.grid_calculator = grid_calculator
+        
+        # Inicializar gestión de riesgos
+        self.risk_management = RiskManagementUseCase(
+            grid_repository=grid_repository,
+            exchange_service=exchange_service,
+            notification_service=notification_service,
+            grid_calculator=grid_calculator
+        )
         
         # Cache para optimizar consultas
         self._last_check_time = {}
@@ -72,9 +81,17 @@ class RealTimeGridMonitorUseCase:
             total_fills = 0
             total_new_orders = 0
             total_trades = 0
+            risk_events = 0
             
             for config in active_configs:
                 try:
+                    # Verificar eventos de riesgo primero
+                    risk_result = self.risk_management.check_and_handle_risk_events(config)
+                    if risk_result.get('events_handled'):
+                        risk_events += len(risk_result['events_handled'])
+                        logger.warning(f"🚨 Eventos de riesgo manejados para {config.pair}: {len(risk_result['events_handled'])} eventos")
+                        continue  # Si hay eventos de riesgo, no continuar con monitoreo normal
+                    
                     result = self._monitor_bot_realtime(config)
                     
                     total_fills += result.get('fills_detected', 0)
@@ -86,15 +103,16 @@ class RealTimeGridMonitorUseCase:
                     continue
             
             # 3. Log resumen solo si hubo actividad
-            if total_fills > 0 or total_new_orders > 0:
-                logger.info(f"⚡ RT Monitor: {len(active_configs)} bots, {total_fills} fills, {total_new_orders} nuevas órdenes")
+            if total_fills > 0 or total_new_orders > 0 or risk_events > 0:
+                logger.info(f"⚡ RT Monitor: {len(active_configs)} bots, {total_fills} fills, {total_new_orders} nuevas órdenes, {risk_events} eventos de riesgo")
             
             return {
                 'success': True,
                 'monitored_bots': len(active_configs),
                 'fills_detected': total_fills,
                 'orders_created': total_new_orders,
-                'trades_completed': total_trades
+                'trades_completed': total_trades,
+                'risk_events_handled': risk_events
             }
             
         except Exception as e:
