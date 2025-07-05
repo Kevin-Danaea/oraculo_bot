@@ -1,7 +1,7 @@
 """
 Calculador de Grid Trading - Cálculos matemáticos de la grilla.
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from decimal import Decimal
 
 from app.domain.interfaces import GridCalculator
@@ -17,18 +17,38 @@ class GridTradingCalculator(GridCalculator):
         """Inicializa el calculador."""
         logger.info("✅ GridTradingCalculator inicializado.")
 
-    def calculate_order_amount(self, total_capital: float, grid_levels: int) -> Decimal:
-        """Calcula la cantidad por orden basada en el capital total y niveles de grilla."""
+    def calculate_order_amount(self, total_capital: float, grid_levels: int, current_price: Decimal | None = None) -> Decimal:
+        """Calcula la cantidad por orden asegurando no superar el capital total.
+
+        Usa solamente la mitad de los niveles (`grid_levels/2`) ya que es el número máximo
+        de órdenes simultáneas permitidas. Si `current_price` se proporciona, valida que el
+        valor de la orden sea al menos 10 USDT; de lo contrario ajusta la cantidad.
+        """
         try:
-            # Dividir el capital total entre el número de niveles
-            capital_per_level = Decimal(total_capital) / Decimal(grid_levels)
-            
-            # Redondear a 6 decimales para evitar problemas de precisión
-            amount = capital_per_level.quantize(Decimal('0.000001'))
-            
-            logger.debug(f"💰 Cantidad por nivel: {amount} (Capital total: ${total_capital:.2f}, Niveles: {grid_levels})")
+            # Evitar división entre cero
+            if grid_levels <= 0:
+                raise ValueError("grid_levels debe ser > 0")
+
+            # Máximo de órdenes simultáneas permitidas
+            active_levels = max(1, grid_levels // 2)
+
+            capital_per_order = Decimal(total_capital) / Decimal(active_levels)
+
+            # Si se proporciona current_price, asegurar mínimo 10 USDT
+            if current_price:
+                min_amount = Decimal('10') / current_price
+                amount = max(min_amount, capital_per_order / current_price)
+            else:
+                amount = capital_per_order
+
+            # Redondear a 6 decimales
+            amount = amount.quantize(Decimal('0.000001'))
+
+            logger.debug(
+                f"💰 Cantidad por orden: {amount} (Capital total: ${total_capital:.2f}, "
+                f"Niveles activos: {active_levels})"
+            )
             return amount
-            
         except Exception as e:
             logger.error(f"❌ Error calculando cantidad de orden: {e}")
             return Decimal('0')
@@ -93,11 +113,18 @@ class GridTradingCalculator(GridCalculator):
             if not buy_levels:
                 return None
             
+            # Contar órdenes activas totales (buy + sell)
+            active_orders_total = len([o for o in existing_orders if o.status == 'open'])
+            max_active_orders = max(1, len(grid_levels) // 2)
+            if active_orders_total >= max_active_orders:
+                logger.debug("🚦 Límite de órdenes activas alcanzado, no se crea nueva compra")
+                return None
+
             # Obtener órdenes de compra existentes
             existing_buy_orders = [order for order in existing_orders if order.side == 'buy' and order.status == 'open']
             existing_buy_prices = {order.price for order in existing_buy_orders}
             
-            # Encontrar el nivel más alto sin orden
+            # Encontrar el nivel más alto sin orden dentro del límite
             for buy_level in sorted(buy_levels, reverse=True):
                 if buy_level not in existing_buy_prices:
                     logger.debug(f"📈 Sugerida orden de compra a ${buy_level:.4f}")
@@ -121,6 +148,13 @@ class GridTradingCalculator(GridCalculator):
             if not sell_levels:
                 return None
             
+            # Límite de órdenes activas globales
+            active_orders_total = len([o for o in existing_orders if o.status == 'open'])
+            max_active_orders = max(1, len(grid_levels) // 2)
+            if active_orders_total >= max_active_orders:
+                logger.debug("🚦 Límite de órdenes activas alcanzado, no se crea nueva venta")
+                return None
+
             # Obtener órdenes de venta existentes
             existing_sell_orders = [order for order in existing_orders if order.side == 'sell' and order.status == 'open']
             existing_sell_prices = {order.price for order in existing_sell_orders}
@@ -172,4 +206,126 @@ class GridTradingCalculator(GridCalculator):
             
         except Exception as e:
             logger.error(f"❌ Error verificando rango de grilla: {e}")
-            return False 
+            return False
+
+    def validate_capital_usage(self, config: GridConfig, exchange_service, current_price: Decimal) -> Dict[str, Any]:
+        """
+        Valida que el uso de capital no exceda lo configurado.
+        RESPETA AISLAMIENTO DE CAPITAL: Cada bot solo usa su capital asignado.
+        
+        Args:
+            config: Configuración del bot
+            exchange_service: Servicio de exchange
+            current_price: Precio actual
+            
+        Returns:
+            Dict con información de validación de capital
+        """
+        try:
+            configured_capital = Decimal(config.total_capital)
+            
+            # Obtener balance asignado al bot específico
+            bot_balance = exchange_service.get_bot_allocated_balance(config)
+            allocated_capital = bot_balance['allocated_capital']
+            total_available = bot_balance['total_available_in_account']
+            usable_capital = bot_balance['total_value_usdt']
+            
+            # Verificar si hay suficiente capital para aislamiento
+            capital_sufficient = total_available >= allocated_capital
+            
+            # Calcular límites de órdenes
+            max_order_value = usable_capital / 2  # 50% para órdenes de compra
+            order_amount = self.calculate_order_amount(
+                total_capital=float(usable_capital),
+                grid_levels=config.grid_levels,
+                current_price=current_price
+            )
+            
+            validation_result = {
+                'capital_sufficient': capital_sufficient,
+                'configured_capital': configured_capital,
+                'allocated_capital': allocated_capital,
+                'available_capital': total_available,
+                'usable_capital': usable_capital,
+                'max_order_value': max_order_value,
+                'recommended_order_amount': order_amount,
+                'base_balance': bot_balance['base_balance'],
+                'quote_balance': bot_balance['quote_balance'],
+                'isolation_respected': capital_sufficient
+            }
+            
+            logger.debug(f"🔒 Validación de capital {config.pair}: {validation_result}")
+            return validation_result
+            
+        except Exception as e:
+            logger.error(f"❌ Error validando capital: {e}")
+            return {
+                'capital_sufficient': False,
+                'configured_capital': Decimal('0'),
+                'allocated_capital': Decimal('0'),
+                'available_capital': Decimal('0'),
+                'usable_capital': Decimal('0'),
+                'max_order_value': Decimal('0'),
+                'recommended_order_amount': Decimal('0'),
+                'base_balance': Decimal('0'),
+                'quote_balance': Decimal('0'),
+                'isolation_respected': False
+            }
+
+    def can_create_order(self, side: str, amount: Decimal, price: Decimal, exchange_service, pair: str) -> Dict[str, Any]:
+        """
+        Verifica si se puede crear una orden con los balances actuales.
+        
+        Args:
+            side: 'buy' o 'sell'
+            amount: Cantidad de la orden
+            price: Precio de la orden
+            exchange_service: Servicio de exchange
+            pair: Par de trading
+            
+        Returns:
+            Dict con información de viabilidad de la orden
+        """
+        try:
+            order_value = amount * price
+            
+            if side == 'buy':
+                # Para compra necesitamos USDT
+                required_balance = order_value
+                available_balance = exchange_service.get_balance('USDT')
+                currency_needed = 'USDT'
+            else:
+                # Para venta necesitamos la moneda base
+                base_currency = pair.split('/')[0]
+                required_balance = amount
+                available_balance = exchange_service.get_balance(base_currency)
+                currency_needed = base_currency
+            
+            can_create = available_balance >= required_balance
+            
+            result = {
+                'can_create': can_create,
+                'side': side,
+                'required_balance': required_balance,
+                'available_balance': available_balance,
+                'currency_needed': currency_needed,
+                'order_value': order_value,
+                'sufficient_balance': can_create
+            }
+            
+            if not can_create:
+                logger.warning(f"⚠️ Balance insuficiente para {side}: necesario {required_balance} {currency_needed}, disponible {available_balance}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error verificando viabilidad de orden: {e}")
+            return {
+                'can_create': False,
+                'side': side,
+                'required_balance': Decimal('0'),
+                'available_balance': Decimal('0'),
+                'currency_needed': 'UNKNOWN',
+                'order_value': Decimal('0'),
+                'sufficient_balance': False
+            } 

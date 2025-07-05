@@ -67,6 +67,17 @@ class GridRepository(ABC):
         """
         pass
 
+    # --- Nuevos métodos para escalones Grid ---
+    @abstractmethod
+    def get_grid_steps(self, pair: str):
+        """Obtiene la lista de GridStep persistida para el par."""
+        pass
+
+    @abstractmethod
+    def save_grid_steps(self, pair: str, steps) -> None:
+        """Guarda o actualiza la lista de GridStep para el par."""
+        pass
+
 class ExchangeService(ABC):
     """Interfaz para interactuar con el exchange."""
 
@@ -123,6 +134,31 @@ class ExchangeService(ABC):
     @abstractmethod
     def sell_all_positions(self) -> Dict[str, Decimal]:
         """Vende todas las posiciones abiertas en el exchange. Retorna un diccionario con los montos vendidos por moneda."""
+        pass
+
+    @abstractmethod
+    def get_trading_fees(self, pair: str) -> Dict[str, Decimal]:
+        """Obtiene las comisiones de trading para un par."""
+        pass
+
+    @abstractmethod
+    def calculate_net_amount_after_fees(self, gross_amount: Decimal, price: Decimal, side: str, pair: str) -> Decimal:
+        """Calcula la cantidad neta que se recibirá después de comisiones."""
+        pass
+
+    @abstractmethod
+    def get_total_balance_in_usdt(self, pair: str) -> Dict[str, Decimal]:
+        """Obtiene el balance total convertido a USDT para un par específico."""
+        pass
+
+    @abstractmethod
+    def get_bot_allocated_balance(self, config: GridConfig) -> Dict[str, Decimal]:
+        """Obtiene el balance asignado específicamente para un bot, respetando el aislamiento de capital."""
+        pass
+
+    @abstractmethod
+    def can_bot_use_capital(self, config: GridConfig, required_amount: Decimal, side: str) -> Dict[str, Any]:
+        """Verifica si un bot puede usar una cantidad específica de capital sin exceder su asignación."""
         pass
 
 class NotificationService(ABC):

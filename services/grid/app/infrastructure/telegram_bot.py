@@ -5,6 +5,7 @@ from typing import Optional
 
 from shared.services.telegram_trading import TelegramTradingService
 from shared.services.logging_config import get_logger
+from app.application.mode_switch_use_case import ModeSwitchUseCase
 
 logger = get_logger(__name__)
 
@@ -16,6 +17,17 @@ class GridTelegramBot:
         self.scheduler = scheduler_instance
         self.telegram_service = TelegramTradingService()
         self.is_active = False
+        
+        # Inicializar caso de uso para cambio de modo
+        if hasattr(scheduler_instance, 'grid_repository') and hasattr(scheduler_instance, 'exchange_service') and hasattr(scheduler_instance, 'notification_service'):
+            self.mode_switch_use_case = ModeSwitchUseCase(
+                grid_repository=scheduler_instance.grid_repository,
+                exchange_service=scheduler_instance.exchange_service,
+                notification_service=scheduler_instance.notification_service
+            )
+        else:
+            self.mode_switch_use_case = None
+            
         logger.info("✅ GridTelegramBot inicializado")
 
     def start(self):
@@ -54,6 +66,8 @@ class GridTelegramBot:
                 return self._handle_production(command)
             elif command == "monitor":
                 return self._handle_manual_monitor()
+            elif command == "balance":
+                return self._handle_balance_check()
             else:
                 return (
                     "🤖 <b>Comandos disponibles:</b>\n\n"
@@ -62,7 +76,8 @@ class GridTelegramBot:
                     "• <code>status</code> - Ver estado del sistema\n"
                     "• <code>sandbox</code> - Cambiar a modo pruebas\n"
                     "• <code>production</code> - Cambiar a modo real\n"
-                    "• <code>monitor</code> - Ejecutar monitoreo manual"
+                    "• <code>monitor</code> - Ejecutar monitoreo manual\n"
+                    "• <code>balance</code> - Verificar capital y balances"
                 )
                 
         except Exception as e:
@@ -124,18 +139,30 @@ class GridTelegramBot:
     def _handle_sandbox(self) -> str:
         """Maneja el comando sandbox."""
         try:
-            if hasattr(self.scheduler, 'exchange_service'):
-                self.scheduler.exchange_service.switch_to_sandbox()
-                return "🧪 Cambiado a modo SANDBOX (pruebas)"
-            return "❌ Exchange service no disponible"
+            if not self.mode_switch_use_case:
+                return "❌ ModeSwitchUseCase no disponible"
+            
+            # Ejecutar cambio de modo con limpieza completa
+            result = self.mode_switch_use_case.switch_to_sandbox()
+            
+            if result.get('exchange_cancelled_orders', 0) > 0 or result.get('db_cancelled_orders', 0) > 0:
+                message = f"🧪 <b>Cambiado a modo SANDBOX</b>\n\n"
+                message += f"🚫 Órdenes canceladas en exchange: {result.get('exchange_cancelled_orders', 0)}\n"
+                message += f"🗄️ Órdenes canceladas en BD: {result.get('db_cancelled_orders', 0)}\n"
+                if result.get('sold_positions'):
+                    message += f"💰 Posiciones liquidadas: {list(result.get('sold_positions', {}).keys())}\n"
+                return message
+            else:
+                return "🧪 Cambiado a modo SANDBOX (sin órdenes activas)"
+                
         except Exception as e:
             return f"❌ Error cambiando a sandbox: {str(e)}"
 
     def _handle_production(self, command: str) -> str:
         """Maneja el comando production."""
         try:
-            if not hasattr(self.scheduler, 'exchange_service'):
-                return "❌ Exchange service no disponible"
+            if not self.mode_switch_use_case:
+                return "❌ ModeSwitchUseCase no disponible"
             
             if "confirm" not in command:
                 return (
@@ -144,8 +171,18 @@ class GridTelegramBot:
                     "Para confirmar, envía: <code>production confirm</code>"
                 )
             
-            self.scheduler.exchange_service.switch_to_production()
-            return "🚀 Cambiado a modo PRODUCCIÓN (dinero real)"
+            # Ejecutar cambio de modo con limpieza completa
+            result = self.mode_switch_use_case.switch_to_production()
+            
+            if result.get('exchange_cancelled_orders', 0) > 0 or result.get('db_cancelled_orders', 0) > 0:
+                message = f"🚀 <b>Cambiado a modo PRODUCCIÓN</b>\n\n"
+                message += f"🚫 Órdenes canceladas en exchange: {result.get('exchange_cancelled_orders', 0)}\n"
+                message += f"🗄️ Órdenes canceladas en BD: {result.get('db_cancelled_orders', 0)}\n"
+                if result.get('sold_positions'):
+                    message += f"💰 Posiciones liquidadas: {list(result.get('sold_positions', {}).keys())}\n"
+                return message
+            else:
+                return "🚀 Cambiado a modo PRODUCCIÓN (sin órdenes activas)"
             
         except Exception as e:
             return f"❌ Error cambiando a producción: {str(e)}"
@@ -164,4 +201,56 @@ class GridTelegramBot:
                 return f"❌ Error en monitoreo manual: {result.get('error', 'Error desconocido')}"
                 
         except Exception as e:
-            return f"❌ Error ejecutando monitoreo: {str(e)}" 
+            return f"❌ Error ejecutando monitoreo: {str(e)}"
+
+    def _handle_balance_check(self) -> str:
+        """Maneja el comando balance."""
+        try:
+            if not self.scheduler:
+                return "❌ Scheduler no disponible"
+            
+            if not hasattr(self.scheduler, 'grid_repository') or not hasattr(self.scheduler, 'exchange_service'):
+                return "❌ Servicios no disponibles"
+            
+            # Obtener configuraciones activas
+            active_configs = self.scheduler.grid_repository.get_active_configs()
+            
+            if not active_configs:
+                return "ℹ️ No hay bots activos para verificar balances"
+            
+            message = "💰 <b>ESTADO DE CAPITAL Y BALANCES</b>\n\n"
+            
+            for config in active_configs[:3]:  # Limitar a 3 para evitar mensajes muy largos
+                try:
+                    pair = config.pair
+                    configured_capital = config.total_capital
+                    
+                    # Obtener balance asignado al bot específico
+                    bot_balance = self.scheduler.exchange_service.get_bot_allocated_balance(config)
+                    
+                    # Validar capital con aislamiento
+                    validation = self.scheduler.grid_calculator.validate_capital_usage(
+                        config, self.scheduler.exchange_service, 
+                        self.scheduler.exchange_service.get_current_price(pair)
+                    )
+                    
+                    message += f"📊 <b>{pair}</b>\n"
+                    message += f"🎯 Capital asignado: ${configured_capital:.2f}\n"
+                    message += f"🔒 Capital asignado al bot: ${bot_balance['allocated_capital']:.2f}\n"
+                    message += f"💰 Capital disponible en cuenta: ${bot_balance['total_available_in_account']:.2f}\n"
+                    message += f"✅ Capital utilizable por bot: ${bot_balance['total_value_usdt']:.2f}\n"
+                    message += f"🪙 Balance base asignado: {bot_balance['base_balance']:.6f} {pair.split('/')[0]}\n"
+                    message += f"💵 Balance USDT asignado: ${bot_balance['quote_balance']:.2f}\n"
+                    
+                    if bot_balance['total_available_in_account'] >= bot_balance['allocated_capital']:
+                        message += f"✅ Aislamiento de capital respetado\n\n"
+                    else:
+                        message += f"⚠️ Capital insuficiente para aislamiento\n\n"
+                        
+                except Exception as e:
+                    message += f"❌ Error en {config.pair}: {str(e)}\n\n"
+            
+            return message
+                
+        except Exception as e:
+            return f"❌ Error obteniendo balances: {str(e)}" 

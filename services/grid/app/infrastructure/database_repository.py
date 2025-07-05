@@ -1,13 +1,13 @@
 """
 Repositorio de base de datos para el servicio Grid.
 """
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.domain.interfaces import GridRepository
-from app.domain.entities import GridConfig, GridOrder, GridBotState
+from app.domain.entities import GridConfig, GridOrder, GridBotState, GridStep
 from shared.database.models import GridBotConfig, GridBotState as GridBotStateModel, EstrategiaStatus
 from shared.services.logging_config import get_logger
 
@@ -19,6 +19,10 @@ class DatabaseGridRepository(GridRepository):
     def __init__(self, db_session: Session):
         self.db = db_session
         logger.info("✅ DatabaseGridRepository inicializado.")
+
+        # --- Almacenamiento temporal de GridStep en memoria ---
+        # Clave: pair, Valor: List[GridStep]
+        self._grid_steps_store: Dict[str, List[GridStep]] = {}
 
     def get_active_configs(self) -> List[GridConfig]:
         """
@@ -231,3 +235,20 @@ class DatabaseGridRepository(GridRepository):
             created_at=config.created_at,  # type: ignore
             updated_at=config.updated_at  # type: ignore
         ) 
+
+    # ------------------------------------------------------------------
+    # Implementación de métodos para gestión de GridStep
+    # Estas operaciones usan almacenamiento en memoria como placeholder
+    # hasta que se implemente la persistencia en base de datos.
+    # ------------------------------------------------------------------
+
+    def get_grid_steps(self, pair: str) -> List[GridStep]:
+        """Obtiene la lista de GridStep almacenada en memoria para el par."""
+        steps = self._grid_steps_store.get(pair, [])
+        logger.debug(f"📋 get_grid_steps -> {pair}: {len(steps)} pasos almacenados")
+        return steps
+
+    def save_grid_steps(self, pair: str, steps: List[GridStep]) -> None:
+        """Guarda o reemplaza la lista de GridStep para el par."""
+        self._grid_steps_store[pair] = steps
+        logger.debug(f"💾 save_grid_steps -> {pair}: {len(steps)} pasos guardados") 

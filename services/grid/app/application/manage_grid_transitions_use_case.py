@@ -340,6 +340,7 @@ class ManageGridTransitionsUseCase:
     def _create_initial_grid(self, config: GridConfig, current_price: Decimal) -> List[GridOrder]:
         """
         Crea la grilla inicial de órdenes para un bot recién activado.
+        RESPETA AISLAMIENTO DE CAPITAL: Cada bot solo usa su capital asignado.
         
         Args:
             config: Configuración del bot
@@ -352,69 +353,157 @@ class ManageGridTransitionsUseCase:
         
         try:
             initial_orders = []
+            pair = config.pair
+            configured_capital = Decimal(config.total_capital)
             
-            # 1. Calcular niveles de grilla
+            # 1) OBTENER BALANCE ASIGNADO AL BOT ESPECÍFICO
+            bot_balance = self.exchange_service.get_bot_allocated_balance(config)
+            allocated_capital = bot_balance['allocated_capital']
+            total_available = bot_balance['total_value_usdt']
+            
+            logger.info(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f}, Disponible en cuenta ${total_available:.2f}")
+            
+            # 2) VERIFICAR QUE EL BOT PUEDA OPERAR CON SU CAPITAL ASIGNADO
+            if total_available < allocated_capital:
+                logger.warning(f"⚠️ Bot {pair}: Capital disponible ${total_available:.2f} < Capital asignado ${allocated_capital:.2f}")
+                logger.info(f"🔧 Ajustando capital a disponible: ${total_available:.2f}")
+                actual_capital = total_available
+            else:
+                actual_capital = allocated_capital
+                logger.info(f"✅ Bot {pair}: Capital verificado ${actual_capital:.2f} (aislamiento respetado)")
+            
+            # Usar 50% del capital asignado al bot
+            half_capital = actual_capital / Decimal(2)
+            
+            # 3) COMPRAR 50% DEL CAPITAL ASIGNADO AL MERCADO
+            base_currency = pair.split('/')[0]
+            amount_market = (half_capital / current_price).quantize(Decimal('0.000001'))
+            
+            logger.info(f"🏁 Bot {pair}: Comprando {amount_market} {base_currency} (~${half_capital}) al mercado")
+            
+            try:
+                # Verificar que el bot puede usar este capital
+                capital_check = self.exchange_service.can_bot_use_capital(config, half_capital, 'buy')
+                if not capital_check['can_use']:
+                    logger.error(f"❌ Bot {pair} no puede usar ${half_capital} USDT. Disponible: ${capital_check['available_balance']}")
+                    return []
+                
+                market_order = self.exchange_service.create_order(
+                    pair=pair,
+                    side='buy',
+                    amount=amount_market,
+                    price=current_price,  # ignorado por market
+                    order_type='market',
+                )
+                
+                # Obtener cantidad real llenada
+                if market_order.exchange_order_id:
+                    status = self.exchange_service.get_order_status(pair, market_order.exchange_order_id)
+                else:
+                    status = {'filled': amount_market}
+                
+                filled_amount_gross = Decimal(str(status.get('filled', amount_market)))
+                
+                # 4) CALCULAR CANTIDAD NETA DESPUÉS DE COMISIONES
+                filled_amount_net = self.exchange_service.calculate_net_amount_after_fees(
+                    gross_amount=filled_amount_gross,
+                    price=current_price,
+                    side='buy',
+                    pair=pair
+                )
+                
+                logger.info(f"✅ Bot {pair}: Compra completada {filled_amount_gross} → {filled_amount_net} {base_currency} (después de comisiones)")
+                
+            except Exception as e:
+                logger.error(f"❌ Error en compra de mercado para bot {pair}: {e}")
+                return []
+
+            # 5) CALCULAR NIVELES DE GRILLA
             grid_levels = self.grid_calculator.calculate_grid_levels(current_price, config)
-            
-            # 2. Calcular cantidad por orden
-            order_amount = self.grid_calculator.calculate_order_amount(
-                config.total_capital, 
-                config.grid_levels, 
-                current_price
+            if len(grid_levels) != config.grid_levels:
+                logger.warning(f"⚠️ Bot {pair}: Número de niveles calculado no coincide con la config")
+
+            # Dividir niveles
+            lower_levels = [p for p in grid_levels if p < current_price]
+            upper_levels = [p for p in grid_levels if p > current_price]
+
+            # Asegurar igualdad de listas
+            min_len = min(len(lower_levels), len(upper_levels))
+            lower_levels = lower_levels[-min_len:]
+            upper_levels = upper_levels[:min_len]
+
+            # 6) CALCULAR CANTIDADES POR ORDEN
+            amount_per_order = self.grid_calculator.calculate_order_amount(
+                total_capital=float(half_capital),
+                grid_levels=len(lower_levels),
+                current_price=current_price,
             )
-            
-            # 3. Crear órdenes de compra por debajo del precio actual
-            buy_levels = [level for level in grid_levels if level < current_price]
-            for price in buy_levels[:5]:  # Limitar a 5 niveles iniciales
+
+            # 7) CREAR ÓRDENES INICIALES CON AISLAMIENTO DE CAPITAL
+            # 7a) Órdenes de venta usando filled_amount_net distribuido
+            if len(upper_levels) > 0:
+                amount_sell_each = (filled_amount_net / Decimal(len(upper_levels))).quantize(Decimal('0.000001'))
+            else:
+                amount_sell_each = Decimal('0')
+
+            orders_created = 0
+            capital_used = Decimal('0')
+
+            for idx, (buy_price, sell_price) in enumerate(zip(lower_levels, upper_levels)):
                 try:
-                    order_value = price * order_amount
-                    if order_value >= Decimal(MIN_ORDER_VALUE_USDT):
-                        order = self.exchange_service.create_order(
-                            pair=config.pair,
-                            side='buy',
-                            amount=order_amount,
-                            price=price,
-                            order_type='limit'
-                        )
-                        saved_order = self.grid_repository.save_order(order)
-                        initial_orders.append(saved_order)
-                        logger.info(f"✅ Orden de compra inicial: {order_amount} {config.pair} a ${price}")
-                        
-                except Exception as e:
-                    logger.error(f"❌ Error creando orden de compra a ${price}: {e}")
-                    continue
-            
-            # 4. Crear órdenes de venta por encima del precio actual
-            sell_levels = [level for level in grid_levels if level > current_price]
-            for price in sell_levels[:3]:  # Limitar a 3 niveles iniciales
-                try:
-                    # Verificar balance disponible
-                    base_currency = config.pair.split('/')[0]
-                    balance = self.exchange_service.get_balance(base_currency)
+                    # Verificar que no excedemos el capital asignado al bot
+                    order_value = buy_price * amount_per_order
+                    if capital_used + order_value > half_capital:
+                        logger.warning(f"⚠️ Bot {pair}: Límite de capital asignado alcanzado en nivel {idx}. Capital usado: ${capital_used:.2f}")
+                        break
                     
-                    if balance >= order_amount:
-                        order_value = price * order_amount
-                        if order_value >= Decimal(MIN_ORDER_VALUE_USDT):
-                            order = self.exchange_service.create_order(
-                                pair=config.pair,
+                    # Verificar que el bot puede usar este capital
+                    capital_check = self.exchange_service.can_bot_use_capital(config, order_value, 'buy')
+                    if not capital_check['can_use']:
+                        logger.warning(f"⚠️ Bot {pair}: No puede usar ${order_value} USDT para orden de compra. Disponible: ${capital_check['available_balance']}")
+                        break
+                    
+                    # Crear orden BUY
+                    buy_order = self.exchange_service.create_order(
+                        pair=pair,
+                        side='buy',
+                        amount=amount_per_order,
+                        price=buy_price,
+                        order_type='limit',
+                    )
+                    saved_buy_order = self.grid_repository.save_order(buy_order)
+                    initial_orders.append(saved_buy_order)
+                    capital_used += order_value
+                    orders_created += 1
+                    logger.info(f"✅ Bot {pair}: Orden de compra {amount_per_order} a ${buy_price}")
+
+                    # Crear orden SELL solo si tenemos cantidad suficiente
+                    if amount_sell_each > Decimal('0'):
+                        # Verificar que el bot puede vender esta cantidad
+                        sell_check = self.exchange_service.can_bot_use_capital(config, amount_sell_each, 'sell')
+                        if sell_check['can_use']:
+                            sell_order = self.exchange_service.create_order(
+                                pair=pair,
                                 side='sell',
-                                amount=order_amount,
-                                price=price,
-                                order_type='limit'
+                                amount=amount_sell_each,
+                                price=sell_price,
+                                order_type='limit',
                             )
-                            saved_order = self.grid_repository.save_order(order)
-                            initial_orders.append(saved_order)
-                            logger.info(f"✅ Orden de venta inicial: {order_amount} {config.pair} a ${price}")
-                    else:
-                        logger.warning(f"⚠️ Balance insuficiente para venta: {balance} < {order_amount}")
-                        
+                            saved_sell_order = self.grid_repository.save_order(sell_order)
+                            initial_orders.append(saved_sell_order)
+                            orders_created += 1
+                            logger.info(f"✅ Bot {pair}: Orden de venta {amount_sell_each} a ${sell_price}")
+                        else:
+                            logger.warning(f"⚠️ Bot {pair}: No puede vender {amount_sell_each} {base_currency}. Disponible: {sell_check['available_balance']}")
+                    
                 except Exception as e:
-                    logger.error(f"❌ Error creando orden de venta a ${price}: {e}")
+                    logger.error(f"❌ Error creando órdenes para bot {pair} nivel {idx}: {e}")
                     continue
-            
-            logger.info(f"✅ Grilla inicial creada: {len(initial_orders)} órdenes para {config.pair}")
+
+            logger.info(f"✅ Bot {pair}: Grilla inicial creada {len(initial_orders)} órdenes")
+            logger.info(f"💰 Bot {pair}: Capital utilizado ${capital_used:.2f} de ${half_capital:.2f} asignado")
             return initial_orders
             
         except Exception as e:
-            logger.error(f"❌ Error creando grilla inicial para {config.pair}: {e}")
+            logger.error(f"❌ Error creando grilla inicial para bot {config.pair}: {e}")
             return [] 

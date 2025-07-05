@@ -8,7 +8,7 @@ from decimal import Decimal
 import asyncio
 
 from app.domain.interfaces import GridRepository, ExchangeService, NotificationService, GridCalculator
-from app.domain.entities import GridConfig, GridOrder, GridTrade
+from app.domain.entities import GridConfig, GridOrder, GridTrade, GridStep
 from app.config import MIN_ORDER_VALUE_USDT, REALTIME_CACHE_EXPIRY_MINUTES
 from shared.services.logging_config import get_logger
 
@@ -152,23 +152,9 @@ class RealTimeGridMonitorUseCase:
         if filled_orders:
             logger.info(f"💰 {len(filled_orders)} órdenes completadas en {config.pair}")
             
-            for order in filled_orders:
-                try:
-                    # Crear orden complementaria inmediatamente
-                    complementary_order = self._create_complementary_order(order, config)
-                    if complementary_order:
-                        new_orders_created += 1
-                        
-                    # Notificar trade si es de venta (ganancia realizada)
-                    if order.side == 'sell':
-                        trade = self._create_trade_record(order, config)
-                        if trade:
-                            self.notification_service.send_trade_notification(trade)
-                            trades_completed += 1
-                            
-                except Exception as e:
-                    logger.error(f"❌ Error procesando fill {order.exchange_order_id}: {e}")
-                    continue
+            new_orders, trades = self._process_grid_steps(config, filled_orders)
+            new_orders_created += new_orders
+            trades_completed += trades
         
         return {
             'fills_detected': len(filled_orders),
@@ -228,50 +214,92 @@ class RealTimeGridMonitorUseCase:
     def _create_complementary_order(self, filled_order: GridOrder, config: GridConfig) -> Optional[GridOrder]:
         """
         Crea inmediatamente la orden complementaria para una orden completada.
+        RESPETA AISLAMIENTO DE CAPITAL: Cada bot solo usa su capital asignado.
         """
         try:
             current_price = self.exchange_service.get_current_price(config.pair)
             
             if filled_order.side == 'buy':
-                # Crear orden de venta
+                # Crear orden de venta - USAR CANTIDAD NETA DESPUÉS DE COMISIONES
                 sell_price = self._calculate_complementary_price(filled_order.price, config, 'sell')
                 
-                order_value = sell_price * filled_order.amount
+                # Calcular cantidad neta que realmente recibimos después de comisiones
+                net_amount_received = self.exchange_service.calculate_net_amount_after_fees(
+                    gross_amount=filled_order.amount,
+                    price=filled_order.price,
+                    side='buy',
+                    pair=config.pair
+                )
+                
+                # Verificar que el valor de la orden sea suficiente
+                order_value = sell_price * net_amount_received
                 if order_value >= Decimal(MIN_ORDER_VALUE_USDT):
-                    order = self.exchange_service.create_order(
-                        pair=config.pair,
-                        side='sell',
-                        amount=filled_order.amount,
-                        price=sell_price,
-                        order_type='limit'
-                    )
+                    # Verificar que el bot puede usar esta cantidad para venta
+                    sell_check = self.exchange_service.can_bot_use_capital(config, net_amount_received, 'sell')
                     
-                    saved_order = self.grid_repository.save_order(order)
-                    logger.info(f"⚡ Orden de venta creada: {order.amount} {config.pair} a ${sell_price}")
-                    return saved_order
+                    if sell_check['can_use']:
+                        order = self.exchange_service.create_order(
+                            pair=config.pair,
+                            side='sell',
+                            amount=net_amount_received,  # Usar cantidad neta
+                            price=sell_price,
+                            order_type='limit'
+                        )
+                        
+                        saved_order = self.grid_repository.save_order(order)
+                        logger.info(f"⚡ Bot {config.pair}: Orden de venta creada {net_amount_received} a ${sell_price} (neto después de comisiones)")
+                        return saved_order
+                    else:
+                        logger.warning(f"⚠️ Bot {config.pair}: No puede vender {net_amount_received}. Disponible: {sell_check['available_balance']}")
+                        return None
+                else:
+                    logger.warning(f"⚠️ Bot {config.pair}: Valor de orden de venta insuficiente: ${order_value:.2f} < ${MIN_ORDER_VALUE_USDT}")
+                    return None
                     
             elif filled_order.side == 'sell':
-                # Crear orden de compra
+                # Crear orden de compra - USAR CAPITAL ASIGNADO AL BOT
                 buy_price = self._calculate_complementary_price(filled_order.price, config, 'buy')
                 
-                order_value = buy_price * filled_order.amount
+                # Calcular cuánto USDT realmente recibimos después de comisiones de la venta
+                gross_usdt_received = filled_order.amount * filled_order.price
+                net_usdt_received = self.exchange_service.calculate_net_amount_after_fees(
+                    gross_amount=filled_order.amount,
+                    price=filled_order.price,
+                    side='sell',
+                    pair=config.pair
+                ) * filled_order.price
+                
+                # Calcular cantidad a comprar con el USDT neto recibido
+                amount_to_buy = (net_usdt_received / buy_price).quantize(Decimal('0.000001'))
+                
+                order_value = buy_price * amount_to_buy
                 if order_value >= Decimal(MIN_ORDER_VALUE_USDT):
-                    order = self.exchange_service.create_order(
-                        pair=config.pair,
-                        side='buy',
-                        amount=filled_order.amount,
-                        price=buy_price,
-                        order_type='limit'
-                    )
+                    # Verificar que el bot puede usar este capital para compra
+                    buy_check = self.exchange_service.can_bot_use_capital(config, order_value, 'buy')
                     
-                    saved_order = self.grid_repository.save_order(order)
-                    logger.info(f"⚡ Orden de compra creada: {order.amount} {config.pair} a ${buy_price}")
-                    return saved_order
+                    if buy_check['can_use']:
+                        order = self.exchange_service.create_order(
+                            pair=config.pair,
+                            side='buy',
+                            amount=amount_to_buy,
+                            price=buy_price,
+                            order_type='limit'
+                        )
+                        
+                        saved_order = self.grid_repository.save_order(order)
+                        logger.info(f"⚡ Bot {config.pair}: Orden de compra creada {amount_to_buy} a ${buy_price} (con USDT neto: ${net_usdt_received:.2f})")
+                        return saved_order
+                    else:
+                        logger.warning(f"⚠️ Bot {config.pair}: No puede comprar con ${order_value} USDT. Disponible: ${buy_check['available_balance']}")
+                        return None
+                else:
+                    logger.warning(f"⚠️ Bot {config.pair}: Valor de orden de compra insuficiente: ${order_value:.2f} < ${MIN_ORDER_VALUE_USDT}")
+                    return None
             
             return None
             
         except Exception as e:
-            logger.error(f"❌ Error creando orden complementaria: {e}")
+            logger.error(f"❌ Error creando orden complementaria para bot {config.pair}: {e}")
             return None
 
     def _calculate_complementary_price(self, base_price: Decimal, config: GridConfig, side: str) -> Decimal:
@@ -313,4 +341,71 @@ class RealTimeGridMonitorUseCase:
         """Limpia el cache de configuraciones activas."""
         self._active_configs_cache = []
         self._cache_expiry = None
-        logger.debug("🧹 Cache de configuraciones limpiado") 
+        logger.debug("🧹 Cache de configuraciones limpiado")
+
+    # ------------------------------------------------------------------
+    # NUEVA LÓGICA BASADA EN GRIDSTEP
+    # ------------------------------------------------------------------
+
+    def _process_grid_steps(self, config: GridConfig, filled_orders: List[GridOrder]):
+        """Actualiza los GridStep según las órdenes llenadas y crea la orden complementaria
+        alternando el side para cada escalón.
+        """
+        steps = self.grid_repository.get_grid_steps(config.pair) or []
+        steps_by_level = {s.level_index: s for s in steps}
+
+        new_orders_created = 0
+        trades_completed = 0
+
+        for order in filled_orders:
+            step = steps_by_level.get(order.grid_level)
+            if not step:
+                logger.warning(f"⚠️ No se encontró GridStep para nivel {order.grid_level} en {config.pair}")
+                continue
+
+            # Registrar último side llenado
+            step.last_filled_side = order.side
+
+            # Alternar side
+            next_side = 'sell' if order.side == 'buy' else 'buy'
+
+            price = self._calculate_complementary_price(order.price, config, next_side)
+            order_value = price * order.amount
+
+            if order_value < Decimal(MIN_ORDER_VALUE_USDT):
+                logger.debug(f"🔸 Valor de orden menor al mínimo, se omite crear para nivel {step.level_index}")
+                step.active_order_id = None
+                step.active_side = None
+                continue
+
+            # Crear nueva orden
+            try:
+                new_order = self.exchange_service.create_order(
+                    pair=config.pair,
+                    side=next_side,
+                    amount=order.amount,
+                    price=price,
+                    order_type='limit'
+                )
+                saved_order = self.grid_repository.save_order(new_order)
+                new_orders_created += 1
+
+                # Actualizar GridStep
+                step.active_order_id = saved_order.exchange_order_id
+                step.active_side = next_side
+
+                if next_side == 'sell':
+                    # Si creamos venta, registramos trade
+                    trade = self._create_trade_record(saved_order, config)
+                    if trade:
+                        self.notification_service.send_trade_notification(trade)
+                        trades_completed += 1
+
+            except Exception as e:
+                logger.error(f"❌ Error creando orden para GridStep {step.level_index}: {e}")
+                continue
+
+        # Guardar pasos actualizados
+        self.grid_repository.save_grid_steps(config.pair, list(steps_by_level.values()))
+
+        return new_orders_created, trades_completed 

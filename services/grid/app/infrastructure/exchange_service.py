@@ -7,7 +7,7 @@ import ccxt
 import uuid
 
 from app.domain.interfaces import ExchangeService
-from app.domain.entities import GridOrder
+from app.domain.entities import GridOrder, GridConfig
 from app.config import MIN_ORDER_VALUE_USDT, EXCHANGE_NAME
 from shared.config.settings import settings
 from shared.services.logging_config import get_logger
@@ -245,4 +245,257 @@ class BinanceExchangeService(ExchangeService):
             return sold
         except Exception as e:
             logger.error(f"❌ Error vendiendo posiciones: {e}")
-            return sold 
+            return sold
+
+    def get_trading_fees(self, pair: str) -> Dict[str, Decimal]:
+        """Obtiene las comisiones de trading para un par."""
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            # Obtener información del mercado
+            markets = self.exchange.load_markets()
+            market_info = markets.get(pair, {})
+            
+            # Obtener comisiones (maker y taker)
+            maker_fee = Decimal(str(market_info.get('maker', 0.001)))  # 0.1% por defecto
+            taker_fee = Decimal(str(market_info.get('taker', 0.001)))  # 0.1% por defecto
+            
+            logger.debug(f"💰 Comisiones {pair}: Maker {maker_fee*100:.3f}%, Taker {taker_fee*100:.3f}%")
+            
+            return {
+                'maker': maker_fee,
+                'taker': taker_fee
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo comisiones para {pair}: {e}")
+            return {
+                'maker': Decimal('0.001'),  # 0.1% por defecto
+                'taker': Decimal('0.001')   # 0.1% por defecto
+            }
+
+    def calculate_net_amount_after_fees(self, gross_amount: Decimal, price: Decimal, side: str, pair: str) -> Decimal:
+        """
+        Calcula la cantidad neta que se recibirá después de comisiones.
+        
+        Args:
+            gross_amount: Cantidad bruta de la orden
+            price: Precio de la orden
+            side: 'buy' o 'sell'
+            pair: Par de trading
+            
+        Returns:
+            Cantidad neta después de comisiones
+        """
+        try:
+            fees = self.get_trading_fees(pair)
+            
+            # Para órdenes limit usamos maker fee, para market usamos taker fee
+            fee_rate = fees['maker']  # Asumimos limit orders por defecto
+            
+            if side == 'buy':
+                # En compra: recibimos menos de la moneda base por las comisiones
+                # Ejemplo: Compramos 1 ETH, pero recibimos 0.999 ETH
+                net_amount = gross_amount * (Decimal('1') - fee_rate)
+            else:
+                # En venta: recibimos menos USDT por las comisiones
+                # Ejemplo: Vendemos 1 ETH a $2000, pero recibimos $1998 USDT
+                gross_value = gross_amount * price
+                net_value = gross_value * (Decimal('1') - fee_rate)
+                net_amount = net_value / price  # Convertir de vuelta a cantidad
+            
+            logger.debug(f"💰 Cantidad neta después de comisiones {side}: {gross_amount} → {net_amount}")
+            return net_amount.quantize(Decimal('0.000001'))
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculando cantidad neta: {e}")
+            return gross_amount * Decimal('0.999')  # Fallback: 0.1% de comisión
+
+    def get_total_balance_in_usdt(self, pair: str) -> Dict[str, Decimal]:
+        """
+        Obtiene el balance total convertido a USDT para un par específico.
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            
+        Returns:
+            Dict con balances en USDT de ambas monedas del par
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            base_currency, quote_currency = pair.split('/')
+            
+            # Obtener balances
+            balances = self.exchange.fetch_balance()
+            base_balance = Decimal(str(balances.get(base_currency, {}).get('free', 0)))
+            quote_balance = Decimal(str(balances.get(quote_currency, {}).get('free', 0)))
+            
+            # Obtener precio actual
+            current_price = self.get_current_price(pair)
+            
+            # Convertir balance base a USDT
+            base_value_usdt = base_balance * current_price
+            
+            # El quote ya está en USDT (asumimos que siempre es USDT)
+            quote_value_usdt = quote_balance
+            
+            total_value_usdt = base_value_usdt + quote_value_usdt
+            
+            logger.debug(f"💰 Balance total {pair}: {base_balance} {base_currency} (${base_value_usdt:.2f}) + {quote_balance} {quote_currency} = ${total_value_usdt:.2f}")
+            
+            return {
+                'base_balance': base_balance,
+                'quote_balance': quote_balance,
+                'base_value_usdt': base_value_usdt,
+                'quote_value_usdt': quote_value_usdt,
+                'total_value_usdt': total_value_usdt
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo balance total: {e}")
+            return {
+                'base_balance': Decimal('0'),
+                'quote_balance': Decimal('0'),
+                'base_value_usdt': Decimal('0'),
+                'quote_value_usdt': Decimal('0'),
+                'total_value_usdt': Decimal('0')
+            }
+
+    def get_bot_allocated_balance(self, config: GridConfig) -> Dict[str, Decimal]:
+        """
+        Obtiene el balance asignado específicamente para un bot, respetando el aislamiento de capital.
+        
+        Args:
+            config: Configuración del bot con capital asignado
+            
+        Returns:
+            Dict con balances asignados al bot específico
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            pair = config.pair
+            allocated_capital = Decimal(config.total_capital)
+            base_currency, quote_currency = pair.split('/')
+            
+            # Obtener balances totales de la cuenta
+            balances = self.exchange.fetch_balance()
+            total_base_balance = Decimal(str(balances.get(base_currency, {}).get('free', 0)))
+            total_quote_balance = Decimal(str(balances.get(quote_currency, {}).get('free', 0)))
+            
+            # Obtener precio actual
+            current_price = self.get_current_price(pair)
+            
+            # Calcular cuánto del balance total corresponde a este bot
+            total_value_usdt = total_base_balance * current_price + total_quote_balance
+            
+            if total_value_usdt >= allocated_capital:
+                # Hay suficiente balance total, calcular proporción
+                if total_value_usdt > 0:
+                    allocation_ratio = allocated_capital / total_value_usdt
+                else:
+                    allocation_ratio = Decimal('0')
+                
+                # Asignar proporcionalmente
+                allocated_base_balance = total_base_balance * allocation_ratio
+                allocated_quote_balance = total_quote_balance * allocation_ratio
+                
+                logger.debug(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f} de ${total_value_usdt:.2f} total (ratio: {allocation_ratio:.3f})")
+                
+            else:
+                # No hay suficiente balance, usar todo lo disponible
+                allocated_base_balance = total_base_balance
+                allocated_quote_balance = total_quote_balance
+                logger.warning(f"⚠️ Bot {pair}: Capital insuficiente. Asignado: ${allocated_capital:.2f}, Disponible: ${total_value_usdt:.2f}")
+            
+            # Calcular valores en USDT
+            allocated_base_value_usdt = allocated_base_balance * current_price
+            allocated_quote_value_usdt = allocated_quote_balance
+            
+            return {
+                'allocated_capital': allocated_capital,
+                'base_balance': allocated_base_balance,
+                'quote_balance': allocated_quote_balance,
+                'base_value_usdt': allocated_base_value_usdt,
+                'quote_value_usdt': allocated_quote_value_usdt,
+                'total_value_usdt': allocated_base_value_usdt + allocated_quote_value_usdt,
+                'total_available_in_account': total_value_usdt
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo balance asignado para bot {config.pair}: {e}")
+            return {
+                'allocated_capital': Decimal('0'),
+                'base_balance': Decimal('0'),
+                'quote_balance': Decimal('0'),
+                'base_value_usdt': Decimal('0'),
+                'quote_value_usdt': Decimal('0'),
+                'total_value_usdt': Decimal('0'),
+                'total_available_in_account': Decimal('0')
+            }
+
+    def can_bot_use_capital(self, config: GridConfig, required_amount: Decimal, side: str) -> Dict[str, Any]:
+        """
+        Verifica si un bot puede usar una cantidad específica de capital sin exceder su asignación.
+        
+        Args:
+            config: Configuración del bot
+            required_amount: Cantidad requerida
+            side: 'buy' (necesita USDT) o 'sell' (necesita base currency)
+            
+        Returns:
+            Dict con información de viabilidad
+        """
+        try:
+            bot_balance = self.get_bot_allocated_balance(config)
+            pair = config.pair
+            base_currency = pair.split('/')[0]
+            
+            if side == 'buy':
+                # Para compra necesitamos USDT
+                available_balance = bot_balance['quote_balance']
+                currency_needed = 'USDT'
+                required_usdt = required_amount
+            else:
+                # Para venta necesitamos la moneda base
+                available_balance = bot_balance['base_balance']
+                currency_needed = base_currency
+                required_usdt = required_amount * self.get_current_price(pair)
+            
+            can_use = available_balance >= required_amount
+            remaining_after_use = available_balance - required_amount if can_use else available_balance
+            
+            result = {
+                'can_use': can_use,
+                'bot_pair': pair,
+                'allocated_capital': bot_balance['allocated_capital'],
+                'required_amount': required_amount,
+                'required_usdt': required_usdt,
+                'available_balance': available_balance,
+                'currency_needed': currency_needed,
+                'remaining_after_use': remaining_after_use,
+                'total_bot_value': bot_balance['total_value_usdt']
+            }
+            
+            if not can_use:
+                logger.warning(f"🚫 Bot {pair} no puede usar {required_amount} {currency_needed}. Disponible: {available_balance}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error verificando uso de capital para bot {config.pair}: {e}")
+            return {
+                'can_use': False,
+                'bot_pair': config.pair,
+                'allocated_capital': Decimal('0'),
+                'required_amount': required_amount,
+                'required_usdt': Decimal('0'),
+                'available_balance': Decimal('0'),
+                'currency_needed': 'UNKNOWN',
+                'remaining_after_use': Decimal('0'),
+                'total_bot_value': Decimal('0')
+            } 

@@ -5,3 +5,6 @@ alwaysApply: true
 - Siempre deberas hacer una todo list para todo el requerimiento que llegue.
 - Contestar con un emeji de robot al inicio de cada conversacion para saber que estas tomando las rules.
 - Al final de cada conversacion mostrar un resumen de lo que se hizo y como funciona.
+- Para tareas complejas, analisis, refactors, modificaciones grandes y cualquier actividad que sea compleja y necesite modificar mas de un archivo usemos el modelo claude-4-opus
+- Para tareas sencillas, modificar funciones, modificar variables, agregar metodos o funciones sencillas usemos siempre claude-4-sonnet.
+- Junto con el Emoji de robot colocar entre parentesis el modelo que estamos usando.

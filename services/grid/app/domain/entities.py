@@ -56,6 +56,10 @@ class GridBotState:
     is_active: bool
     last_update: Optional[datetime]
 
+    # Capital comprometido (USDT) y monto base comprometido (asset del par)
+    capital_committed_usdt: Decimal = Decimal('0')
+    base_committed_amount: Decimal = Decimal('0')
+
 @dataclass
 class TradingDecision:
     """Decisión de trading basada en el monitoreo."""
@@ -76,4 +80,17 @@ class GridTrade:
     amount: Decimal
     profit: Decimal
     profit_percent: Decimal
-    executed_at: datetime 
+    executed_at: datetime
+
+@dataclass
+class GridStep:
+    """Representa un escalón del grid con un nivel inferior y otro superior.
+    En cada momento sólo hay una orden activa (buy o sell) asociada al escalón.
+    """
+    pair: str
+    level_index: int  # índice del escalón 0..(grid_levels-1)
+    buy_level_price: Decimal
+    sell_level_price: Decimal
+    active_order_id: Optional[str]
+    active_side: Optional[str]  # 'buy' o 'sell'
+    last_filled_side: Optional[str] = None 
