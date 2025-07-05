@@ -59,25 +59,11 @@ class TelegramGridNotificationService(NotificationService):
             logger.error(f"❌ Error enviando notificación de error: {e}")
 
     def send_trade_notification(self, trade: GridTrade) -> None:
-        """Envía notificación de una operación completada."""
-        try:
-            profit_emoji = "💰" if trade.profit > 0 else "📉"
-            
-            message = (
-                f"{profit_emoji} <b>TRADE COMPLETADO - GRID</b>\n\n"
-                f"💱 <b>Par:</b> {trade.pair}\n"
-                f"💵 <b>Ganancia:</b> ${trade.profit:.4f} USDT ({trade.profit_percent:.2f}%)\n"
-                f"📊 <b>Cantidad:</b> {trade.amount}\n"
-                f"📈 <b>Compra:</b> ${trade.buy_price}\n"
-                f"📉 <b>Venta:</b> ${trade.sell_price}\n\n"
-                f"⏰ <i>{trade.executed_at.strftime('%H:%M:%S %d/%m/%Y')}</i>"
-            )
-            
-            self.telegram_service.send_message(message)
-            logger.info(f"✅ Notificación de trade enviada: {trade.pair} +${trade.profit:.4f}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error enviando notificación de trade: {e}")
+        """Envía notificación de una operación completada (DESHABILITADA para evitar spam)."""
+        # NOTA: Esta notificación está deshabilitada para evitar spam
+        # Los trades se reportan en los resúmenes periódicos cada 2 horas
+        logger.debug(f"📊 Trade completado (sin notificación): {trade.pair} +${trade.profit:.4f}")
+        pass
 
     def send_bot_status_notification(self, pair: str, status: str, reason: str) -> None:
         """Envía notificación de cambio de estado del bot."""
