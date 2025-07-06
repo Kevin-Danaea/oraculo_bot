@@ -280,7 +280,7 @@ docker-compose logs grid | grep -i "telegram"
 #### 5. Error de Dependencias (TA-Lib)
 ```bash
 # Error común: talib-binary incompatible con Python 3.11
-# Solución: Usar TA-Lib==0.4.28
+# Solución: Usar TA-Lib==0.4.28 con instalación desde fuente
 
 # Verificar dependencias
 ./verify_dependencies.sh
@@ -290,6 +290,9 @@ docker-compose build --no-cache brain
 
 # Verificar logs de construcción
 docker-compose build brain 2>&1 | grep -i "error\|talib"
+
+# Si persiste el error, verificar instalación de TA-Lib
+docker-compose exec brain python -c "import talib; print('TA-Lib instalado correctamente')"
 ```
 
 #### 6. Servicio No Inicia

@@ -12,7 +12,19 @@ RUN apt-get update && apt-get install -y \
     g++ \
     libffi-dev \
     libssl-dev \
+    wget \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# Instalar TA-Lib desde fuente
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib-0.4.0-src.tar.gz ta-lib/
 
 # Copiar requirements e instalar dependencias Python
 COPY services/brain/requirements.txt .

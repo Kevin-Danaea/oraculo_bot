@@ -111,6 +111,15 @@ for service in "${services[@]}"; do
         else
             print_warning "⚠️  Python 3.11 no configurado en $service"
         fi
+        
+        # Verificar instalación de TA-Lib en Brain
+        if [ "$service" = "brain" ]; then
+            if grep -q "ta-lib-0.4.0-src.tar.gz" "services/$service/Dockerfile"; then
+                print_success "✅ TA-Lib instalación desde fuente configurada en brain"
+            else
+                print_warning "⚠️  TA-Lib instalación no configurada en brain"
+            fi
+        fi
     else
         print_error "❌ services/$service/Dockerfile no encontrado"
     fi
