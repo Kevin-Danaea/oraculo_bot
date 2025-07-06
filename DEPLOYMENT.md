@@ -277,7 +277,22 @@ docker-compose exec grid env | grep TELEGRAM
 docker-compose logs grid | grep -i "telegram"
 ```
 
-#### 5. Servicio No Inicia
+#### 5. Error de Dependencias (TA-Lib)
+```bash
+# Error común: talib-binary incompatible con Python 3.11
+# Solución: Usar TA-Lib==0.4.28
+
+# Verificar dependencias
+./verify_dependencies.sh
+
+# Reconstruir imagen con cache limpio
+docker-compose build --no-cache brain
+
+# Verificar logs de construcción
+docker-compose build brain 2>&1 | grep -i "error\|talib"
+```
+
+#### 6. Servicio No Inicia
 ```bash
 # Verificar estado
 ./deploy.sh status
