@@ -248,6 +248,21 @@ tail -f logs/hype.log
 ./monitor_memory.sh
 ```
 
+#### 0.1. Despliegue en Ubuntu Sin Conda
+```bash
+# Si no tienes conda instalado en Ubuntu:
+./deploy_ubuntu_no_conda.sh
+
+# O usar opciones específicas:
+# Opción 1: Dockerfile sin conda (recomendado)
+cp services/brain/Dockerfile.no-conda services/brain/Dockerfile
+docker-compose build --no-cache brain
+
+# Opción 2: Wheel precompilado
+cp services/brain/requirements.wheel.txt services/brain/requirements.txt
+docker-compose build --no-cache brain
+```
+
 #### 1. Error de Conexión a Base de Datos
 ```bash
 # Verificar que DATABASE_URL esté correcta

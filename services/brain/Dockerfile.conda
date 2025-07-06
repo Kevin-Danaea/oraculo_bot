@@ -1,0 +1,39 @@
+# ==============================================================================
+# Dockerfile con Conda - Alternativa para TA-Lib
+# ==============================================================================
+
+FROM continuumio/miniconda3:latest
+
+# --- Configuración del Entorno ---
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# --- Instalar TA-Lib con conda ---
+RUN conda install -c conda-forge ta-lib -y
+
+# --- Instalación de dependencias de Python ---
+COPY services/brain/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Copiar el Código de la Aplicación ---
+COPY shared/ ./shared/
+COPY services/brain/app/ ./app/
+
+# Crear directorio para logs
+RUN mkdir -p logs
+
+# Exponer puerto
+EXPOSE 8000
+
+# Variables de entorno por defecto
+ENV BRAIN_ANALYSIS_INTERVAL=3600
+ENV BRAIN_ANALYSIS_TIMEFRAME=4h
+ENV BRAIN_ANALYSIS_DAYS=40
+ENV BRAIN_LOG_LEVEL=INFO
+ENV BRAIN_DEBUG=false
+ENV BRAIN_DEV_MODE=false
+ENV PYTHONPATH=/app
+
+# --- Comando de Ejecución ---
+CMD ["python", "-m", "app.main"] 
