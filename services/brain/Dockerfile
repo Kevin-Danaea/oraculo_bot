@@ -15,11 +15,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements e instalar dependencias Python
-COPY requirements.txt .
+COPY services/brain/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
-COPY app/ ./app/
+COPY services/brain/app/ ./app/
+COPY shared/ ./shared/
 
 # Crear directorio para logs
 RUN mkdir -p logs
@@ -34,6 +35,7 @@ ENV BRAIN_ANALYSIS_DAYS=40
 ENV BRAIN_LOG_LEVEL=INFO
 ENV BRAIN_DEBUG=false
 ENV BRAIN_DEV_MODE=false
+ENV PYTHONPATH=/app
 
 # Comando para ejecutar la aplicación
 CMD ["python", "-m", "app.main"] 

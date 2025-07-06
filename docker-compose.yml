@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15
+    container_name: oraculo-postgres
+    environment:
+      POSTGRES_DB: oraculo_bot
+      POSTGRES_USER: ${POSTGRES_USER:-oraculo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oraculo123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - oraculo-network
+
+  # Servicio Brain - Motor de Decisiones
   brain:
     build:
       context: .
@@ -14,13 +31,44 @@ services:
       - BINANCE_API_SECRET=${BINANCE_API_SECRET}
       - BRAIN_ANALYSIS_INTERVAL=${BRAIN_ANALYSIS_INTERVAL:-3600}
       - BRAIN_LOG_LEVEL=${BRAIN_LOG_LEVEL:-INFO}
-      - GRID_SERVICE_URL=http://grid:8000
+      - BRAIN_DEBUG=${BRAIN_DEBUG:-false}
+      - BRAIN_DEV_MODE=${BRAIN_DEV_MODE:-false}
     volumes:
       - ./logs:/app/logs
+      - ./shared:/app/shared
+    depends_on:
+      - postgres
     restart: unless-stopped
     networks:
       - oraculo-network
 
+  # Servicio Grid - Trading Automático
+  grid:
+    build:
+      context: .
+      dockerfile: services/grid/Dockerfile
+    container_name: oraculo-grid
+    ports:
+      - "8002:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TRADING_MODE=${TRADING_MODE:-sandbox}
+      - MONITORING_INTERVAL_HOURS=${MONITORING_INTERVAL_HOURS:-1}
+    volumes:
+      - ./logs:/app/logs
+      - ./shared:/app/shared
+    depends_on:
+      - postgres
+      - brain
+    restart: unless-stopped
+    networks:
+      - oraculo-network
+
+  # Servicio News - Análisis de Noticias
   news:
     build:
       context: .
@@ -36,11 +84,45 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - NEWS_COLLECTION_INTERVAL=${NEWS_COLLECTION_INTERVAL:-3600}
+      - SENTIMENT_ANALYSIS_INTERVAL=${SENTIMENT_ANALYSIS_INTERVAL:-1800}
     volumes:
-      - ./logs:/app/logs  # Para persistir logs si es necesario
+      - ./logs:/app/logs
+      - ./shared:/app/shared
+    depends_on:
+      - postgres
     restart: unless-stopped
     networks:
       - oraculo-network
+
+  # Servicio Hype - Detección de Hype
+  hype:
+    build:
+      context: .
+      dockerfile: services/hype/Dockerfile
+    container_name: oraculo-hype
+    ports:
+      - "8003:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - HYPE_SCAN_INTERVAL=${HYPE_SCAN_INTERVAL:-300}
+      - HYPE_ALERT_THRESHOLD=${HYPE_ALERT_THRESHOLD:-10}
+    volumes:
+      - ./logs:/app/logs
+      - ./shared:/app/shared
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - oraculo-network
+
+volumes:
+  postgres_data:
 
 networks:
   oraculo-network:
