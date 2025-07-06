@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+# Regla 1: Protocolo de Interacción
+- Al inicio de CADA respuesta, debes usar el emoji 🤖 seguido del nombre del modelo que estás utilizando entre paréntesis. Ejemplo: 🤖 (Claude 4 Sonnet)
+- Antes de escribir cualquier código, genera una lista de tareas o usar el modo planning que hay disponible.
+
+# Regla 2: Selección de Modelo por Tarea (La Cascada)
+- **Por defecto, para todas las tareas, usa `Claude Sonnet 4`**. Es tu primera opción por velocidad y eficiencia.
+- **SI** mi prompt contiene alguna de las siguientes palabras clave: "arquitectura", "analizar", "refactorizar", "optimizar", "diseñar", "complejo" o "desde cero", **entonces** escala y usa un modelo de alto rendimiento como `Claude Opus 4` en "Max-Mode".
+
+# Regla 3: Mandato de Calidad de Código
+- Todo el código Python generado debe seguir los estándares de PEP 8.
+- Todas las funciones y clases públicas deben incluir docstrings en el formato de Google, explicando qué hacen, sus argumentos y qué devuelven.
+- El código debe ser modular y reutilizable. Evita la duplicación.
+
+# Regla 4: Protocolo de Finalización
+- Al final de cada respuesta que contenga código, incluye un resumen conciso en un bloque de cita (`>`) explicando qué has hecho y por qué.
+- Después del resumen, siempre que sea posible, proporciona un breve ejemplo práctico de cómo se usaría la función o clase principal que has creado.
+- Generar de ser posible siempre los casos y ejemplos de uso para saber que todo esta completamente integrado.

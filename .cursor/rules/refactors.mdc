@@ -1,0 +1,25 @@
+---
+alwaysApply: false
+---
+- Todos los refactos de codigo apartir de ahora deben tener la arquitectura:
+    """
+    /services/news/
+    |-- Dockerfile
+    |-- requirements.txt
+    |-- app/
+    |   |-- __init__.py
+    |   |-- domain/
+    |   |   |-- __init__.py
+    |   |-- application/
+    |   |   |-- __init__.py
+    |   |-- infrastructure/
+    |   |   |-- __init__.py
+    |   |-- main.py
+    """
+- Cada caso de uso debe tener su propio archivo para no tener todos los casos encapsulados en un solo archivo.
+- Todos los dockefiles tienen que tener la misma estructura.
+- Todos deben importar la carpeta shared si necesitan un servicio o modelo de base de datos especifico, sino, no es necesario.
+- Todos los archivos deben mantener la misma funcionalidad a menos que se indique lo contrario.
+- Siempre debe ser lo mas alineado a la arquitectura SOLID y arquitecturuas limpias.
+- Todos los archivos y funcionalidades a migrar estan en /services-to-migrate.
+- Ignorar todos los diff que salgan al revisar archivos.

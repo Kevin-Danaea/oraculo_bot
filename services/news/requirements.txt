@@ -1,0 +1,28 @@
+# FastAPI & Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Reddit API
+praw==7.7.1
+
+# Google Gemini API
+google-genai==0.1.0
+
+# Database
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+
+# Scheduler
+apscheduler==3.10.4
+
+# Environment & Config
+python-dotenv==1.0.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Utilities
+requests==2.31.0
+python-json-logger==2.0.7
+
+# Date/Time
+pytz==2023.3 

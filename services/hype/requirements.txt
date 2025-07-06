@@ -1,0 +1,23 @@
+# FastAPI y servidor
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Base de datos
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+
+# Scheduler
+apscheduler==3.10.4
+
+# Reddit API
+praw==7.7.1
+
+# Utilidades
+python-decouple==3.8
+loguru==0.7.2
+
+# Requests para APIs
+requests==2.31.0
+
+# Pydantic para validación
+pydantic==2.5.0 
