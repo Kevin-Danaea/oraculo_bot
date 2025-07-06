@@ -1,22 +1,6 @@
 version: '3.8'
 
 services:
-  # Base de datos PostgreSQL
-  postgres:
-    image: postgres:15
-    container_name: oraculo-postgres
-    environment:
-      POSTGRES_DB: oraculo_bot
-      POSTGRES_USER: ${POSTGRES_USER:-oraculo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oraculo123}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - oraculo-network
-
   # Servicio Brain - Motor de Decisiones
   brain:
     build:
@@ -36,8 +20,6 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./shared:/app/shared
-    depends_on:
-      - postgres
     restart: unless-stopped
     networks:
       - oraculo-network
@@ -62,7 +44,6 @@ services:
       - ./logs:/app/logs
       - ./shared:/app/shared
     depends_on:
-      - postgres
       - brain
     restart: unless-stopped
     networks:
@@ -89,8 +70,6 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./shared:/app/shared
-    depends_on:
-      - postgres
     restart: unless-stopped
     networks:
       - oraculo-network
@@ -115,14 +94,9 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./shared:/app/shared
-    depends_on:
-      - postgres
     restart: unless-stopped
     networks:
       - oraculo-network
-
-volumes:
-  postgres_data:
 
 networks:
   oraculo-network:
