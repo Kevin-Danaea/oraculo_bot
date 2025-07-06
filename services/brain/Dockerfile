@@ -1,38 +1,43 @@
-# Brain Service Dockerfile
-# ========================
+# ==============================================================================
+# Dockerfile Definitivo para servicios con TA-Lib
+# ==============================================================================
 
-FROM python:3.11-slim
+# --- Etapa 1: Imagen Base ---
+FROM python:3.10-slim
 
-# Establecer directorio de trabajo
+# --- Configuración del Entorno ---
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-# Instalar dependencias del sistema
+# --- Etapa 2: Instalación de Dependencias del Sistema para TA-Lib (EL PASO CLAVE) ---
+# Actualizamos la lista de paquetes e instalamos las herramientas necesarias
 RUN apt-get update && apt-get install -y \
+    wget \
+    build-essential \
     gcc \
     g++ \
     libffi-dev \
     libssl-dev \
-    wget \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Instalar TA-Lib desde fuente
-RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
-    tar -xzf ta-lib-0.4.0-src.tar.gz && \
-    cd ta-lib/ && \
-    ./configure --prefix=/usr && \
-    make && \
-    make install && \
-    cd .. && \
-    rm -rf ta-lib-0.4.0-src.tar.gz ta-lib/
+# Descargamos el código fuente de la librería TA-Lib en C
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+# Descomprimimos el archivo
+RUN tar -xvzf ta-lib-0.4.0-src.tar.gz
+# Navegamos a la carpeta descomprimida
+RUN cd ta-lib/ && ./configure --prefix=/usr && make && make install
+# Limpiamos los archivos de instalación que ya no necesitamos
+RUN rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# Copiar requirements e instalar dependencias Python
+# --- Etapa 3: Instalación de Dependencias de Python ---
+# Ahora que la base de C está instalada, podemos instalar el wrapper de Python.
 COPY services/brain/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código de la aplicación
-COPY services/brain/app/ ./app/
+# --- Etapa 4: Copiar el Código de la Aplicación ---
 COPY shared/ ./shared/
+COPY services/brain/app/ ./app/
 
 # Crear directorio para logs
 RUN mkdir -p logs
@@ -49,5 +54,5 @@ ENV BRAIN_DEBUG=false
 ENV BRAIN_DEV_MODE=false
 ENV PYTHONPATH=/app
 
-# Comando para ejecutar la aplicación
+# --- Etapa 5: Comando de Ejecución ---
 CMD ["python", "-m", "app.main"] 

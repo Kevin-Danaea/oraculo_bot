@@ -236,6 +236,18 @@ tail -f logs/hype.log
 
 ### Problemas Comunes
 
+#### 0. Optimización para DigitalOcean Droplet (1GB RAM)
+```bash
+# Si tienes un droplet de 1GB RAM, ejecuta primero:
+./optimize_memory.sh
+
+# Luego usa el despliegue optimizado:
+./deploy_optimized.sh
+
+# Para monitorear memoria:
+./monitor_memory.sh
+```
+
 #### 1. Error de Conexión a Base de Datos
 ```bash
 # Verificar que DATABASE_URL esté correcta

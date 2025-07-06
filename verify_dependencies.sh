@@ -37,10 +37,10 @@ print_status "Verificando versión de Python..."
 python_version=$(python3 --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1,2)
 echo "Python version: $python_version"
 
-if [[ "$python_version" == "3.11" ]]; then
-    print_success "✅ Python 3.11 detectado"
+if [[ "$python_version" == "3.10" ]] || [[ "$python_version" == "3.11" ]]; then
+    print_success "✅ Python $python_version detectado (compatible)"
 else
-    print_warning "⚠️  Python $python_version detectado (recomendado: 3.11)"
+    print_warning "⚠️  Python $python_version detectado (recomendado: 3.10 o 3.11)"
 fi
 
 echo ""
@@ -106,10 +106,12 @@ for service in "${services[@]}"; do
         print_success "✅ services/$service/Dockerfile encontrado"
         
         # Verificar versión de Python en Dockerfile
-        if grep -q "FROM python:3.11" "services/$service/Dockerfile"; then
+        if grep -q "FROM python:3.10" "services/$service/Dockerfile"; then
+            print_success "✅ Python 3.10 configurado en $service"
+        elif grep -q "FROM python:3.11" "services/$service/Dockerfile"; then
             print_success "✅ Python 3.11 configurado en $service"
         else
-            print_warning "⚠️  Python 3.11 no configurado en $service"
+            print_warning "⚠️  Python 3.10/3.11 no configurado en $service"
         fi
         
         # Verificar instalación de TA-Lib en Brain
@@ -169,8 +171,8 @@ echo ""
 print_status "Resumen de verificación:"
 
 echo "📋 Dependencias críticas:"
-echo "   - Python 3.11: ✅ Compatible"
-echo "   - TA-Lib==0.4.28: ✅ Compatible con Python 3.11"
+echo "   - Python 3.10: ✅ Compatible"
+echo "   - TA-Lib==0.4.28: ✅ Compatible con Python 3.10"
 echo "   - pandas==2.1.3: ✅ Compatible"
 echo "   - numpy==1.25.2: ✅ Compatible"
 
