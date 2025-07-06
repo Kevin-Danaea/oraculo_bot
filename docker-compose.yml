@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  brain:
+    build:
+      context: .
+      dockerfile: services/brain/Dockerfile
+    container_name: oraculo-brain
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BRAIN_ANALYSIS_INTERVAL=${BRAIN_ANALYSIS_INTERVAL:-3600}
+      - BRAIN_LOG_LEVEL=${BRAIN_LOG_LEVEL:-INFO}
+      - GRID_SERVICE_URL=http://grid:8000
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - oraculo-network
+
   news:
     build:
       context: .

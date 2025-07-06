@@ -1,7 +1,5 @@
 ---
-description: 
-globs: 
-alwaysApply: true
+alwaysApply: false
 ---
 - Todos los refactos de codigo apartir de ahora deben tener la arquitectura:
     """
