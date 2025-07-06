@@ -19,16 +19,21 @@ RUN apt-get update && apt-get install -y \
     g++ \
     libffi-dev \
     libssl-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Descargamos el código fuente de la librería TA-Lib en C
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
 # Descomprimimos el archivo
 RUN tar -xvzf ta-lib-0.4.0-src.tar.gz
-# Navegamos a la carpeta descomprimida
-RUN cd ta-lib/ && ./configure --prefix=/usr && make && make install
+# Navegamos a la carpeta descomprimida y compilamos
+WORKDIR /ta-lib
+RUN ./configure --prefix=/usr && make && make install
+# Configurar las variables de entorno para que Python encuentre la librería
+RUN echo "/usr/lib" > /etc/ld.so.conf.d/talib.conf && ldconfig
 # Limpiamos los archivos de instalación que ya no necesitamos
-RUN rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+WORKDIR /app
+RUN rm -rf /ta-lib ta-lib-0.4.0-src.tar.gz
 
 # --- Etapa 3: Instalación de Dependencias de Python ---
 # Ahora que la base de C está instalada, podemos instalar el wrapper de Python.
