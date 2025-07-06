@@ -57,6 +57,8 @@ check_env_file() {
             echo "  - DATABASE_URL (URL de Neon)"
             echo "  - BINANCE_API_KEY"
             echo "  - BINANCE_API_SECRET"
+            echo "  - PAPER_TRADING_API_KEY"
+            echo "  - PAPER_TRADING_SECRET_KEY"
             echo "  - TELEGRAM_BOT_TOKEN"
             echo "  - TELEGRAM_CHAT_ID"
             echo "  - REDDIT_CLIENT_ID"

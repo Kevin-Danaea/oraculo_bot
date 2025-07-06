@@ -38,6 +38,7 @@ docker-compose --version
 Necesitarás las siguientes credenciales:
 
 - **Binance API**: Para trading automático
+- **Paper Trading API**: Para modo sandbox del Grid bot
 - **Telegram Bot**: Para notificaciones
 - **Reddit API**: Para análisis de noticias y hype
 - **Google Gemini API**: Para análisis de sentimiento
@@ -80,6 +81,10 @@ DATABASE_URL=postgresql://neondb_owner:npg_HBa09XmfheyT@ep-red-waterfall-a5ald21
 # Binance API (Requerido para Brain y Grid)
 BINANCE_API_KEY=tu_binance_api_key_aqui
 BINANCE_API_SECRET=tu_binance_api_secret_aqui
+
+# Paper Trading API (Requerido para Grid en modo sandbox)
+PAPER_TRADING_API_KEY=tu_paper_trading_api_key_aqui
+PAPER_TRADING_SECRET_KEY=tu_paper_trading_secret_key_aqui
 
 # Telegram Bot (Requerido para notificaciones)
 TELEGRAM_BOT_TOKEN=tu_telegram_bot_token_aqui
@@ -254,7 +259,16 @@ docker-compose exec grid env | grep BINANCE
 docker-compose logs grid | grep -i "binance\|api"
 ```
 
-#### 3. Error de Telegram Bot
+#### 3. Error de Paper Trading (Sandbox)
+```bash
+# Verificar variables de entorno
+docker-compose exec grid env | grep PAPER_TRADING
+
+# Verificar en logs
+docker-compose logs grid | grep -i "paper\|sandbox"
+```
+
+#### 4. Error de Telegram Bot
 ```bash
 # Verificar token y chat ID
 docker-compose exec grid env | grep TELEGRAM
@@ -263,7 +277,7 @@ docker-compose exec grid env | grep TELEGRAM
 docker-compose logs grid | grep -i "telegram"
 ```
 
-#### 4. Servicio No Inicia
+#### 5. Servicio No Inicia
 ```bash
 # Verificar estado
 ./deploy.sh status
@@ -404,6 +418,7 @@ curl http://localhost:8003/health  # Hype
 
 - [ ] Docker y Docker Compose instalados
 - [ ] Archivo `.env` configurado con credenciales
+- [ ] Variables de Paper Trading configuradas
 - [ ] Directorio `logs/` creado
 - [ ] Script `deploy.sh` ejecutable
 - [ ] Todas las imágenes construidas correctamente
