@@ -76,7 +76,7 @@ chmod +x deploy.sh
 
 ```bash
 # Base de datos Neon (PostgreSQL en la nube)
-DATABASE_URL=postgresql://neondb_owner:npg_HBa09XmfheyT@ep-red-waterfall-a5ald21b-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+DATABASE_URL=postgresql://usuario:password@tu-instancia-neon.region.aws.neon.tech/tu-database?sslmode=require
 
 # Binance API (Requerido para Brain y Grid)
 BINANCE_API_KEY=tu_binance_api_key_aqui
