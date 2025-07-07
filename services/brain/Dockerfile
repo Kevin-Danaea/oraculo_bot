@@ -2,7 +2,7 @@
 # Dockerfile Estandarizado - Oráculo Bot Brain Service
 # ==============================================================================
 
-FROM continuumio/miniconda3:latest
+FROM python:3.10-slim
 
 # Configuración del entorno
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -11,9 +11,23 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-# Actualizar conda e instalar TA-Lib
-RUN conda update -n base -c defaults conda -y && \
-    conda install -c conda-forge ta-lib python=3.10 -y
+# Instalar dependencias del sistema necesarias para TA-Lib
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    wget \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Descargar e instalar TA-Lib desde el código fuente
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
 # Copiar requirements e instalar dependencias Python
 COPY services/brain/requirements.txt .

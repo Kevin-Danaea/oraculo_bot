@@ -5,12 +5,17 @@ services:
     env: python
     plan: starter
     buildCommand: |
-      # Instalar conda
-      wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-      bash miniconda.sh -b -p $HOME/miniconda
-      export PATH="$HOME/miniconda/bin:$PATH"
-      # Instalar TA-Lib desde conda-forge
-      conda install -c conda-forge ta-lib python=3.10 -y
+      # Instalar dependencias del sistema para TA-Lib
+      apt-get update && apt-get install -y gcc g++ wget build-essential
+      # Descargar e instalar TA-Lib desde el código fuente
+      wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+      tar -xzf ta-lib-0.4.0-src.tar.gz
+      cd ta-lib/
+      ./configure --prefix=/usr
+      make
+      make install
+      cd ..
+      rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
       # Instalar dependencias Python
       pip install -r services/brain/requirements.txt
     startCommand: cd services/brain && python app/main.py
