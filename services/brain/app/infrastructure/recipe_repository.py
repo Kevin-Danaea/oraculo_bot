@@ -22,8 +22,8 @@ class InMemoryRecipeRepository(RecipeRepository):
     
     def __init__(self):
         """Inicializa el repositorio con las recetas maestras."""
-        self._recipes = self._load_master_recipes()
         self.logger = logging.getLogger(__name__)
+        self._recipes = self._load_master_recipes()
     
     def _load_master_recipes(self) -> Dict[str, TradingRecipe]:
         """

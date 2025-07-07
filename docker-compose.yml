@@ -21,12 +21,6 @@ services:
       - ./logs:/app/logs
       - ./shared:/app/shared
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
     networks:
       - oraculo-network
 
@@ -54,12 +48,6 @@ services:
     depends_on:
       - brain
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
     networks:
       - oraculo-network
 
@@ -85,12 +73,6 @@ services:
       - ./logs:/app/logs
       - ./shared:/app/shared
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
     networks:
       - oraculo-network
 
@@ -115,12 +97,6 @@ services:
       - ./logs:/app/logs
       - ./shared:/app/shared
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
     networks:
       - oraculo-network
 
