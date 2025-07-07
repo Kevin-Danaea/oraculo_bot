@@ -66,20 +66,46 @@ class GridTelegramBot:
     def _register_commands(self):
         """Registra todos los comandos disponibles en el bot."""
         try:
-            # Comandos básicos
-            self.telegram_service.register_command("start", self._handle_start_command)
-            self.telegram_service.register_command("help", self._handle_help_command)
-            self.telegram_service.register_command("status", self._handle_status_command)
-            self.telegram_service.register_command("balance", self._handle_balance_command)
+            # Verificar que la aplicación esté inicializada
+            if not self.telegram_service._application:
+                logger.error("❌ Aplicación de Telegram no inicializada")
+                return
+            
+            # Importar CommandHandler aquí para evitar problemas de importación
+            from telegram.ext import CommandHandler
+            
+            # Comandos básicos - usar wrappers simples
+            self.telegram_service._application.add_handler(
+                CommandHandler("start", self._handle_start_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("help", self._handle_help_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("status", self._handle_status_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("balance", self._handle_balance_command)
+            )
             
             # Comandos de control
-            self.telegram_service.register_command("start_bot", self._handle_start_bot_command)
-            self.telegram_service.register_command("stop_bot", self._handle_stop_bot_command)
-            self.telegram_service.register_command("monitor", self._handle_monitor_command)
+            self.telegram_service._application.add_handler(
+                CommandHandler("start_bot", self._handle_start_bot_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("stop_bot", self._handle_stop_bot_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("monitor", self._handle_monitor_command)
+            )
             
             # Comandos de modo
-            self.telegram_service.register_command("sandbox", self._handle_sandbox_command)
-            self.telegram_service.register_command("production", self._handle_production_command)
+            self.telegram_service._application.add_handler(
+                CommandHandler("sandbox", self._handle_sandbox_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("production", self._handle_production_command)
+            )
             
             logger.info("✅ Comandos de Telegram registrados correctamente")
             

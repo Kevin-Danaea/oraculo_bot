@@ -10,6 +10,7 @@ from app.domain.interfaces import GridRepository, ExchangeService, NotificationS
 from app.domain.entities import GridConfig, GridOrder
 from app.config import MIN_ORDER_VALUE_USDT
 from shared.services.logging_config import get_logger
+from app.infrastructure.notification_service import TelegramGridNotificationService
 
 logger = get_logger(__name__)
 
@@ -249,6 +250,35 @@ class ManageGridTransitionsUseCase:
             
             # 5. Notificar activación
             self.notification_service.send_bot_status_notification(config.pair, "ACTIVADO", "Decisión del Cerebro")
+            
+            # 6. Enviar notificación detallada con resumen de activación
+            if initial_orders:
+                buy_orders = len([o for o in initial_orders if o.side == 'buy'])
+                sell_orders = len([o for o in initial_orders if o.side == 'sell'])
+                
+                # Obtener información del capital usado
+                bot_balance = self.exchange_service.get_bot_allocated_balance(config)
+                allocated_capital = bot_balance['allocated_capital']
+                
+                # Calcular capital utilizado (aproximado)
+                capital_used = sum(o.price * o.amount for o in initial_orders if o.side == 'buy')
+                
+                activation_summary = (
+                    f"🚀 <b>BOT ACTIVADO - {config.pair}</b>\n\n"
+                    f"💰 <b>Capital asignado:</b> ${allocated_capital:.2f} USDT\n"
+                    f"💵 <b>Capital utilizado:</b> ${capital_used:.2f} USDT\n"
+                    f"📊 <b>Órdenes creadas:</b> {len(initial_orders)} total\n"
+                    f"   📈 Compras: {buy_orders} órdenes\n"
+                    f"   📉 Ventas: {sell_orders} órdenes\n"
+                    f"🎯 <b>Precio actual:</b> ${current_price:.4f}\n"
+                    f"⚙️ <b>Niveles de grilla:</b> {config.grid_levels}\n"
+                    f"📅 <b>Activado:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
+                )
+                
+                # Enviar notificación detallada
+                notification_service = TelegramGridNotificationService()
+                notification_service.telegram_service.send_message(activation_summary)
+                logger.info(f"📱 Notificación detallada enviada para activación de {config.pair}")
             
             logger.info(f"✅ Bot {config.pair} activado exitosamente")
             
@@ -519,26 +549,6 @@ class ManageGridTransitionsUseCase:
             logger.info(f"🎉 Bot {pair}: Grilla inicial completada - {buy_orders_created} órdenes de compra, {sell_orders_created} órdenes de venta")
             logger.info(f"💰 Bot {pair}: Capital utilizado ${capital_used:.2f} de ${half_capital:.2f} asignado")
             logger.info(f"📊 Bot {pair}: Total de órdenes creadas: {len(initial_orders)}")
-            
-            # Enviar notificación detallada con resumen de activación
-            if initial_orders:
-                activation_summary = (
-                    f"🚀 <b>GRILLA INICIAL CREADA - {pair}</b>\n\n"
-                    f"💰 <b>Capital asignado:</b> ${allocated_capital:.2f} USDT\n"
-                    f"💵 <b>Capital utilizado:</b> ${capital_used:.2f} USDT\n"
-                    f"📊 <b>Órdenes creadas:</b> {len(initial_orders)} total\n"
-                    f"   📈 Compras: {buy_orders_created} órdenes\n"
-                    f"   📉 Ventas: {sell_orders_created} órdenes\n"
-                    f"🎯 <b>Precio actual:</b> ${current_price:.4f}\n"
-                    f"⚙️ <b>Niveles de grilla:</b> {config.grid_levels}\n"
-                    f"📅 <b>Creada:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
-                )
-                
-                # Usar el servicio de notificación directamente
-                from app.infrastructure.notification_service import TelegramGridNotificationService
-                notification_service = TelegramGridNotificationService()
-                notification_service.telegram_service.send_message(activation_summary)
-                logger.info(f"📱 Notificación detallada enviada para grilla inicial de {pair}")
             
             return initial_orders
             
