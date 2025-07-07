@@ -2,6 +2,7 @@
 Bot de Telegram simplificado para comandos básicos del Grid Trading.
 """
 from typing import Optional
+import threading
 
 from shared.services.telegram_trading import TelegramTradingService
 from shared.services.logging_config import get_logger
@@ -17,6 +18,7 @@ class GridTelegramBot:
         self.scheduler = scheduler_instance
         self.telegram_service = TelegramTradingService()
         self.is_active = False
+        self.polling_thread = None
         
         # Inicializar caso de uso para cambio de modo
         if hasattr(scheduler_instance, 'grid_repository') and hasattr(scheduler_instance, 'exchange_service') and hasattr(scheduler_instance, 'notification_service'):
@@ -31,15 +33,58 @@ class GridTelegramBot:
         logger.info("✅ GridTelegramBot inicializado")
 
     def start(self):
-        """Marca el bot como activo."""
-        self.is_active = True
-        logger.info("✅ Bot de Telegram activado")
-        return True
+        """Marca el bot como activo e inicia el polling para comandos interactivos."""
+        try:
+            self.is_active = True
+            
+            # Inicializar bot interactivo
+            if self.telegram_service.init_bot():
+                # Registrar comandos
+                self._register_commands()
+                
+                # Iniciar polling en hilo separado
+                self.polling_thread = self.telegram_service.start_polling()
+                
+                logger.info("✅ Bot de Telegram activado con comandos interactivos")
+                return True
+            else:
+                logger.error("❌ No se pudo inicializar el bot interactivo")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error activando bot de Telegram: {e}")
+            return False
 
     def stop(self):
-        """Marca el bot como inactivo."""
+        """Marca el bot como inactivo y detiene el polling."""
         self.is_active = False
-        logger.info("✅ Bot de Telegram desactivado")
+        if self.polling_thread and self.polling_thread.is_alive():
+            # El bot se detendrá automáticamente cuando el hilo termine
+            logger.info("🛑 Bot de Telegram desactivado")
+        return True
+
+    def _register_commands(self):
+        """Registra todos los comandos disponibles en el bot."""
+        try:
+            # Comandos básicos
+            self.telegram_service.register_command("start", self._handle_start_command)
+            self.telegram_service.register_command("help", self._handle_help_command)
+            self.telegram_service.register_command("status", self._handle_status_command)
+            self.telegram_service.register_command("balance", self._handle_balance_command)
+            
+            # Comandos de control
+            self.telegram_service.register_command("start_bot", self._handle_start_bot_command)
+            self.telegram_service.register_command("stop_bot", self._handle_stop_bot_command)
+            self.telegram_service.register_command("monitor", self._handle_monitor_command)
+            
+            # Comandos de modo
+            self.telegram_service.register_command("sandbox", self._handle_sandbox_command)
+            self.telegram_service.register_command("production", self._handle_production_command)
+            
+            logger.info("✅ Comandos de Telegram registrados correctamente")
+            
+        except Exception as e:
+            logger.error(f"❌ Error registrando comandos: {e}")
 
     def send_message(self, message: str):
         """Envía un mensaje por Telegram."""
@@ -50,7 +95,7 @@ class GridTelegramBot:
             return False
 
     def handle_command(self, command: str) -> str:
-        """Maneja comandos básicos del Grid Trading."""
+        """Maneja comandos básicos del Grid Trading (para testing via API)."""
         try:
             command = command.lower().strip()
             
@@ -83,6 +128,109 @@ class GridTelegramBot:
         except Exception as e:
             logger.error(f"❌ Error procesando comando {command}: {e}")
             return f"❌ Error procesando comando: {str(e)}"
+
+    # === MANEJADORES DE COMANDOS INTERACTIVOS ===
+    
+    async def _handle_start_command(self, update, context):
+        """Maneja el comando /start."""
+        message = (
+            "🚀 <b>Bienvenido al Grid Trading Bot</b>\n\n"
+            "Este bot te permite controlar el sistema de Grid Trading.\n\n"
+            "📋 <b>Comandos principales:</b>\n"
+            "• /status - Ver estado del sistema\n"
+            "• /balance - Verificar capital y balances\n"
+            "• /start_bot - Iniciar Grid Trading\n"
+            "• /stop_bot - Detener Grid Trading\n"
+            "• /monitor - Ejecutar monitoreo manual\n"
+            "• /sandbox - Cambiar a modo pruebas\n"
+            "• /production - Cambiar a modo real\n"
+            "• /help - Ver todos los comandos\n\n"
+            "¡Usa /help para ver todos los comandos disponibles!"
+        )
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
+
+    async def _handle_help_command(self, update, context):
+        """Maneja el comando /help."""
+        message = (
+            "🤖 <b>Comandos del Grid Trading Bot</b>\n\n"
+            "📊 <b>Información:</b>\n"
+            "• /status - Estado del sistema y scheduler\n"
+            "• /balance - Capital asignado y balances por bot\n\n"
+            "🎮 <b>Control:</b>\n"
+            "• /start_bot - Iniciar Grid Trading\n"
+            "• /stop_bot - Detener Grid Trading\n"
+            "• /monitor - Ejecutar monitoreo manual\n\n"
+            "⚙️ <b>Configuración:</b>\n"
+            "• /sandbox - Cambiar a modo pruebas\n"
+            "• /production - Cambiar a modo real (requiere confirmación)\n\n"
+            "💡 <b>Tip:</b> Los comandos también funcionan sin la barra /"
+        )
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
+
+    async def _handle_status_command(self, update, context):
+        """Maneja el comando /status."""
+        try:
+            status_text = self._handle_status()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=status_text, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error obteniendo estado: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    async def _handle_balance_command(self, update, context):
+        """Maneja el comando /balance."""
+        try:
+            balance_text = self._handle_balance_check()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=balance_text, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error obteniendo balances: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    async def _handle_start_bot_command(self, update, context):
+        """Maneja el comando /start_bot."""
+        try:
+            result = self._handle_start_bot()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error iniciando bot: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    async def _handle_stop_bot_command(self, update, context):
+        """Maneja el comando /stop_bot."""
+        try:
+            result = self._handle_stop_bot()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error deteniendo bot: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    async def _handle_monitor_command(self, update, context):
+        """Maneja el comando /monitor."""
+        try:
+            result = self._handle_manual_monitor()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error ejecutando monitoreo: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    async def _handle_sandbox_command(self, update, context):
+        """Maneja el comando /sandbox."""
+        try:
+            result = self._handle_sandbox()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error cambiando a sandbox: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    async def _handle_production_command(self, update, context):
+        """Maneja el comando /production."""
+        try:
+            result = self._handle_production("production")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error cambiando a producción: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+
+    # === MANEJADORES EXISTENTES (sin cambios) ===
 
     def _handle_start_bot(self) -> str:
         """Maneja el comando start_bot."""

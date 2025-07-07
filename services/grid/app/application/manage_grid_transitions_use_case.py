@@ -443,14 +443,22 @@ class ManageGridTransitionsUseCase:
             # 7a) Órdenes de venta usando filled_amount_net distribuido
             if len(upper_levels) > 0:
                 amount_sell_each = (filled_amount_net / Decimal(len(upper_levels))).quantize(Decimal('0.000001'))
+                logger.info(f"📊 Bot {pair}: Creando {len(upper_levels)} órdenes de venta con {amount_sell_each} {base_currency} cada una")
             else:
                 amount_sell_each = Decimal('0')
+                logger.warning(f"⚠️ Bot {pair}: No hay niveles superiores para órdenes de venta")
 
             orders_created = 0
             capital_used = Decimal('0')
+            buy_orders_created = 0
+            sell_orders_created = 0
+
+            logger.info(f"🏗️ Bot {pair}: Iniciando creación de grilla con {len(lower_levels)} niveles de compra y {len(upper_levels)} niveles de venta")
 
             for idx, (buy_price, sell_price) in enumerate(zip(lower_levels, upper_levels)):
                 try:
+                    logger.info(f"🔧 Bot {pair}: Procesando nivel {idx+1}/{len(lower_levels)} - Compra: ${buy_price:.4f}, Venta: ${sell_price:.4f}")
+                    
                     # Verificar que no excedemos el capital asignado al bot
                     order_value = buy_price * amount_per_order
                     if capital_used + order_value > half_capital:
@@ -464,6 +472,7 @@ class ManageGridTransitionsUseCase:
                         break
                     
                     # Crear orden BUY
+                    logger.info(f"📈 Bot {pair}: Creando orden de compra {amount_per_order} {base_currency} a ${buy_price:.4f}")
                     buy_order = self.exchange_service.create_order(
                         pair=pair,
                         side='buy',
@@ -475,13 +484,17 @@ class ManageGridTransitionsUseCase:
                     initial_orders.append(saved_buy_order)
                     capital_used += order_value
                     orders_created += 1
-                    logger.info(f"✅ Bot {pair}: Orden de compra {amount_per_order} a ${buy_price}")
+                    buy_orders_created += 1
+                    logger.info(f"✅ Bot {pair}: Orden de compra creada exitosamente (ID: {saved_buy_order.exchange_order_id})")
 
                     # Crear orden SELL solo si tenemos cantidad suficiente
                     if amount_sell_each > Decimal('0'):
+                        logger.info(f"📉 Bot {pair}: Verificando si puede vender {amount_sell_each} {base_currency}")
+                        
                         # Verificar que el bot puede vender esta cantidad
                         sell_check = self.exchange_service.can_bot_use_capital(config, amount_sell_each, 'sell')
                         if sell_check['can_use']:
+                            logger.info(f"📉 Bot {pair}: Creando orden de venta {amount_sell_each} {base_currency} a ${sell_price:.4f}")
                             sell_order = self.exchange_service.create_order(
                                 pair=pair,
                                 side='sell',
@@ -492,16 +505,41 @@ class ManageGridTransitionsUseCase:
                             saved_sell_order = self.grid_repository.save_order(sell_order)
                             initial_orders.append(saved_sell_order)
                             orders_created += 1
-                            logger.info(f"✅ Bot {pair}: Orden de venta {amount_sell_each} a ${sell_price}")
+                            sell_orders_created += 1
+                            logger.info(f"✅ Bot {pair}: Orden de venta creada exitosamente (ID: {saved_sell_order.exchange_order_id})")
                         else:
                             logger.warning(f"⚠️ Bot {pair}: No puede vender {amount_sell_each} {base_currency}. Disponible: {sell_check['available_balance']}")
+                    else:
+                        logger.warning(f"⚠️ Bot {pair}: Cantidad de venta insuficiente ({amount_sell_each} {base_currency})")
                     
                 except Exception as e:
                     logger.error(f"❌ Error creando órdenes para bot {pair} nivel {idx}: {e}")
                     continue
 
-            logger.info(f"✅ Bot {pair}: Grilla inicial creada {len(initial_orders)} órdenes")
+            logger.info(f"🎉 Bot {pair}: Grilla inicial completada - {buy_orders_created} órdenes de compra, {sell_orders_created} órdenes de venta")
             logger.info(f"💰 Bot {pair}: Capital utilizado ${capital_used:.2f} de ${half_capital:.2f} asignado")
+            logger.info(f"📊 Bot {pair}: Total de órdenes creadas: {len(initial_orders)}")
+            
+            # Enviar notificación detallada con resumen de activación
+            if initial_orders:
+                activation_summary = (
+                    f"🚀 <b>GRILLA INICIAL CREADA - {pair}</b>\n\n"
+                    f"💰 <b>Capital asignado:</b> ${allocated_capital:.2f} USDT\n"
+                    f"💵 <b>Capital utilizado:</b> ${capital_used:.2f} USDT\n"
+                    f"📊 <b>Órdenes creadas:</b> {len(initial_orders)} total\n"
+                    f"   📈 Compras: {buy_orders_created} órdenes\n"
+                    f"   📉 Ventas: {sell_orders_created} órdenes\n"
+                    f"🎯 <b>Precio actual:</b> ${current_price:.4f}\n"
+                    f"⚙️ <b>Niveles de grilla:</b> {config.grid_levels}\n"
+                    f"📅 <b>Creada:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
+                )
+                
+                # Usar el servicio de notificación directamente
+                from app.infrastructure.notification_service import TelegramGridNotificationService
+                notification_service = TelegramGridNotificationService()
+                notification_service.telegram_service.send_message(activation_summary)
+                logger.info(f"📱 Notificación detallada enviada para grilla inicial de {pair}")
+            
             return initial_orders
             
         except Exception as e:
