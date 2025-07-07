@@ -25,4 +25,7 @@ requests==2.31.0
 python-json-logger==2.0.7
 
 # Date/Time
-pytz==2023.3 
+pytz==2023.3
+
+# Telegram Bot
+python-telegram-bot==20.4 

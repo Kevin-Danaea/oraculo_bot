@@ -7,7 +7,7 @@ FROM python:3.10-slim
 # Configuración del entorno
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/app
 
 WORKDIR /app
 
