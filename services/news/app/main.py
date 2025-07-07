@@ -198,4 +198,21 @@ def health_check() -> Dict[str, Any]:
             "status": "error",
             "error": str(e)
         }
+
+
+# ============================================================================
+# INICIO DEL SERVIDOR
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    logger.info("🚀 Iniciando servidor News Worker...")
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8003,
+        reload=False,
+        log_level="info"
+    )
  

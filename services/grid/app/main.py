@@ -189,4 +189,21 @@ def trigger_manual_monitor():
         return {"status": "success", "result": result}
     except Exception as e:
         logger.error(f"❌ Error en monitoreo manual: {e}")
-        return {"status": "error", "message": str(e)} 
+        return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# INICIO DEL SERVIDOR
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    logger.info("🚀 Iniciando servidor Grid Trading...")
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8002,
+        reload=False,
+        log_level="info"
+    ) 

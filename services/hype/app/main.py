@@ -127,3 +127,20 @@ def send_daily_summary_now(repo: DatabaseHypeRepository = Depends(get_hype_repos
     except Exception as e:
         logger.error(f"❌ Error en endpoint de resumen diario: {e}")
         return {"status": "error", "error": str(e)}
+
+
+# ============================================================================
+# INICIO DEL SERVIDOR
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    logger.info("🚀 Iniciando servidor Hype Radar...")
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8004,
+        reload=False,
+        log_level="info"
+    )
