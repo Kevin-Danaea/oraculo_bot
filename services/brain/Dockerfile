@@ -17,9 +17,18 @@ RUN apt-get update && apt-get install -y \
     g++ \
     wget \
     build-essential \
-    libta-lib0 \
-    libta-lib0-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Descargar e instalar TA-Lib desde el código fuente (versión estable)
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz && \
+    ldconfig
 
 # Copiar requirements e instalar dependencias Python
 COPY services/brain/requirements.txt .
