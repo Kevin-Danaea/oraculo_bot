@@ -16,7 +16,8 @@ services:
       make install
       cd ..
       rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
-      # Instalar dependencias Python
+      # Actualizar pip y instalar dependencias Python
+      pip install --upgrade pip setuptools wheel
       pip install -r services/brain/requirements.txt
     startCommand: cd services/brain && python app/main.py
     envVars:
