@@ -29,8 +29,7 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-echo "🚀 Despliegue Simplificado - Oráculo Bot"
-echo ""
+echo "🚀 Iniciando despliegue del Oráculo Bot..."
 
 # Verificar archivo .env
 if [ ! -f .env ]; then
@@ -49,35 +48,43 @@ if [ ! -d logs ]; then
     print_success "✅ Directorio de logs creado"
 fi
 
-# Limpiar contenedores anteriores
-print_status "Limpiando contenedores anteriores..."
-docker-compose down 2>/dev/null || true
+# Limpiar contenedores previos
+echo "🧹 Limpiando contenedores previos..."
+docker-compose down --remove-orphans
 
-# Construir y ejecutar
-print_status "Construyendo y ejecutando servicios..."
-docker-compose up --build -d
+# Construir imágenes
+echo "🔨 Construyendo imágenes..."
+docker-compose build --no-cache
 
-# Esperar a que los servicios se inicien
-print_status "Esperando a que los servicios se inicien..."
-sleep 15
+# Verificar que TA-Lib se instaló correctamente en Brain
+echo "🔍 Verificando TA-Lib en Brain..."
+docker-compose run --rm brain conda run -n brain_env python -c "import talib; print('✅ TA-Lib version:', talib.__version__)"
 
-# Verificar estado
-print_status "Verificando estado de los servicios..."
-docker-compose ps
-
-# Verificar TA-Lib
-print_status "Verificando TA-Lib..."
-if docker-compose exec brain python -c "import talib; print('✅ TA-Lib funciona')" 2>/dev/null; then
-    print_success "✅ TA-Lib instalado correctamente"
+if [ $? -eq 0 ]; then
+    echo "✅ TA-Lib instalado correctamente"
 else
-    print_warning "⚠️  TA-Lib no funciona, revisando logs..."
-    docker-compose logs brain | tail -20
+    echo "❌ Error con TA-Lib"
+    exit 1
 fi
 
-echo ""
-print_success "✅ Despliegue completado"
-echo ""
-print_status "Servicios disponibles:"
+# Levantar servicios
+echo "🚀 Levantando servicios..."
+docker-compose up -d
+
+# Esperar un momento para que los servicios se inicien
+echo "⏳ Esperando que los servicios se inicien..."
+sleep 10
+
+# Verificar estado de los servicios
+echo "📊 Estado de los servicios:"
+docker-compose ps
+
+# Verificar logs de Brain
+echo "📋 Logs del servicio Brain:"
+docker-compose logs brain --tail=20
+
+echo "✅ Despliegue completado!"
+echo "🌐 Servicios disponibles:"
 echo "  📰 News Service: http://localhost:8000"
 echo "  🧠 Brain Service: http://localhost:8001"
 echo "  📊 Grid Service: http://localhost:8002"

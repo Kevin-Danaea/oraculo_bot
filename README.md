@@ -1,34 +1,28 @@
-# 🔮 Oráculo Cripto Bot V3.0 - Sistema Multibot Inteligente
+# 🤖 Oráculo Bot - Sistema de Trading Automatizado
 
-> **🇵🇱 ACTUALIZACIÓN V3.0**: Sistema Multibot simultáneo con 3 pares (ETH, BTC, AVAX), UI simplificada y control automático
-
-Un ecosistema avanzado de **microservicios** para **trading automatizado multibot** con **3 bots simultáneos**, **cerebro inteligente**, **análisis de noticias crypto** y **control simplificado desde Telegram**.
+Sistema de microservicios para análisis y trading automatizado de criptomonedas con **TA-Lib estable** usando conda.
 
 ## 🎯 Características Principales
 
-### 🤖 **Sistema Multibot V3.0**
-- **🚀 3 Bots Simultáneos**: ETH/USDT, BTC/USDT, AVAX/USDT
-- **🧠 Cerebro Inteligente**: Decisiones automáticas basadas en ADX, volatilidad y sentimiento
-- **📱 UI Simplificada**: Comandos de Telegram más simples y eficientes
-- **⚙️ Configuración Mínima**: Solo capital total requerido ($900 mínimo)
-- **🛡️ Estrategias Avanzadas**: Stop-Loss y Trailing Up automáticos
-- **🔄 Control Automático**: Responde a decisiones del cerebro sin intervención manual
+### 🧠 **Brain - Análisis Técnico**
+- **TA-Lib Estable**: Instalado via conda para evitar problemas de compilación
+- **Análisis Avanzado**: Indicadores técnicos y toma de decisiones
+- **Python 3.10**: Compatibilidad garantizada
 
-### 📰 **Análisis de Noticias Automático V2.5**
-- **Recolección Ampliada**: 25 subreddits cada hora (9x más cobertura)
-- **Contenido Dual**: Noticias externas + Posts de comunidad
-- **Filtros Inteligentes**: Engagement mínimo (score ≥6) para posts de calidad
-- **Dominios Confiables**: 25 fuentes de noticias verificadas
-- **IA Potenciada**: 500 noticias/ciclo con Google Gemini (8x más capacidad)
-- **Análisis Completo**: Sentiment score, emoción primaria y categorización
-- **Background Jobs**: Procesamiento automático 24/7
+### 📊 **Grid - Trading Automatizado**
+- **Estrategias Grid**: Trading automatizado con gestión de riesgo
+- **Modo Sandbox**: Activado por defecto para seguridad
+- **Control Telegram**: Interfaz completa via bot
 
-### 🎯 **Hype Radar - Detector de Tendencias**
-- **Detección Inteligente**: Monitorea 9 subreddits de alto riesgo cada 5 minutos
-- **Alertas Automáticas**: Detecta incrementos súbitos en menciones de criptomonedas
-- **Análisis de Velocidad**: Compara menciones actuales vs promedio 24h
-- **Base de Datos**: Almacena todos los eventos de hype para análisis
-- **Configurable**: Umbrales de alerta ajustables (por defecto 500%)
+### 📰 **News - Análisis de Sentimiento**
+- **Análisis IA**: Procesamiento de noticias con Google Gemini
+- **Monitoreo 24/7**: Recolección automática de fuentes confiables
+- **Alertas Inteligentes**: Notificaciones basadas en sentimiento
+
+### 🔥 **Hype - Detección de Tendencias**
+- **Radar Social**: Monitoreo de redes sociales
+- **Detección Temprana**: Identificación de tendencias emergentes
+- **Alertas Automáticas**: Notificaciones en tiempo real
 
 ### 🏗️ **Arquitectura Modular Refactorizada**
 - **Microservicios**: Servicios independientes y escalables
@@ -39,11 +33,11 @@ Un ecosistema avanzado de **microservicios** para **trading automatizado multibo
 ## 🏗️ Arquitectura del Sistema
 
 ```
-🔮 Oráculo Bot V2.5
-├── 🌐 API Gateway (Puerto 8002)     # Entry point público
-├── 📰 News Worker (Puerto 8000)     # Análisis de noticias + IA
-├── 🤖 Grid Worker (Puerto 8001)     # Trading inteligente
-└── 🎯 Hype Radar (Puerto 8003)      # Detector de tendencias
+🤖 Oráculo Bot
+├── 🧠 Brain (Puerto 8001)           # Análisis técnico con TA-Lib
+├── 📊 Grid (Puerto 8002)            # Trading automatizado
+├── 📰 News (Puerto 8003)            # Análisis de noticias
+└── 🔥 Hype (Puerto 8004)            # Detección de tendencias
 ```
 
 ### 📁 Estructura del Proyecto
@@ -51,44 +45,28 @@ Un ecosistema avanzado de **microservicios** para **trading automatizado multibo
 ```
 oraculo_bot/
 ├── services/                    # 🔥 MICROSERVICIOS
-│   ├── api/                     # 🌐 API Gateway
-│   │   ├── main.py
-│   │   └── routers/
-│   ├── news/                    # 📰 News + Sentiment Analysis
-│   │   ├── main.py
-│   │   ├── schedulers/
-│   │   └── services/
-│   ├── grid/                    # 🤖 Grid Trading V2.5 ⭐
-│   │   ├── main.py
-│   │   ├── core/                # 🧠 Motor de trading
-│   │   │   ├── startup_manager.py      # 🧹 Limpieza + Standby
-│   │   │   ├── monitor_v2.py           # 📊 Monitor inteligente
-│   │   │   ├── trading_engine.py       # 🎯 Motor principal
-│   │   │   ├── order_manager.py        # 📋 Gestión órdenes
-│   │   │   └── state_manager.py        # 💾 Persistencia
-│   │   ├── interfaces/          # 🎮 Control Telegram Refactorizado
-│   │   │   ├── telegram_interface.py   # 🎭 Orquestador principal
-│   │   │   └── handlers/               # 🧩 Handlers modulares
-│   │   │       ├── base_handler.py     # 🏗️ Base común
-│   │   │       ├── basic_commands.py   # 📋 Comandos básicos
-│   │   │       ├── config_flow.py      # ⚙️ Configuración
-│   │   │       └── advanced_strategies.py # 🛡️ Estrategias avanzadas
-│   │   ├── schedulers/          # 📅 Jobs de background
-│   │   └── strategies/          # 📈 Estrategias de trading
-│   └── hype/                    # 🎯 Hype Radar ⭐
-│       ├── main.py
-│       ├── core/                # 🧠 Motor de análisis
-│       │   ├── hype_analytics.py       # 📈 Análisis de velocidad
-│       │   └── notifications.py        # 📱 Sistema de alertas
-│       ├── services/            # 🔍 Servicios de detección
-│       │   └── hype_radar_service.py   # 🎯 Motor principal
-│       └── schedulers/          # ⏰ Jobs cada 5 minutos
+│   ├── brain/                   # 🧠 Análisis técnico con TA-Lib
+│   │   ├── app/
+│   │   │   ├── application/     # Casos de uso
+│   │   │   ├── domain/          # Entidades y interfaces
+│   │   │   └── infrastructure/  # Implementaciones
+│   │   └── Dockerfile           # Con conda para TA-Lib
+│   ├── grid/                    # 📊 Grid trading
+│   │   ├── app/
+│   │   └── Dockerfile
+│   ├── news/                    # 📰 Análisis de noticias
+│   │   ├── app/
+│   │   └── Dockerfile
+│   └── hype/                    # 🔥 Detección de tendencias
+│       ├── app/
+│       └── Dockerfile
 ├── shared/                      # 🧩 CÓDIGO COMPARTIDO
 │   ├── config/                  # ⚙️ Configuración
 │   ├── database/                # 💾 Base de datos
 │   └── services/                # 🔧 Servicios comunes
-├── deployment/                  # 🚀 DESPLIEGUE
-└── run_*_service.py            # 🚀 Entry points
+├── deployment/                  # 🚀 Scripts de despliegue
+├── docker-compose.yml           # 🐳 Orquestación
+└── deploy.sh                    # 🚀 Despliegue simplificado
 ```
 
 ## 🤖 Grid Bot V2.5 - Funcionalidades
