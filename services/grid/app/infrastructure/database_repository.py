@@ -5,16 +5,18 @@ from typing import List, Optional, Tuple, Dict
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+from sqlalchemy.exc import OperationalError, DisconnectionError
 
 from app.domain.interfaces import GridRepository
 from app.domain.entities import GridConfig, GridOrder, GridBotState, GridStep
 from shared.database.models import GridBotConfig, GridBotState as GridBotStateModel, EstrategiaStatus
+from shared.database.session import get_db_session, health_check
 from shared.services.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 class DatabaseGridRepository(GridRepository):
-    """Implementación del repositorio de grid usando SQLAlchemy."""
+    """Implementación del repositorio de grid usando SQLAlchemy con manejo robusto de conexiones."""
 
     def __init__(self, db_session: Session):
         self.db = db_session
@@ -24,12 +26,43 @@ class DatabaseGridRepository(GridRepository):
         # Clave: pair, Valor: List[GridStep]
         self._grid_steps_store: Dict[str, List[GridStep]] = {}
 
+    def _ensure_connection(self):
+        """
+        Verifica y restaura la conexión si es necesario.
+        """
+        if self.db is None:
+            from shared.database.session import get_db_with_retry
+            self.db = get_db_with_retry()
+            return
+            
+        try:
+            # Verificar que la conexión está activa
+            from sqlalchemy import text
+            self.db.execute(text("SELECT 1"))
+        except (OperationalError, DisconnectionError) as e:
+            logger.warning(f"⚠️ Conexión perdida, intentando restaurar: {e}")
+            # La sesión actual está corrupta, crear una nueva
+            try:
+                self.db.close()
+            except:
+                pass
+            # Obtener nueva sesión con reintentos
+            from shared.database.session import get_db_with_retry
+            self.db = get_db_with_retry()
+            logger.info("✅ Conexión restaurada")
+
     def get_active_configs(self) -> List[GridConfig]:
         """
         Obtiene configuraciones que están actualmente ejecutándose (is_running=True).
         CONFIA en el caso de uso de transiciones para gestionar is_running correctamente.
         """
         try:
+            self._ensure_connection()
+            
+            if self.db is None:
+                logger.error("❌ No se pudo obtener conexión a la base de datos")
+                return []
+            
             configs = self.db.query(GridBotConfig).filter(
                 and_(
                     GridBotConfig.is_active == True,
@@ -60,6 +93,12 @@ class DatabaseGridRepository(GridRepository):
             List[Tuple[GridConfig, current_decision, previous_state]]
         """
         try:
+            self._ensure_connection()
+            
+            if self.db is None:
+                logger.error("❌ No se pudo obtener conexión a la base de datos")
+                return []
+            
             configs = self.db.query(GridBotConfig).filter(
                 and_(
                     GridBotConfig.is_active == True,
@@ -101,6 +140,12 @@ class DatabaseGridRepository(GridRepository):
     def get_config_by_pair(self, pair: str) -> Optional[GridConfig]:
         """Obtiene la configuración para un par específico. SOLO consulta datos."""
         try:
+            self._ensure_connection()
+            
+            if self.db is None:
+                logger.error("❌ No se pudo obtener conexión a la base de datos")
+                return None
+            
             config = self.db.query(GridBotConfig).filter(
                 and_(
                     GridBotConfig.pair == pair,
@@ -123,6 +168,12 @@ class DatabaseGridRepository(GridRepository):
     def update_config_status(self, config_id: int, is_running: bool, last_decision: str) -> None:
         """Actualiza el estado de una configuración."""
         try:
+            self._ensure_connection()
+            
+            if self.db is None:
+                logger.error("❌ No se pudo obtener conexión a la base de datos")
+                return
+            
             config = self.db.query(GridBotConfig).filter(GridBotConfig.id == config_id).first()
             if config:
                 config.is_running = is_running  # type: ignore
@@ -136,11 +187,17 @@ class DatabaseGridRepository(GridRepository):
                 
         except Exception as e:
             logger.error(f"❌ Error actualizando estado de config {config_id}: {e}")
-            self.db.rollback()
+            if self.db is not None:
+                try:
+                    self.db.rollback()
+                except Exception as rollback_error:
+                    logger.warning(f"⚠️ Error en rollback: {rollback_error}")
 
     def get_bot_state(self, pair: str) -> Optional[GridBotState]:
         """Obtiene el estado completo de un bot para un par."""
         try:
+            self._ensure_connection()
+            
             # Por ahora retornamos None ya que el modelo GridBotState no está completamente implementado
             # En una implementación completa, aquí consultaríamos la tabla de estado del bot
             logger.info(f"📊 Consultando estado del bot para {pair}")
@@ -153,6 +210,8 @@ class DatabaseGridRepository(GridRepository):
     def save_bot_state(self, bot_state: GridBotState) -> None:
         """Guarda el estado completo de un bot."""
         try:
+            self._ensure_connection()
+            
             # Por ahora solo loggeamos ya que el modelo completo no está implementado
             logger.info(f"💾 Guardando estado del bot {bot_state.pair}")
             # En una implementación completa, aquí guardaríamos en la tabla grid_bot_state
@@ -163,6 +222,8 @@ class DatabaseGridRepository(GridRepository):
     def get_active_orders(self, pair: str) -> List[GridOrder]:
         """Obtiene las órdenes activas para un par."""
         try:
+            self._ensure_connection()
+            
             # Por ahora retornamos lista vacía ya que no tenemos tabla de órdenes implementada
             # En una implementación completa, aquí consultaríamos la tabla de órdenes
             logger.info(f"📋 Consultando órdenes activas para {pair}")
@@ -175,6 +236,8 @@ class DatabaseGridRepository(GridRepository):
     def save_order(self, order: GridOrder) -> GridOrder:
         """Guarda una orden de grid trading."""
         try:
+            self._ensure_connection()
+            
             # Por ahora solo loggeamos ya que no tenemos tabla de órdenes implementada
             logger.info(f"💾 Guardando orden {order.side} {order.amount} {order.pair} a ${order.price}")
             # En una implementación completa, aquí guardaríamos en la tabla de órdenes
@@ -187,6 +250,8 @@ class DatabaseGridRepository(GridRepository):
     def update_order_status(self, order_id: str, status: str, filled_at: Optional[datetime] = None) -> None:
         """Actualiza el estado de una orden."""
         try:
+            self._ensure_connection()
+            
             # Por ahora solo loggeamos ya que no tenemos tabla de órdenes implementada
             logger.info(f"🔄 Actualizando orden {order_id} a estado {status}")
             # En una implementación completa, aquí actualizaríamos en la tabla de órdenes
@@ -200,19 +265,30 @@ class DatabaseGridRepository(GridRepository):
         Retorna el número de órdenes canceladas.
         """
         try:
+            self._ensure_connection()
+            
             # Por ahora solo loggeamos ya que no tenemos tabla de órdenes implementada
-            # En una implementación completa, aquí marcaríamos órdenes como 'cancelled'
-            logger.info(f"🚫 Cancelando todas las órdenes de {pair} en BD")
-            
-            # Simulamos que se cancelaron algunas órdenes
-            cancelled_count = 0  # En implementación real: UPDATE orders SET status='cancelled' WHERE pair=pair AND status='open'
-            
-            logger.info(f"✅ {cancelled_count} órdenes canceladas en BD para {pair}")
-            return cancelled_count
+            logger.info(f"❌ Cancelando todas las órdenes para {pair}")
+            # En una implementación completa, aquí actualizaríamos en la tabla de órdenes
+            return 0
             
         except Exception as e:
-            logger.error(f"❌ Error cancelando órdenes en BD para {pair}: {e}")
+            logger.error(f"❌ Error cancelando órdenes para {pair}: {e}")
             return 0
+
+    def health_check(self) -> bool:
+        """
+        Verifica la salud de la conexión a la base de datos.
+        
+        Returns:
+            bool: True si la conexión está saludable
+        """
+        try:
+            self._ensure_connection()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Health check falló: {e}")
+            return False
 
     def _map_config_to_entity(self, config: GridBotConfig) -> GridConfig:
         """Convierte un modelo de BD a entidad de dominio."""
