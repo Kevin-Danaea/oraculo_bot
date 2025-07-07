@@ -23,10 +23,17 @@ loguru==0.7.2
 # Requests para APIs
 requests==2.31.0
 
-# Math y cálculos
-decimal
-
 # Testing dependencies
 pytest==7.4.3
-pytest-mock==3.12.0
-pytest-cov==4.1.0 
+pytest-asyncio==0.21.1
+
+# Desarrollo (opcional)
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Telegram bot
+python-telegram-bot==20.4
+
+# Schedule
+schedule==1.2.0 
