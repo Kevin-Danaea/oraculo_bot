@@ -11,12 +11,6 @@ ENV PYTHONPATH=/app/app
 
 WORKDIR /app
 
-# Instalar dependencias del sistema básicas
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copiar requirements e instalar dependencias Python
 COPY services/brain/requirements.txt .
 RUN pip install --upgrade pip setuptools wheel
