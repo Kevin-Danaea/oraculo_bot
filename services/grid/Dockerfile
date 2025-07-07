@@ -1,4 +1,13 @@
-FROM python:3.11-slim
+# ==============================================================================
+# Dockerfile Estandarizado - Oráculo Bot Grid Service
+# ==============================================================================
+
+FROM python:3.10-slim
+
+# Configuración del entorno
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -8,7 +17,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements
+# Copiar requirements e instalar dependencias Python
 COPY services/grid/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -20,12 +29,7 @@ COPY shared/ ./shared/
 RUN mkdir -p logs
 
 # Exponer puerto
-EXPOSE 8000
+EXPOSE 8002
 
-# Variables de entorno por defecto
-ENV PYTHONPATH=/app
-ENV TRADING_MODE=sandbox
-ENV MONITORING_INTERVAL_HOURS=1
-
-# Comando por defecto
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Comando para ejecutar el servicio
+CMD ["python", "app/main.py"] 

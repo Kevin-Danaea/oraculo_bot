@@ -1,44 +1,35 @@
-# Etapa 1: Builder - Instalar dependencias
-FROM python:3.11-slim as builder
+# ==============================================================================
+# Dockerfile Estandarizado - Oráculo Bot Hype Service
+# ==============================================================================
+
+FROM python:3.10-slim
+
+# Configuración del entorno
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-# Instalar dependencias del sistema operativo
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar solo el archivo de requerimientos para optimizar el caché de Docker
+# Copiar requirements e instalar dependencias Python
 COPY services/hype/requirements.txt .
-
-# Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-
-# Etapa 2: Runner - Entorno de ejecución final
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Copiar dependencias instaladas desde la etapa de builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Copiar el directorio de la aplicación y el directorio compartido
+# Copiar código de la aplicación
 COPY services/hype/app/ ./app/
 COPY shared/ ./shared/
 
 # Crear directorio para logs
 RUN mkdir -p logs
 
-# Variables de entorno (se pueden sobreescribir en docker-compose)
-ENV PYTHONPATH=/app
-ENV LOG_LEVEL="INFO"
-ENV HYPE_SCAN_INTERVAL=300
-ENV HYPE_ALERT_THRESHOLD=10
+# Exponer puerto
+EXPOSE 8004
 
-# Exponer el puerto
-EXPOSE 8000
-
-# Comando para iniciar la aplicación
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Comando para ejecutar el servicio
+CMD ["python", "app/main.py"] 

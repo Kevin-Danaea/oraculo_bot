@@ -8,7 +8,7 @@ services:
       dockerfile: services/brain/Dockerfile
     container_name: oraculo-brain
     ports:
-      - "8001:8000"
+      - "8001:8001"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - BINANCE_API_KEY=${BINANCE_API_KEY}
@@ -31,7 +31,7 @@ services:
       dockerfile: services/grid/Dockerfile
     container_name: oraculo-grid
     ports:
-      - "8002:8000"
+      - "8002:8002"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - BINANCE_API_KEY=${BINANCE_API_KEY}
@@ -58,7 +58,7 @@ services:
       dockerfile: services/news/Dockerfile
     container_name: oraculo-news
     ports:
-      - "8000:8000"
+      - "8003:8003"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
@@ -83,7 +83,7 @@ services:
       dockerfile: services/hype/Dockerfile
     container_name: oraculo-hype
     ports:
-      - "8003:8000"
+      - "8004:8004"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}

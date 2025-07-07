@@ -13,7 +13,7 @@ services:
       conda install -c conda-forge ta-lib python=3.10 -y
       # Instalar dependencias Python
       pip install -r services/brain/requirements.txt
-    startCommand: cd services/brain && python main.py
+    startCommand: cd services/brain && python app/main.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -33,6 +33,19 @@ services:
         value: false
       - key: PYTHONPATH
         value: /opt/render/project/src/services/brain:/opt/render/project/src/shared
+      # Base de datos Neon
+      - key: DATABASE_URL
+        sync: false
+      # Binance API
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      # Telegram Bot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
 
   # 📊 Grid Service - Trading Automatizado
   - type: web
@@ -40,7 +53,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r services/grid/requirements.txt
-    startCommand: cd services/grid && python main.py
+    startCommand: cd services/grid && python app/main.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -54,6 +67,28 @@ services:
         value: false
       - key: PYTHONPATH
         value: /opt/render/project/src/services/grid:/opt/render/project/src/shared
+      - key: TRADING_MODE
+        value: sandbox
+      - key: MONITORING_INTERVAL_HOURS
+        value: 1
+      # Base de datos Neon
+      - key: DATABASE_URL
+        sync: false
+      # Binance API
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      # Paper Trading API
+      - key: PAPER_TRADING_API_KEY
+        sync: false
+      - key: PAPER_TRADING_SECRET_KEY
+        sync: false
+      # Telegram Bot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
 
   # 📰 News Service - Análisis de Noticias
   - type: web
@@ -61,7 +96,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r services/news/requirements.txt
-    startCommand: cd services/news && python main.py
+    startCommand: cd services/news && python app/main.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -75,6 +110,28 @@ services:
         value: false
       - key: PYTHONPATH
         value: /opt/render/project/src/services/news:/opt/render/project/src/shared
+      - key: NEWS_COLLECTION_INTERVAL
+        value: 3600
+      - key: SENTIMENT_ANALYSIS_INTERVAL
+        value: 1800
+      # Base de datos Neon
+      - key: DATABASE_URL
+        sync: false
+      # Reddit API
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: REDDIT_USER_AGENT
+        sync: false
+      # Google Gemini API
+      - key: GOOGLE_API_KEY
+        sync: false
+      # Telegram Bot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
 
   # 🔥 Hype Service - Detección de Tendencias
   - type: web
@@ -82,7 +139,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r services/hype/requirements.txt
-    startCommand: cd services/hype && python main.py
+    startCommand: cd services/hype && python app/main.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -96,10 +153,22 @@ services:
         value: false
       - key: PYTHONPATH
         value: /opt/render/project/src/services/hype:/opt/render/project/src/shared
-
-# 🗄️ Base de Datos PostgreSQL
-databases:
-  - name: oraculo-db
-    databaseName: oraculo_bot
-    user: oraculo_user
-    plan: starter 
+      - key: HYPE_SCAN_INTERVAL
+        value: 300
+      - key: HYPE_ALERT_THRESHOLD
+        value: 10
+      # Base de datos Neon
+      - key: DATABASE_URL
+        sync: false
+      # Reddit API
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: REDDIT_USER_AGENT
+        sync: false
+      # Telegram Bot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false 

@@ -1,33 +1,33 @@
 # ==============================================================================
-# Dockerfile Definitivo - Oráculo Bot Brain Service
+# Dockerfile Estandarizado - Oráculo Bot Brain Service
 # ==============================================================================
 
 FROM continuumio/miniconda3:latest
 
-# Establecer variables de entorno
+# Configuración del entorno
+ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
-# Actualizar conda
-RUN conda update -n base -c defaults conda -y
+WORKDIR /app
 
-# Instalar TA-Lib globalmente (más simple)
-RUN conda install -c conda-forge ta-lib python=3.10 -y
+# Actualizar conda e instalar TA-Lib
+RUN conda update -n base -c defaults conda -y && \
+    conda install -c conda-forge ta-lib python=3.10 -y
 
-# Copiar requirements
-COPY requirements.txt /tmp/requirements.txt
-
-# Instalar dependencias Python
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# Copiar requirements e instalar dependencias Python
+COPY services/brain/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
-COPY app/ /app/
-COPY shared/ /shared/
+COPY services/brain/app/ ./app/
+COPY shared/ ./shared/
 
-# Establecer directorio de trabajo
-WORKDIR /app
+# Crear directorio para logs
+RUN mkdir -p logs
 
 # Exponer puerto
 EXPOSE 8001
 
 # Comando para ejecutar el servicio
-CMD ["python", "main.py"] 
+CMD ["python", "app/main.py"] 
