@@ -13,8 +13,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import ccxt
 
-from ..domain.interfaces import MarketDataRepository
-from ..domain.entities import MarketIndicators
+from app.domain.interfaces import MarketDataRepository
+from app.domain.entities import MarketIndicators
 from shared.config.settings import settings
 
 logger = logging.getLogger(__name__)

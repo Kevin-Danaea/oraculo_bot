@@ -11,8 +11,8 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from ..domain.interfaces import DecisionRepository
-from ..domain.entities import TradingDecision, BotType, DecisionType, MarketIndicators, TradingThresholds
+from app.domain.interfaces import DecisionRepository
+from app.domain.entities import TradingDecision, BotType, DecisionType, MarketIndicators, TradingThresholds
 from shared.database.session import SessionLocal
 from shared.database.models import EstrategiaStatus
 

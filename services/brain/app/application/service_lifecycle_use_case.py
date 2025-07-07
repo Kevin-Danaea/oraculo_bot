@@ -10,8 +10,8 @@ import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ..domain.entities import BrainStatus, BotType
-from ..domain.interfaces import BrainStatusRepository, NotificationService
+from app.domain.entities import BrainStatus, BotType
+from app.domain.interfaces import BrainStatusRepository, NotificationService
 
 logger = logging.getLogger(__name__)
 

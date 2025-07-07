@@ -10,15 +10,15 @@ import asyncio
 from typing import Dict, Any, List
 from datetime import datetime
 
-from ..domain.interfaces import (
+from app.domain.interfaces import (
     MarketDataRepository, 
     DecisionRepository, 
     RecipeRepository,
     NotificationService,
     BrainStatusRepository
 )
-from ..domain.entities import TradingDecision, BotType, BrainStatus
-from ..config import SUPPORTED_PAIRS
+from app.domain.entities import TradingDecision, BotType, BrainStatus
+from app.config import SUPPORTED_PAIRS
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +230,7 @@ class BatchAnalysisUseCase:
                 reason = f"Condiciones desfavorables: {'; '.join(detalles)}"
             
             # Crear decisión
-            from ..domain.entities import DecisionType
+            from app.domain.entities import DecisionType
             decision = TradingDecision(
                 pair=pair,
                 decision=DecisionType(decision_type),
@@ -248,7 +248,7 @@ class BatchAnalysisUseCase:
             self.logger.error(f"❌ Error tomando decisión para {pair}: {e}")
             
             # Decisión de error
-            from ..domain.entities import DecisionType, MarketIndicators, TradingThresholds
+            from app.domain.entities import DecisionType, MarketIndicators, TradingThresholds
             error_indicators = MarketIndicators()
             error_thresholds = TradingThresholds(
                 adx_threshold=0.0,

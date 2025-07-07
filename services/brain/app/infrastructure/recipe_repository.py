@@ -8,8 +8,8 @@ Implementación concreta del repositorio de recetas de trading.
 import logging
 from typing import Dict, Any, Optional, List
 
-from ..domain.interfaces import RecipeRepository
-from ..domain.entities import TradingRecipe, BotType
+from app.domain.interfaces import RecipeRepository
+from app.domain.entities import TradingRecipe, BotType
 
 logger = logging.getLogger(__name__)
 

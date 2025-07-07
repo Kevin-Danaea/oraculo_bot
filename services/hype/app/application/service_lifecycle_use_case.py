@@ -1,7 +1,7 @@
 """
 Caso de uso para manejar el ciclo de vida del servicio.
 """
-from ..domain.interfaces import NotificationService
+from app.domain.interfaces import NotificationService
 from shared.services.logging_config import get_logger
 
 logger = get_logger(__name__)

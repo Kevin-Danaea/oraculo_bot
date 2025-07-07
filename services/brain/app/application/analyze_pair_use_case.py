@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ..domain.entities import (
+from app.domain.entities import (
     TradingDecision, 
     DecisionType,
     MarketIndicators, 
@@ -17,7 +17,7 @@ from ..domain.entities import (
     BotType,
     TradingThresholds
 )
-from ..domain.interfaces import (
+from app.domain.interfaces import (
     MarketDataRepository,
     DecisionRepository,
     RecipeRepository

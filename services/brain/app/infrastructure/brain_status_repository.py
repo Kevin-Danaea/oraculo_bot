@@ -11,8 +11,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from ..domain.interfaces import BrainStatusRepository
-from ..domain.entities import BrainStatus, BotType
+from app.domain.interfaces import BrainStatusRepository
+from app.domain.entities import BrainStatus, BotType
 
 logger = logging.getLogger(__name__)
 

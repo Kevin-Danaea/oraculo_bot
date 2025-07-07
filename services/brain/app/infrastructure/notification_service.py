@@ -10,8 +10,8 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ..domain.interfaces import NotificationService
-from ..domain.entities import TradingDecision
+from app.domain.interfaces import NotificationService
+from app.domain.entities import TradingDecision
 
 logger = logging.getLogger(__name__)
 

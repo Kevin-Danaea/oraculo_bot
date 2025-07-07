@@ -2,8 +2,8 @@
 Caso de uso para obtener eventos de hype recientes.
 """
 from typing import List
-from ..domain.entities import HypeEvent
-from ..domain.interfaces import HypeRepository
+from app.domain.entities import HypeEvent
+from app.domain.interfaces import HypeRepository
 from shared.services.logging_config import get_logger
 
 logger = get_logger(__name__)
