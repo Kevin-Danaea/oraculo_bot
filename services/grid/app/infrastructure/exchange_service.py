@@ -35,12 +35,20 @@ class BinanceExchangeService(ExchangeService):
             self.exchange = ccxt.binance({
                 'apiKey': api_key,
                 'secret': secret,
-                'sandbox': sandbox,
                 'enableRateLimit': True,
                 'options': {
                     'defaultType': 'spot'
                 }
             })
+            
+            # Configurar modo sandbox explícitamente
+            if sandbox:
+                self.exchange.set_sandbox_mode(True)
+                logger.info("🧪 Modo SANDBOX activado para Binance")
+            else:
+                self.exchange.set_sandbox_mode(False)
+                logger.info("🚀 Modo PRODUCCIÓN activado para Binance")
+            
             mode_str = "SANDBOX" if sandbox else "PRODUCCIÓN"
             logger.info(f"🔗 Conectado a Binance en modo {mode_str} con {'PAPER' if sandbox else 'PRODUCTION'} keys")
         except Exception as e:
@@ -184,7 +192,9 @@ class BinanceExchangeService(ExchangeService):
         try:
             self.mode = 'sandbox'
             self._initialize_exchange()
-            logger.info("🧪 Cambiado a modo SANDBOX y actualizadas credenciales Paper Trading")
+            if self.exchange:
+                self.exchange.set_sandbox_mode(True)
+            logger.info("🧪 Cambiado a modo SANDBOX y activado set_sandbox_mode(True)")
         except Exception as e:
             logger.error(f"❌ Error cambiando a sandbox: {e}")
 
@@ -193,7 +203,9 @@ class BinanceExchangeService(ExchangeService):
         try:
             self.mode = 'production'
             self._initialize_exchange()
-            logger.info("🚀 Cambiado a modo PRODUCCIÓN y actualizadas credenciales de producción")
+            if self.exchange:
+                self.exchange.set_sandbox_mode(False)
+            logger.info("🚀 Cambiado a modo PRODUCCIÓN y activado set_sandbox_mode(False)")
         except Exception as e:
             logger.error(f"❌ Error cambiando a producción: {e}")
 
@@ -201,7 +213,8 @@ class BinanceExchangeService(ExchangeService):
         """Obtiene el modo de trading actual."""
         if not self.exchange:
             return "disconnected"
-        return "sandbox" if getattr(self.exchange, 'sandbox', False) else "production"
+        # Verificar el modo sandbox configurado
+        return "sandbox" if self.mode == 'sandbox' else "production"
 
     def cancel_all_orders(self) -> int:
         """Cancela todas las órdenes abiertas en el exchange. Retorna el número de órdenes canceladas."""

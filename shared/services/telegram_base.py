@@ -62,22 +62,33 @@ class TelegramBaseService:
             # Limpiar mensaje antes de enviar
             clean_message = self.clean_html_message(message)
             
-            # Usar asyncio para llamar al método asíncrono del bot
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
+            # Verificar si ya hay un event loop ejecutándose
             try:
-                loop.run_until_complete(
+                loop = asyncio.get_running_loop()
+                # Si hay un loop ejecutándose, usar asyncio.create_task
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self._bot.send_message(
+                            chat_id=target_chat_id,
+                            text=clean_message,
+                            parse_mode=parse_mode
+                        )
+                    )
+                    future.result(timeout=10)  # Timeout de 10 segundos
+            except RuntimeError:
+                # No hay loop ejecutándose, crear uno nuevo
+                asyncio.run(
                     self._bot.send_message(
                         chat_id=target_chat_id,
                         text=clean_message,
                         parse_mode=parse_mode
                     )
                 )
-                logger.info("✅ Mensaje enviado a Telegram correctamente")
-                return True
-            finally:
-                loop.close()
+            
+            logger.info("✅ Mensaje enviado a Telegram correctamente")
+            return True
                 
         except Exception as e:
             logger.error(f"❌ Error enviando mensaje a Telegram: {e}")
