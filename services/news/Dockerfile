@@ -32,4 +32,4 @@ RUN mkdir -p logs
 EXPOSE 8003
 
 # Comando para ejecutar el servicio
-CMD ["python", "app/main.py"] 
+CMD ["python", "-m", "app.main"] 

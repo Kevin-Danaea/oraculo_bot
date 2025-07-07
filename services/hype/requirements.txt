@@ -24,4 +24,7 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 
 # Telegram Bot
-python-telegram-bot==20.4 
+python-telegram-bot==20.4
+
+# Exchange API
+ccxt==4.1.77 
