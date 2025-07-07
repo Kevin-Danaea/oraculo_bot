@@ -11,11 +11,24 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-# Instalar dependencias del sistema básicas
+# Instalar dependencias del sistema necesarias para TA-Lib
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    wget \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# Descargar e instalar TA-Lib desde el código fuente
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz && \
+    ldconfig
 
 # Copiar requirements e instalar dependencias Python
 COPY services/brain/requirements.txt .
