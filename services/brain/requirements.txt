@@ -18,7 +18,7 @@ psycopg2-binary==2.9.7
 alembic==1.11.1
 
 # HTTP client para notificaciones
-httpx==0.25.2
+httpx==0.24.1
 
 # Utilidades
 python-dotenv==1.0.0
