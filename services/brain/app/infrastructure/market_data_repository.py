@@ -8,7 +8,7 @@ Implementación concreta del repositorio de datos de mercado.
 import logging
 import pandas as pd
 import numpy as np
-import talib
+import pandas_ta as ta
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import ccxt
@@ -88,7 +88,7 @@ class BinanceMarketDataRepository(MarketDataRepository):
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
             
-            # Convertir a float64 para talib
+            # Convertir a float64 para pandas-ta
             for col in ['open', 'high', 'low', 'close', 'volume']:
                 df[col] = df[col].astype(np.float64)
             
@@ -143,13 +143,13 @@ class BinanceMarketDataRepository(MarketDataRepository):
             latest = df.iloc[-1]
             
             # Extraer indicadores con manejo de None
-            adx_value = float(latest.get('adx', 0)) if pd.notna(latest.get('adx')) else 0.0
-            volatility_value = float(latest.get('bb_width', 0)) if pd.notna(latest.get('bb_width')) else 0.0
+            adx_value = float(latest.get('ADX_14', 0)) if pd.notna(latest.get('ADX_14')) else 0.0
+            volatility_value = float(latest.get('BBW_20_2.0', 0)) if pd.notna(latest.get('BBW_20_2.0')) else 0.0
             sentiment_value = float(latest.get('sentiment_promedio', 0)) if pd.notna(latest.get('sentiment_promedio')) else None
-            rsi_value = float(latest.get('rsi', 0)) if pd.notna(latest.get('rsi')) else 0.0
-            macd_value = float(latest.get('macd', 0)) if pd.notna(latest.get('macd')) else 0.0
-            ema21_value = float(latest.get('ema21', 0)) if pd.notna(latest.get('ema21')) else 0.0
-            ema50_value = float(latest.get('ema50', 0)) if pd.notna(latest.get('ema50')) else 0.0
+            rsi_value = float(latest.get('RSI_14', 0)) if pd.notna(latest.get('RSI_14')) else 0.0
+            macd_value = float(latest.get('MACD_12_26_9', 0)) if pd.notna(latest.get('MACD_12_26_9')) else 0.0
+            ema21_value = float(latest.get('EMA_21', 0)) if pd.notna(latest.get('EMA_21')) else 0.0
+            ema50_value = float(latest.get('EMA_50', 0)) if pd.notna(latest.get('EMA_50')) else 0.0
             
             indicators = MarketIndicators(
                 adx=adx_value,
@@ -172,7 +172,7 @@ class BinanceMarketDataRepository(MarketDataRepository):
     
     def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calcula indicadores técnicos en el DataFrame usando TA-Lib.
+        Calcula indicadores técnicos en el DataFrame usando pandas-ta.
         
         Args:
             df: DataFrame con datos OHLCV
@@ -181,37 +181,30 @@ class BinanceMarketDataRepository(MarketDataRepository):
             DataFrame con indicadores añadidos
         """
         try:
-            # Convertir a numpy arrays para talib
-            high_array = df['high'].values.astype(np.float64)
-            low_array = df['low'].values.astype(np.float64)
-            close_array = df['close'].values.astype(np.float64)
-            
             # ADX (Average Directional Index)
-            df['adx'] = talib.ADX(high_array, low_array, close_array, timeperiod=14)
+            df['ADX_14'] = ta.adx(df['high'], df['low'], df['close'], length=14)
             
             # Bandas de Bollinger
-            bb_upper, bb_middle, bb_lower = talib.BBANDS(close_array, timeperiod=20, nbdevup=2, nbdevdn=2)
-            df['bb_upper'] = bb_upper
-            df['bb_middle'] = bb_middle
-            df['bb_lower'] = bb_lower
+            bb = ta.bbands(df['close'], length=20, std=2)
+            df['BBL_20_2.0'] = bb['BBL_20_2.0']  # Lower
+            df['BBM_20_2.0'] = bb['BBM_20_2.0']  # Middle
+            df['BBU_20_2.0'] = bb['BBU_20_2.0']  # Upper
+            df['BBW_20_2.0'] = bb['BBW_20_2.0']  # Width (volatilidad)
             
-            # Ancho de Bandas de Bollinger (bb_width) - medida de volatilidad
-            df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
-            
-            # RSI adicional (útil para análisis)
-            df['rsi'] = talib.RSI(close_array, timeperiod=14)
+            # RSI
+            df['RSI_14'] = ta.rsi(df['close'], length=14)
             
             # MACD
-            macd, macd_signal, macd_hist = talib.MACD(close_array)
-            df['macd'] = macd
-            df['macd_signal'] = macd_signal
-            df['macd_hist'] = macd_hist
+            macd = ta.macd(df['close'])
+            df['MACD_12_26_9'] = macd['MACD_12_26_9']
+            df['MACDs_12_26_9'] = macd['MACDs_12_26_9']
+            df['MACDh_12_26_9'] = macd['MACDh_12_26_9']
             
             # EMA 21 y 50
-            df['ema21'] = talib.EMA(close_array, timeperiod=21)
-            df['ema50'] = talib.EMA(close_array, timeperiod=50)
+            df['EMA_21'] = ta.ema(df['close'], length=21)
+            df['EMA_50'] = ta.ema(df['close'], length=50)
             
-            self.logger.debug("✅ Indicadores técnicos calculados con TA-Lib")
+            self.logger.debug("✅ Indicadores técnicos calculados con pandas-ta")
             
             return df
             

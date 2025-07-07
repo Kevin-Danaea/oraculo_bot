@@ -6,7 +6,7 @@ alwaysApply: true
 - Antes de escribir cualquier código, genera una lista de tareas o usar el modo planning que hay disponible.
 
 # Regla 2: Selección de Modelo por Tarea (La Cascada)
-- **Por defecto, para todas las tareas, usa `Claude Sonnet 4`**. Es tu primera opción por velocidad y eficiencia.
+- **Por defecto, para todas las tareas, usa `Claude Opus 4`**. Es tu primera opción por velocidad y eficiencia.
 - **SI** mi prompt contiene alguna de las siguientes palabras clave: "arquitectura", "analizar", "refactorizar", "optimizar", "diseñar", "complejo" o "desde cero", **entonces** escala y usa un modelo de alto rendimiento como `Claude Opus 4` en "Max-Mode".
 
 # Regla 3: Mandato de Calidad de Código

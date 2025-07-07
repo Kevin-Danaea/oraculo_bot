@@ -28,8 +28,8 @@ docker-compose ps
 # Ver logs
 docker-compose logs -f
 
-# Verificar TA-Lib
-docker-compose exec brain python -c "import talib; print(talib.__version__)"
+# Verificar pandas-ta
+docker-compose exec brain python -c "import pandas_ta; print(pandas_ta.__version__)"
 ```
 
 ## 🌐 Servicios Disponibles
@@ -73,7 +73,7 @@ docker-compose ps
 
 ## 🚨 Si Hay Problemas
 
-### Error de TA-Lib
+### Error de pandas-ta
 ```bash
 # Reconstruir solo el brain
 docker-compose build --no-cache brain
