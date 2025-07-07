@@ -278,6 +278,56 @@ sudo systemctl status oraculo-api.service
 - enable_trailing_up: Activar/desactivar trailing up
 ```
 
+## 🚀 Despliegue Simplificado con Docker
+
+### Prerrequisitos
+- Docker y Docker Compose
+- Archivo `.env` configurado (ver `.env.example`)
+
+### Instalación en Servidor Ubuntu
+```bash
+# Clonar repositorio
+git clone <repo-url>
+cd oraculo_bot
+
+# Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales
+
+# Dar permisos de ejecución
+chmod +x deploy.sh
+chmod +x test_talib.sh
+
+# Probar TA-Lib primero
+./test_talib.sh
+
+# Desplegar todo el sistema
+./deploy.sh
+```
+
+### Instalación en Windows/Local
+```bash
+# Clonar repositorio
+git clone <repo-url>
+cd oraculo_bot
+
+# Configurar variables de entorno
+copy .env.example .env
+# Editar .env con tus credenciales
+
+# Desplegar todo el sistema
+docker-compose up --build -d
+```
+
+### Verificar TA-Lib
+```bash
+# En servidor Ubuntu
+./test_talib.sh
+
+# O manualmente
+docker-compose run --rm brain python -c "import talib; print(talib.__version__)"
+```
+
 ## 📈 Monitoreo
 
 ### 🔍 **Health Checks**

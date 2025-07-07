@@ -33,10 +33,8 @@ echo "🚀 Iniciando despliegue del Oráculo Bot..."
 
 # Verificar archivo .env
 if [ ! -f .env ]; then
-    print_error "Archivo .env no encontrado"
-    print_status "Copiando .env.example a .env..."
-    cp .env.example .env
-    print_warning "Por favor edita el archivo .env con tus credenciales antes de continuar"
+    echo "❌ Error: Archivo .env no encontrado"
+    echo "📝 Copia .env.example a .env y configura las variables"
     exit 1
 fi
 
@@ -58,12 +56,14 @@ docker-compose build --no-cache
 
 # Verificar que TA-Lib se instaló correctamente en Brain
 echo "🔍 Verificando TA-Lib en Brain..."
-docker-compose run --rm brain conda run -n brain_env python -c "import talib; print('✅ TA-Lib version:', talib.__version__)"
+docker-compose run --rm brain python -c "import talib; print('✅ TA-Lib version:', talib.__version__)"
 
 if [ $? -eq 0 ]; then
     echo "✅ TA-Lib instalado correctamente"
 else
     echo "❌ Error con TA-Lib"
+    echo "📋 Revisando logs de construcción..."
+    docker-compose logs brain
     exit 1
 fi
 
@@ -73,7 +73,7 @@ docker-compose up -d
 
 # Esperar un momento para que los servicios se inicien
 echo "⏳ Esperando que los servicios se inicien..."
-sleep 10
+sleep 15
 
 # Verificar estado de los servicios
 echo "📊 Estado de los servicios:"
@@ -85,10 +85,10 @@ docker-compose logs brain --tail=20
 
 echo "✅ Despliegue completado!"
 echo "🌐 Servicios disponibles:"
-echo "  📰 News Service: http://localhost:8000"
-echo "  🧠 Brain Service: http://localhost:8001"
-echo "  📊 Grid Service: http://localhost:8002"
-echo "  🔥 Hype Service: http://localhost:8003"
+echo "   - Brain: http://localhost:8001"
+echo "   - Grid: http://localhost:8002"
+echo "   - News: http://localhost:8003"
+echo "   - Hype: http://localhost:8004"
 echo ""
 print_status "Comandos útiles:"
 echo "  docker-compose logs -f          # Ver logs en tiempo real"

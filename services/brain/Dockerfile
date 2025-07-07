@@ -6,18 +6,18 @@ FROM continuumio/miniconda3:latest
 
 # Establecer variables de entorno
 ENV PYTHONUNBUFFERED=1
-ENV CONDA_ENV=brain_env
 
-# Crear y activar entorno conda
-RUN conda create -n $CONDA_ENV python=3.10 -y
-SHELL ["conda", "run", "-n", "brain_env", "/bin/bash", "-c"]
+# Actualizar conda
+RUN conda update -n base -c defaults conda -y
 
-# Instalar TA-Lib desde conda-forge (más estable)
-RUN conda install -c conda-forge ta-lib -y
+# Instalar TA-Lib globalmente (más simple)
+RUN conda install -c conda-forge ta-lib python=3.10 -y
 
-# Copiar requirements y instalar dependencias Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar requirements
+COPY requirements.txt /tmp/requirements.txt
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copiar código de la aplicación
 COPY app/ /app/
@@ -30,4 +30,4 @@ WORKDIR /app
 EXPOSE 8001
 
 # Comando para ejecutar el servicio
-CMD ["conda", "run", "-n", "brain_env", "python", "main.py"] 
+CMD ["python", "main.py"] 
