@@ -1,0 +1,105 @@
+services:
+  # 🧠 Brain Service - Análisis Técnico con TA-Lib
+  - type: web
+    name: oraculo-brain
+    env: python
+    plan: starter
+    buildCommand: |
+      # Instalar conda
+      wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+      bash miniconda.sh -b -p $HOME/miniconda
+      export PATH="$HOME/miniconda/bin:$PATH"
+      # Instalar TA-Lib desde conda-forge
+      conda install -c conda-forge ta-lib python=3.10 -y
+      # Instalar dependencias Python
+      pip install -r services/brain/requirements.txt
+    startCommand: cd services/brain && python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: BRAIN_PORT
+        value: 8001
+      - key: BRAIN_ANALYSIS_INTERVAL
+        value: 3600
+      - key: BRAIN_ANALYSIS_TIMEFRAME
+        value: 4h
+      - key: BRAIN_ANALYSIS_DAYS
+        value: 40
+      - key: BRAIN_LOG_LEVEL
+        value: INFO
+      - key: BRAIN_DEBUG
+        value: false
+      - key: BRAIN_DEV_MODE
+        value: false
+      - key: PYTHONPATH
+        value: /opt/render/project/src/services/brain:/opt/render/project/src/shared
+
+  # 📊 Grid Service - Trading Automatizado
+  - type: web
+    name: oraculo-grid
+    env: python
+    plan: starter
+    buildCommand: pip install -r services/grid/requirements.txt
+    startCommand: cd services/grid && python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: GRID_PORT
+        value: 8002
+      - key: GRID_LOG_LEVEL
+        value: INFO
+      - key: GRID_DEBUG
+        value: false
+      - key: GRID_DEV_MODE
+        value: false
+      - key: PYTHONPATH
+        value: /opt/render/project/src/services/grid:/opt/render/project/src/shared
+
+  # 📰 News Service - Análisis de Noticias
+  - type: web
+    name: oraculo-news
+    env: python
+    plan: starter
+    buildCommand: pip install -r services/news/requirements.txt
+    startCommand: cd services/news && python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: NEWS_PORT
+        value: 8003
+      - key: NEWS_LOG_LEVEL
+        value: INFO
+      - key: NEWS_DEBUG
+        value: false
+      - key: NEWS_DEV_MODE
+        value: false
+      - key: PYTHONPATH
+        value: /opt/render/project/src/services/news:/opt/render/project/src/shared
+
+  # 🔥 Hype Service - Detección de Tendencias
+  - type: web
+    name: oraculo-hype
+    env: python
+    plan: starter
+    buildCommand: pip install -r services/hype/requirements.txt
+    startCommand: cd services/hype && python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: HYPE_PORT
+        value: 8004
+      - key: HYPE_LOG_LEVEL
+        value: INFO
+      - key: HYPE_DEBUG
+        value: false
+      - key: HYPE_DEV_MODE
+        value: false
+      - key: PYTHONPATH
+        value: /opt/render/project/src/services/hype:/opt/render/project/src/shared
+
+# 🗄️ Base de Datos PostgreSQL
+databases:
+  - name: oraculo-db
+    databaseName: oraculo_bot
+    user: oraculo_user
+    plan: starter 

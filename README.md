@@ -278,13 +278,28 @@ sudo systemctl status oraculo-api.service
 - enable_trailing_up: Activar/desactivar trailing up
 ```
 
-## 🚀 Despliegue Simplificado con Docker
+## 🚀 Despliegue
 
-### Prerrequisitos
+### 🌐 Opción 1: Render (Recomendado)
+
+**Ventajas**: Fácil, automático, sin problemas de TA-Lib
+- [Guía Completa de Render](RENDER_DEPLOYMENT.md)
+- Despliegue automático con `render.yaml`
+- TA-Lib instalado automáticamente con conda
+- Base de datos PostgreSQL incluida
+
+**Pasos rápidos**:
+1. Conecta tu repositorio a Render
+2. Configura variables de entorno
+3. ¡Listo! Render maneja todo automáticamente
+
+### 🐳 Opción 2: Docker Local
+
+#### Prerrequisitos
 - Docker y Docker Compose
 - Archivo `.env` configurado (ver `.env.example`)
 
-### Instalación en Servidor Ubuntu
+#### Instalación en Servidor Ubuntu
 ```bash
 # Clonar repositorio
 git clone <repo-url>
@@ -296,16 +311,12 @@ cp .env.example .env
 
 # Dar permisos de ejecución
 chmod +x deploy.sh
-chmod +x test_talib.sh
-
-# Probar TA-Lib primero
-./test_talib.sh
 
 # Desplegar todo el sistema
 ./deploy.sh
 ```
 
-### Instalación en Windows/Local
+#### Instalación en Windows/Local
 ```bash
 # Clonar repositorio
 git clone <repo-url>
@@ -321,10 +332,8 @@ docker-compose up --build -d
 
 ### Verificar TA-Lib
 ```bash
-# En servidor Ubuntu
-./test_talib.sh
-
-# O manualmente
+# En Render: Revisar logs del servicio Brain
+# En Docker local:
 docker-compose run --rm brain python -c "import talib; print(talib.__version__)"
 ```
 
