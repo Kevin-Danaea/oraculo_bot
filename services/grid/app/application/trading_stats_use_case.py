@@ -182,6 +182,14 @@ class TradingStatsUseCase:
             base_value_usdt = real_balances.get('base_value_usdt', Decimal('0'))
             quote_value_usdt = real_balances.get('quote_value_usdt', Decimal('0'))
             
+            # Calcular capital bloqueado en órdenes de venta
+            sell_orders_list = [o for o in exchange_orders if o['side'] == 'sell']
+            locked_base_amount = sum(Decimal(str(order['amount'])) for order in sell_orders_list)
+            locked_base_value_usdt = locked_base_amount * current_price
+            
+            # Capital total en activos = libre + bloqueado
+            total_base_value_usdt = base_value_usdt + locked_base_value_usdt
+            
             # Obtener balance asignado para comparación
             bot_balance = self.exchange_service.get_bot_allocated_balance(config)
             allocated_capital = bot_balance.get('allocated_capital', Decimal('0'))
@@ -199,12 +207,15 @@ class TradingStatsUseCase:
                 'pair': pair,
                 'current_price': float(current_price),
                 'allocated_capital': float(allocated_capital),
-                'capital_in_assets': float(base_value_usdt),  # Capital real en cryptos
+                'capital_in_assets': float(total_base_value_usdt),  # Capital total en cryptos (libre + bloqueado)
+                'capital_in_assets_free': float(base_value_usdt),   # Capital libre en cryptos
+                'capital_in_assets_locked': float(locked_base_value_usdt),  # Capital bloqueado en órdenes de venta
                 'capital_in_usdt': float(quote_value_usdt),   # Capital real en USDT
                 'buy_orders': buy_orders,
                 'sell_orders': sell_orders,
                 'total_orders': buy_orders + sell_orders,
                 'has_orders': (buy_orders + sell_orders) > 0,  # Para claridad
+                'grid_levels': config.grid_levels,  # Límite de órdenes activas
                 'pnl': float(pnl),
                 'pnl_percent': float(pnl_percent),
                 'trades_count': trades_count,

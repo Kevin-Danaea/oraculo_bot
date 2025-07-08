@@ -133,14 +133,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"❌ Error en gestión horaria inicial: {e}")
         
-        # Enviar estado detallado inicial
-        logger.info("📊 Generando estado detallado inicial...")
+        # Generar estado inicial (sin enviar notificación detallada)
+        logger.info("📊 Generando estado inicial...")
         try:
             detailed_status = trading_status_use_case.generate_detailed_status()
-            trading_status_use_case.send_detailed_status_notification()
-            logger.info("✅ Estado detallado inicial enviado")
+            logger.info("✅ Estado inicial generado (notificación detallada deshabilitada)")
         except Exception as e:
-            logger.error(f"❌ Error generando estado detallado: {e}")
+            logger.error(f"❌ Error generando estado inicial: {e}")
         
         logger.info("✅ Servicio Grid Trading iniciado correctamente")
         for feature in features:

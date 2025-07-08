@@ -239,21 +239,8 @@ class TradingStatusUseCase:
             return 0.0
 
     def send_detailed_status_notification(self) -> None:
-        """
-        Envía notificación con el resumen detallado del estado.
-        """
-        try:
-            summary = self.generate_detailed_status()
-            # Usar type casting para acceder al método específico
-            from app.infrastructure.notification_service import TelegramGridNotificationService
-            if isinstance(self.notification_service, TelegramGridNotificationService):
-                self.notification_service.send_detailed_status_notification(summary)
-            else:
-                # Fallback: usar método genérico si está disponible
-                logger.warning("⚠️ Servicio de notificación no soporta estado detallado")
-            logger.info("✅ Notificación de estado detallado enviada")
-        except Exception as e:
-            logger.error(f"❌ Error enviando notificación de estado: {e}")
+        """(OBSOLETO) Enviar notificación de estado detallado (ya no se usa)."""
+        pass
 
     def format_status_message(self, summary: TradingSummary) -> str:
         """

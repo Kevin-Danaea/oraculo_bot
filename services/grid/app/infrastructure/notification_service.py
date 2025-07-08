@@ -233,6 +233,7 @@ Resumen del ciclo de monitoreo completado.
                     current_price = bot_detail.get('current_price', 0.0)
                     allocated_capital = bot_detail.get('allocated_capital', 0.0)
                     capital_in_assets = bot_detail.get('capital_in_assets', 0.0)
+                    capital_in_assets_locked = bot_detail.get('capital_in_assets_locked', 0.0)
                     capital_in_usdt = bot_detail.get('capital_in_usdt', 0.0)
                     buy_orders = bot_detail.get('buy_orders', 0)
                     sell_orders = bot_detail.get('sell_orders', 0)
@@ -245,13 +246,27 @@ Resumen del ciclo de monitoreo completado.
                     message += f"💱 <b>{pair}</b>\n"
                     message += f"   💵 Precio actual: ${current_price:.4f}\n"
                     message += f"   🏦 Capital asignado: ${allocated_capital:.2f}\n"
-                    message += f"   🪙 Capital en activos: ${capital_in_assets:.2f}\n"
+                    # Mostrar capital en activos con información de bloqueado
+                    if capital_in_assets_locked > 0:
+                        message += f"   🪙 Capital en activos: ${capital_in_assets:.2f} (bloqueado: ${capital_in_assets_locked:.2f})\n"
+                    else:
+                        message += f"   🪙 Capital en activos: ${capital_in_assets:.2f}\n"
                     message += f"   💵 Capital en USDT: ${capital_in_usdt:.2f}\n"
                     
-                    # Mostrar órdenes de forma más clara
+                    # Mostrar órdenes de forma más clara con información de límite
                     if has_orders:
-                        message += f"   📈 Órdenes compra: {buy_orders}\n"
-                        message += f"   📉 Órdenes venta: {sell_orders}\n"
+                        total_orders = buy_orders + sell_orders
+                        # Obtener el límite de órdenes del bot (asumiendo que es grid_levels)
+                        grid_levels = bot_detail.get('grid_levels', 30)  # Default 30 si no está disponible
+                        
+                        if total_orders >= grid_levels:
+                            message += f"   📈 Órdenes compra: {buy_orders}\n"
+                            message += f"   📉 Órdenes venta: {sell_orders}\n"
+                            message += f"   🚦 Total órdenes: {total_orders}/{grid_levels} (límite alcanzado)\n"
+                        else:
+                            message += f"   📈 Órdenes compra: {buy_orders}\n"
+                            message += f"   📉 Órdenes venta: {sell_orders}\n"
+                            message += f"   📊 Total órdenes: {total_orders}/{grid_levels}\n"
                     else:
                         message += f"   ⏸️ Sin órdenes activas\n"
                     

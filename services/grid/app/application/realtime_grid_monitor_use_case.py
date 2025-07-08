@@ -233,9 +233,19 @@ class RealTimeGridMonitorUseCase:
         """
         Crea inmediatamente la orden complementaria para una orden completada.
         RESPETA AISLAMIENTO DE CAPITAL: Cada bot solo usa su capital asignado.
+        CONTROL DE LÍMITE: Nunca más órdenes activas que niveles de grid.
         """
         try:
             current_price = self.exchange_service.get_current_price(config.pair)
+            
+            # Verificar límite de órdenes activas
+            active_orders = self.grid_repository.get_active_orders(config.pair)
+            total_active_orders = len(active_orders)
+            max_allowed_orders = config.grid_levels
+            
+            if total_active_orders >= max_allowed_orders:
+                logger.warning(f"🚦 Bot {config.pair}: Límite de órdenes alcanzado ({total_active_orders}/{max_allowed_orders}). No se crea nueva orden.")
+                return None
             
             if filled_order.side == 'buy':
                 # Crear orden de venta - USAR CANTIDAD NETA DESPUÉS DE COMISIONES
@@ -382,12 +392,22 @@ class RealTimeGridMonitorUseCase:
     def _process_grid_steps(self, config: GridConfig, filled_orders: List[GridOrder]):
         """Actualiza los GridStep según las órdenes llenadas y crea la orden complementaria
         alternando el side para cada escalón.
+        CONTROL DE LÍMITE: Nunca más órdenes activas que niveles de grid.
         """
         steps = self.grid_repository.get_grid_steps(config.pair) or []
         steps_by_level = {s.level_index: s for s in steps}
 
         new_orders_created = 0
         trades_completed = 0
+        
+        # Verificar límite de órdenes activas antes de procesar
+        active_orders = self.grid_repository.get_active_orders(config.pair)
+        total_active_orders = len(active_orders)
+        max_allowed_orders = config.grid_levels
+        
+        if total_active_orders >= max_allowed_orders:
+            logger.warning(f"🚦 Bot {config.pair}: Límite de órdenes alcanzado ({total_active_orders}/{max_allowed_orders}). No se procesan nuevas órdenes.")
+            return new_orders_created, trades_completed
 
         for order in filled_orders:
             step = steps_by_level.get(order.grid_level)
