@@ -373,6 +373,19 @@ Resumen del ciclo de monitoreo completado.
         logger.info("✅ Forzando envío de resumen inmediato")
         return True
 
+    def send_notification(self, message: str) -> None:
+        """
+        Envía una notificación genérica por Telegram.
+        
+        Args:
+            message: Mensaje a enviar
+        """
+        try:
+            self.telegram_service.send_message(message)
+            logger.info("✅ Notificación genérica enviada")
+        except Exception as e:
+            logger.error(f"❌ Error enviando notificación genérica: {e}")
+
     def send_detailed_status_notification(self, summary) -> None:
         """
         Envía notificación con el estado detallado de trading.
