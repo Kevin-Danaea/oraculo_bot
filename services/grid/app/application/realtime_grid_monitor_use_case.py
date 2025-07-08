@@ -249,7 +249,7 @@ class RealTimeGridMonitorUseCase:
             current_price = self.exchange_service.get_current_price(config.pair)
             
             # Verificar límite de órdenes activas
-            active_orders = self.grid_repository.get_active_orders(config.pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             total_active_orders = len(active_orders)
             max_allowed_orders = config.grid_levels
             
