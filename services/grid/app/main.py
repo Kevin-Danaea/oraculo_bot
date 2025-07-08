@@ -54,13 +54,20 @@ async def lifespan(app: FastAPI):
         notification_service = TelegramGridNotificationService()
         lifecycle_use_case = ServiceLifecycleUseCase(notification_service)
         
-        # Realizar verificación de seguridad al reiniciar
-        from app.application.restart_safety_use_case import RestartSafetyUseCase
+        # Realizar limpieza completa al reiniciar
+        from app.application.restart_cleanup_use_case import RestartCleanupUseCase
+        from app.application.system_integrity_use_case import SystemIntegrityUseCase
         from app.application.trading_status_use_case import TradingStatusUseCase
         
-        restart_safety_use_case = RestartSafetyUseCase(
+        restart_cleanup_use_case = RestartCleanupUseCase(
             scheduler.grid_repository, 
             scheduler.exchange_service, 
+            notification_service
+        )
+        
+        system_integrity_use_case = SystemIntegrityUseCase(
+            scheduler.grid_repository,
+            scheduler.exchange_service,
             notification_service
         )
         
@@ -84,19 +91,39 @@ async def lifespan(app: FastAPI):
         
         lifecycle_use_case.notify_startup("Grid Trading Service", features)
         
-        # Realizar verificación de seguridad
-        logger.info("🔒 Iniciando verificación de seguridad al reiniciar...")
+        # Realizar limpieza completa al reiniciar
+        logger.info("🧹 Iniciando limpieza completa al reiniciar...")
         try:
-            safety_report = restart_safety_use_case.perform_restart_safety_check()
-            restart_safety_use_case.send_safety_report_notification(safety_report)
+            cleanup_results = restart_cleanup_use_case.execute()
             
-            if safety_report.is_safe_to_continue:
-                logger.info("✅ Verificación de seguridad exitosa, continuando...")
+            if cleanup_results['success']:
+                logger.info("✅ Limpieza completa exitosa")
+                logger.info(f"  📋 Órdenes canceladas: {cleanup_results['orders_cancelled']}")
+                logger.info(f"  💰 Activos vendidos: {len(cleanup_results['assets_sold'])}")
+                logger.info(f"  💵 USDT recuperado: ${cleanup_results['total_usdt_recovered']:.2f}")
+                logger.info(f"  🔄 Bots reseteados: {cleanup_results['bots_reset']}")
             else:
-                logger.warning("⚠️ Verificación de seguridad detectó problemas")
+                logger.warning("⚠️ Limpieza completa detectó problemas")
+                for error in cleanup_results.get('errors', []):
+                    logger.error(f"  ❌ {error}")
                 
         except Exception as e:
-            logger.error(f"❌ Error en verificación de seguridad: {e}")
+            logger.error(f"❌ Error en limpieza completa: {e}")
+        
+        # Realizar validación de integridad
+        logger.info("🔍 Iniciando validación de integridad del sistema...")
+        try:
+            integrity_results = system_integrity_use_case.execute()
+            
+            if integrity_results['success']:
+                logger.info("✅ Validación de integridad exitosa")
+            else:
+                logger.warning(f"⚠️ Validación de integridad: {integrity_results['overall_status']}")
+                for issue in integrity_results.get('issues_found', []):
+                    logger.warning(f"  ⚠️ {issue}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error en validación de integridad: {e}")
         
         # Enviar estado detallado inicial
         logger.info("📊 Generando estado detallado inicial...")

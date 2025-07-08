@@ -299,7 +299,7 @@ class ManageGridTransitionsUseCase:
 
     def _handle_pause(self, config: GridConfig, decision: str) -> Dict[str, Any]:
         """
-        Maneja la pausa de un bot (cancelar órdenes activas).
+        Maneja la pausa de un bot (PRESERVA estado actual para reanudar después).
         
         Args:
             config: Configuración del bot
@@ -308,56 +308,62 @@ class ManageGridTransitionsUseCase:
         Returns:
             Dict con el resultado de la pausa
         """
-        logger.info(f"⏸️ PAUSANDO bot para {config.pair}")
+        logger.info(f"⏸️ PAUSANDO bot para {config.pair} (preservando estado)")
         
         try:
             actions = []
             
-            # 1. Obtener órdenes activas antes de cancelar
+            # 1. Obtener órdenes activas y balance actual
             active_orders = self.grid_repository.get_active_orders(config.pair)
+            bot_balance = self.exchange_service.get_bot_allocated_balance(config)
             
-            # 2. Cancelar órdenes en el exchange
-            cancelled_orders = 0
-            if active_orders:
-                for order in active_orders:
-                    if order.exchange_order_id and order.status == 'open':
-                        try:
-                            success = self.exchange_service.cancel_order(config.pair, order.exchange_order_id)
-                            if success:
-                                cancelled_orders += 1
-                        except Exception as e:
-                            logger.error(f"❌ Error cancelando orden {order.exchange_order_id}: {e}")
-                
-                actions.append(f"Canceladas {cancelled_orders}/{len(active_orders)} órdenes del exchange")
+            # 2. NO cancelar órdenes - solo pausar el bot
+            # Las órdenes se mantienen activas para preservar el estado
+            actions.append(f"Manteniendo {len(active_orders)} órdenes activas")
             
-            # 3. Cancelar órdenes en BD
-            cancelled_in_db = self.grid_repository.cancel_all_orders_for_pair(config.pair)
-            if cancelled_in_db > 0:
-                actions.append(f"Canceladas {cancelled_in_db} órdenes en BD")
-            
-            # 4. Actualizar estado en BD
+            # 3. Actualizar estado en BD (solo marcar como no running)
             if config.id is not None:
                 self.grid_repository.update_config_status(
                     config.id, 
                     is_running=False, 
                     last_decision=decision
                 )
-                actions.append("Estado actualizado a pausado")
+                actions.append("Estado actualizado a pausado (órdenes preservadas)")
             else:
                 logger.error(f"❌ Config ID es None para {config.pair}")
                 return {'success': False, 'error': 'Config ID es None'}
             
-            # 5. Notificar pausa
+            # 4. Calcular estado preservado
+            base_currency = config.pair.split('/')[0]
+            assets_in_usdt = bot_balance['base_value_usdt']
+            usdt_balance = bot_balance['quote_value_usdt']
+            total_value = bot_balance['total_value_usdt']
+            
+            # 5. Notificar pausa con estado preservado
+            pause_message = (
+                f"⏸️ <b>BOT PAUSADO - {config.pair}</b>\n\n"
+                f"💰 <b>Estado preservado:</b>\n"
+                f"  🪙 {base_currency}: ${assets_in_usdt:.2f} USDT\n"
+                f"  💵 USDT: ${usdt_balance:.2f}\n"
+                f"  💎 Total: ${total_value:.2f}\n"
+                f"📋 <b>Órdenes activas:</b> {len(active_orders)}\n"
+                f"📊 <b>Capital asignado:</b> ${config.total_capital:.2f}\n\n"
+                f"ℹ️ <b>Nota:</b> Las órdenes se mantienen activas para preservar el estado.\n"
+                f"🔄 <b>Reanudación:</b> El bot continuará con el estado actual cuando se active."
+            )
+            
+            # Enviar notificación detallada
             self.notification_service.send_bot_status_notification(config.pair, "PAUSADO", "Decisión del Cerebro")
             
-            logger.info(f"✅ Bot {config.pair} pausado exitosamente")
+            logger.info(f"✅ Bot {config.pair} pausado exitosamente (estado preservado)")
             
             return {
                 'success': True,
                 'actions': actions,
-                'orders_in_exchange': len(active_orders),
-                'cancelled_in_exchange': cancelled_orders,
-                'cancelled_in_db': cancelled_in_db
+                'orders_preserved': len(active_orders),
+                'assets_preserved': float(assets_in_usdt),
+                'usdt_preserved': float(usdt_balance),
+                'total_preserved': float(total_value)
             }
             
         except Exception as e:

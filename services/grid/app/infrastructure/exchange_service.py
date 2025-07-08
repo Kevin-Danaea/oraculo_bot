@@ -380,6 +380,7 @@ class BinanceExchangeService(ExchangeService):
     def get_bot_allocated_balance(self, config: GridConfig) -> Dict[str, Decimal]:
         """
         Obtiene el balance asignado específicamente para un bot, respetando el aislamiento de capital.
+        MEJORADO: Prioriza USDT para operaciones de compra.
         
         Args:
             config: Configuración del bot con capital asignado
@@ -403,27 +404,36 @@ class BinanceExchangeService(ExchangeService):
             # Obtener precio actual
             current_price = self.get_current_price(pair)
             
-            # Calcular cuánto del balance total corresponde a este bot
-            total_value_usdt = total_base_balance * current_price + total_quote_balance
-            
-            if total_value_usdt >= allocated_capital:
-                # Hay suficiente balance total, calcular proporción
-                if total_value_usdt > 0:
-                    allocation_ratio = allocated_capital / total_value_usdt
-                else:
-                    allocation_ratio = Decimal('0')
-                
-                # Asignar proporcionalmente
-                allocated_base_balance = total_base_balance * allocation_ratio
-                allocated_quote_balance = total_quote_balance * allocation_ratio
-                
-                logger.debug(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f} de ${total_value_usdt:.2f} total (ratio: {allocation_ratio:.3f})")
+            # MEJORA: Priorizar USDT para operaciones de compra
+            # Si hay suficiente USDT disponible, asignar más USDT al bot
+            if total_quote_balance >= allocated_capital:
+                # Hay suficiente USDT, asignar todo el capital en USDT
+                allocated_quote_balance = allocated_capital
+                allocated_base_balance = Decimal('0')
+                logger.debug(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f} en USDT puro")
                 
             else:
-                # No hay suficiente balance, usar todo lo disponible
-                allocated_base_balance = total_base_balance
-                allocated_quote_balance = total_quote_balance
-                logger.warning(f"⚠️ Bot {pair}: Capital insuficiente. Asignado: ${allocated_capital:.2f}, Disponible: ${total_value_usdt:.2f}")
+                # No hay suficiente USDT, usar distribución proporcional
+                total_value_usdt = total_base_balance * current_price + total_quote_balance
+                
+                if total_value_usdt >= allocated_capital:
+                    # Hay suficiente balance total, calcular proporción
+                    if total_value_usdt > 0:
+                        allocation_ratio = allocated_capital / total_value_usdt
+                    else:
+                        allocation_ratio = Decimal('0')
+                    
+                    # Asignar proporcionalmente
+                    allocated_base_balance = total_base_balance * allocation_ratio
+                    allocated_quote_balance = total_quote_balance * allocation_ratio
+                    
+                    logger.debug(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f} de ${total_value_usdt:.2f} total (ratio: {allocation_ratio:.3f})")
+                    
+                else:
+                    # No hay suficiente balance, usar todo lo disponible
+                    allocated_base_balance = total_base_balance
+                    allocated_quote_balance = total_quote_balance
+                    logger.warning(f"⚠️ Bot {pair}: Capital insuficiente. Asignado: ${allocated_capital:.2f}, Disponible: ${total_value_usdt:.2f}")
             
             # Calcular valores en USDT
             allocated_base_value_usdt = allocated_base_balance * current_price
@@ -436,7 +446,7 @@ class BinanceExchangeService(ExchangeService):
                 'base_value_usdt': allocated_base_value_usdt,
                 'quote_value_usdt': allocated_quote_value_usdt,
                 'total_value_usdt': allocated_base_value_usdt + allocated_quote_value_usdt,
-                'total_available_in_account': total_value_usdt
+                'total_available_in_account': total_base_balance * current_price + total_quote_balance
             }
             
         except Exception as e:
