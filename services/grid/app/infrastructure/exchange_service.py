@@ -2,7 +2,7 @@
 Servicio de exchange para interactuar con Binance.
 """
 from typing import Dict, Any, List, Optional
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ConversionSyntax
 import ccxt
 import uuid
 
@@ -836,6 +836,25 @@ class BinanceExchangeService(ExchangeService):
                 limit=100  # Limitar para eficiencia
             )
             
+            # Función auxiliar para convertir valores a Decimal de forma segura
+            def safe_decimal(value, default=Decimal('0')):
+                """Convierte un valor a Decimal de forma segura."""
+                try:
+                    if value is None:
+                        return default
+                    if isinstance(value, (int, float)):
+                        return Decimal(str(value))
+                    if isinstance(value, str):
+                        # Limpiar string de caracteres no numéricos
+                        cleaned = ''.join(c for c in value if c.isdigit() or c in '.-')
+                        if cleaned:
+                            return Decimal(cleaned)
+                        return default
+                    return Decimal(str(value))
+                except (ValueError, TypeError, InvalidOperation, ConversionSyntax):
+                    logger.warning(f"⚠️ Error convirtiendo valor a Decimal: {value} (tipo: {type(value)})")
+                    return default
+            
             # Filtrar solo órdenes completadas (filled)
             filled_orders = []
             for order in closed_orders:
@@ -847,15 +866,15 @@ class BinanceExchangeService(ExchangeService):
                             'exchange_order_id': str(order.get('id', '')),
                             'pair': str(order.get('symbol', '')),
                             'side': str(order.get('side', '')),
-                            'amount': Decimal(str(order.get('amount', 0))),
-                            'price': Decimal(str(order.get('price', 0))),
+                            'amount': safe_decimal(order.get('amount')),
+                            'price': safe_decimal(order.get('price')),
                             'status': str(order.get('status', '')),
-                            'filled': Decimal(str(order.get('filled', 0))),
-                            'remaining': Decimal(str(order.get('remaining', 0))),
+                            'filled': safe_decimal(order.get('filled')),
+                            'remaining': safe_decimal(order.get('remaining')),
                             'timestamp': int(order.get('timestamp', 0) or 0),
                             'type': str(order.get('type', '')),
-                            'cost': Decimal(str(order.get('cost', 0))),
-                            'average': Decimal(str(order.get('average', 0)))
+                            'cost': safe_decimal(order.get('cost')),
+                            'average': safe_decimal(order.get('average'))
                         }
                         filled_orders.append(formatted_order)
                 except Exception as order_error:
@@ -889,22 +908,41 @@ class BinanceExchangeService(ExchangeService):
             order = self.exchange.fetch_order(order_id, pair)
             
             if order:
+                # Función auxiliar para convertir valores a Decimal de forma segura
+                def safe_decimal(value, default=Decimal('0')):
+                    """Convierte un valor a Decimal de forma segura."""
+                    try:
+                        if value is None:
+                            return default
+                        if isinstance(value, (int, float)):
+                            return Decimal(str(value))
+                        if isinstance(value, str):
+                            # Limpiar string de caracteres no numéricos
+                            cleaned = ''.join(c for c in value if c.isdigit() or c in '.-')
+                            if cleaned:
+                                return Decimal(cleaned)
+                            return default
+                        return Decimal(str(value))
+                    except (ValueError, TypeError, InvalidOperation, ConversionSyntax):
+                        logger.warning(f"⚠️ Error convirtiendo valor a Decimal: {value} (tipo: {type(value)})")
+                        return default
+                
                 formatted_order = {
-                    'exchange_order_id': order['id'],
-                    'pair': order['symbol'],
-                    'side': order['side'],
-                    'amount': Decimal(str(order['amount'])),
-                    'price': Decimal(str(order['price'])),
-                    'status': order['status'],
-                    'filled': Decimal(str(order['filled'])),
-                    'remaining': Decimal(str(order['remaining'])),
-                    'timestamp': order['timestamp'],
-                    'type': order['type'],
-                    'cost': Decimal(str(order.get('cost', 0))),
-                    'average': Decimal(str(order.get('average', 0)))
+                    'exchange_order_id': str(order.get('id', '')),
+                    'pair': str(order.get('symbol', '')),
+                    'side': str(order.get('side', '')),
+                    'amount': safe_decimal(order.get('amount')),
+                    'price': safe_decimal(order.get('price')),
+                    'status': str(order.get('status', '')),
+                    'filled': safe_decimal(order.get('filled')),
+                    'remaining': safe_decimal(order.get('remaining')),
+                    'timestamp': int(order.get('timestamp', 0) or 0),
+                    'type': str(order.get('type', '')),
+                    'cost': safe_decimal(order.get('cost')),
+                    'average': safe_decimal(order.get('average'))
                 }
                 
-                logger.debug(f"📋 Estado de orden {order_id} en {pair}: {order['status']} (filled: {order['filled']})")
+                logger.debug(f"📋 Estado de orden {order_id} en {pair}: {order.get('status', 'unknown')} (filled: {order.get('filled', 0)})")
                 return formatted_order
             else:
                 logger.warning(f"⚠️ Orden {order_id} no encontrada en {pair}")
