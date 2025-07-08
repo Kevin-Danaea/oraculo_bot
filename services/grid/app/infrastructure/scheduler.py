@@ -171,6 +171,8 @@ class GridScheduler:
             # PASO 4: Generar y enviar resumen periódico de trading
             logger.info("📊 PASO 4: Generando resumen periódico de trading...")
             trading_summary = self.trading_stats_use_case.generate_trading_summary()
+            if 'timestamp' in trading_summary:
+                trading_summary['periodicity'] = 'Resumen cada 1 hora'
             self.notification_service.send_periodic_trading_summary(trading_summary)
             
             active_configs = self.grid_repository.get_active_configs()

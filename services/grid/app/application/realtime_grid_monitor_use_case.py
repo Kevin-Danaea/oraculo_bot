@@ -175,14 +175,14 @@ class RealTimeGridMonitorUseCase:
         trades_completed = 0
         if filled_orders:
             logger.info(f"💰 {len(filled_orders)} órdenes completadas en {config.pair} (detectadas en el exchange)")
-            # Aquí deberías llamar a la lógica de creación de órdenes complementarias usando los datos del exchange
-            # Por ejemplo:
-            # new_orders, trades = self._process_grid_steps(config, filled_orders)
-            # new_orders_created += new_orders
-            # trades_completed += trades
-            # Por ahora solo logueamos
             for fill in filled_orders:
-                logger.info(f"[COMPLEMENTARIA] {config.pair}: Se debería crear orden complementaria para fill {fill['exchange_order_id']}")
+                logger.info(f"[FILL] {config.pair}: Orden {fill['exchange_order_id']} ejecutada, creando complementaria...")
+                comp_order = self._create_complementary_order(fill, config)
+                if comp_order:
+                    logger.info(f"[COMPLEMENTARIA] {config.pair}: Orden complementaria creada correctamente.")
+                    new_orders_created += 1
+                else:
+                    logger.warning(f"[COMPLEMENTARIA] {config.pair}: No se pudo crear la orden complementaria.")
         
         return {
             'fills_detected': len(filled_orders),
