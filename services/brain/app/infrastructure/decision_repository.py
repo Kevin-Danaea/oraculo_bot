@@ -30,7 +30,8 @@ class DatabaseDecisionRepository(DecisionRepository):
     
     async def save_decision(self, decision: TradingDecision) -> bool:
         """
-        Guarda una decisión de trading en la base de datos.
+        Guarda o actualiza una decisión de trading en la base de datos.
+        Si ya existe una decisión para el par y estrategia, la actualiza.
         
         Args:
             decision: Decisión a guardar
@@ -42,27 +43,52 @@ class DatabaseDecisionRepository(DecisionRepository):
             db = SessionLocal()
             
             try:
-                # Crear objeto de base de datos
-                db_decision = EstrategiaStatus(
-                    par=decision.pair,
-                    estrategia=decision.bot_type.value,
-                    decision=decision.decision.value,
-                    razon=decision.reason,
-                    adx_actual=decision.indicators.adx,
-                    volatilidad_actual=decision.indicators.volatility,
-                    sentiment_promedio=decision.indicators.sentiment,
-                    umbral_adx=decision.thresholds.adx_threshold,
-                    umbral_volatilidad=decision.thresholds.volatility_threshold,
-                    umbral_sentimiento=decision.thresholds.sentiment_threshold,
-                    timestamp=decision.timestamp
-                )
+                # Buscar decisión existente para el par y estrategia
+                existing_decision = db.query(EstrategiaStatus).filter(
+                    EstrategiaStatus.par == decision.pair,
+                    EstrategiaStatus.estrategia == decision.bot_type.value
+                ).first()
                 
-                # Guardar en base de datos
-                db.add(db_decision)
-                db.commit()
-                db.refresh(db_decision)
+                if existing_decision:
+                    # Actualizar decisión existente usando update()
+                    db.query(EstrategiaStatus).filter(
+                        EstrategiaStatus.par == decision.pair,
+                        EstrategiaStatus.estrategia == decision.bot_type.value
+                    ).update({
+                        'decision': decision.decision.value,
+                        'razon': decision.reason,
+                        'adx_actual': decision.indicators.adx,
+                        'volatilidad_actual': decision.indicators.volatility,
+                        'sentiment_promedio': decision.indicators.sentiment,
+                        'umbral_adx': decision.thresholds.adx_threshold,
+                        'umbral_volatilidad': decision.thresholds.volatility_threshold,
+                        'umbral_sentimiento': decision.thresholds.sentiment_threshold,
+                        'timestamp': decision.timestamp
+                    })
+                    
+                    db.commit()
+                    self.logger.info(f"✅ Decisión actualizada para {decision.pair}: {decision.decision.value}")
+                else:
+                    # Crear nueva decisión
+                    db_decision = EstrategiaStatus(
+                        par=decision.pair,
+                        estrategia=decision.bot_type.value,
+                        decision=decision.decision.value,
+                        razon=decision.reason,
+                        adx_actual=decision.indicators.adx,
+                        volatilidad_actual=decision.indicators.volatility,
+                        sentiment_promedio=decision.indicators.sentiment,
+                        umbral_adx=decision.thresholds.adx_threshold,
+                        umbral_volatilidad=decision.thresholds.volatility_threshold,
+                        umbral_sentimiento=decision.thresholds.sentiment_threshold,
+                        timestamp=decision.timestamp
+                    )
+                    
+                    db.add(db_decision)
+                    db.commit()
+                    db.refresh(db_decision)
+                    self.logger.info(f"✅ Nueva decisión creada para {decision.pair}: {decision.decision.value}")
                 
-                self.logger.info(f"✅ Decisión guardada para {decision.pair}: {decision.decision.value}")
                 return True
                 
             finally:

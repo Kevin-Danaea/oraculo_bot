@@ -181,8 +181,9 @@ class BinanceMarketDataRepository(MarketDataRepository):
             DataFrame con indicadores añadidos
         """
         try:
-            # ADX (Average Directional Index)
-            df['ADX_14'] = ta.adx(df['high'], df['low'], df['close'], length=14)
+            # ADX (Average Directional Index) - pandas-ta devuelve múltiples columnas
+            adx_data = ta.adx(df['high'], df['low'], df['close'], length=14)
+            df['ADX_14'] = adx_data['ADX_14']  # Solo la columna ADX
             
             # Bandas de Bollinger
             bb = ta.bbands(df['close'], length=20, std=2)

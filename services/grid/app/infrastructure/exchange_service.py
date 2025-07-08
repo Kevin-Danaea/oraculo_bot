@@ -37,7 +37,8 @@ class BinanceExchangeService(ExchangeService):
                 'secret': secret,
                 'enableRateLimit': True,
                 'options': {
-                    'defaultType': 'spot'
+                    'defaultType': 'spot',
+                    'warnOnFetchOpenOrdersWithoutSymbol': False
                 }
             })
             
@@ -244,14 +245,21 @@ class BinanceExchangeService(ExchangeService):
         try:
             if not self.exchange:
                 raise Exception("Exchange no inicializado")
+            
             open_orders = self.exchange.fetch_open_orders()
             count = 0
             for order in open_orders:
-                # Convertir id y symbol a str estándar
-                order_id = str(order['id'])
-                pair = str(order['symbol'])
-                self.exchange.cancel_order(order_id, pair)
-                count += 1
+                try:
+                    # Convertir id y symbol a str estándar
+                    order_id = str(order['id'])
+                    pair = str(order['symbol'])
+                    self.exchange.cancel_order(order_id, pair)
+                    count += 1
+                    logger.debug(f"✅ Orden cancelada: {order_id} en {pair}")
+                except Exception as order_error:
+                    logger.warning(f"⚠️ Error cancelando orden {order.get('id', 'unknown')}: {order_error}")
+                    continue
+                    
             logger.info(f"✅ Canceladas {count} órdenes abiertas")
             return count
         except Exception as e:

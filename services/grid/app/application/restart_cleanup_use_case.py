@@ -115,19 +115,10 @@ class RestartCleanupUseCase:
             Número de órdenes canceladas
         """
         try:
-            # Obtener todas las órdenes activas de la BD
-            active_configs = self.grid_repository.get_active_configs()
-            total_cancelled = 0
-            
-            for config in active_configs:
-                pair = config.pair
-                logger.info(f"📋 Cancelando órdenes para {pair}...")
-                
-                # Cancelar órdenes en el exchange
-                cancelled = self.exchange_service.cancel_all_orders()
-                total_cancelled += cancelled
-                
-                logger.info(f"✅ Canceladas {cancelled} órdenes para {pair}")
+            # Cancelar todas las órdenes en el exchange de una vez
+            logger.info("📋 Cancelando todas las órdenes activas...")
+            total_cancelled = self.exchange_service.cancel_all_orders()
+            logger.info(f"✅ Canceladas {total_cancelled} órdenes en total")
             
             return total_cancelled
             
@@ -143,31 +134,25 @@ class RestartCleanupUseCase:
             Dict con activos vendidos y sus valores en USDT
         """
         try:
-            sold_assets = {}
+            logger.info("💰 Vendiendo todos los activos...")
             
-            # Vender activos usando método público
-            for currency in ['BTC', 'ETH', 'AVAX']:
+            # Usar el método sell_all_positions que maneja todos los activos
+            sold_positions = self.exchange_service.sell_all_positions()
+            
+            # Calcular valores en USDT de los activos vendidos
+            sold_assets = {}
+            for currency, amount in sold_positions.items():
                 try:
-                    balance = self.exchange_service.get_balance(currency)
-                    if balance > 0:
-                        logger.info(f"💰 Vendiendo {balance} {currency}...")
-                        
-                        # Usar el método sell_all_positions que ya existe
-                        sold_positions = self.exchange_service.sell_all_positions()
-                        if currency in sold_positions:
-                            # Obtener precio actual para calcular valor
-                            pair = f"{currency}/USDT"
-                            current_price = self.exchange_service.get_current_price(pair)
-                            expected_value = balance * current_price
-                            sold_assets[currency] = expected_value
-                            logger.info(f"✅ Vendido {balance} {currency} por ~${expected_value:.2f} USDT")
-                        else:
-                            sold_assets[currency] = Decimal('0')
-                            
+                    pair = f"{currency}/USDT"
+                    current_price = self.exchange_service.get_current_price(pair)
+                    expected_value = amount * current_price
+                    sold_assets[currency] = expected_value
+                    logger.info(f"✅ Vendido {amount} {currency} por ~${expected_value:.2f} USDT")
                 except Exception as e:
-                    logger.error(f"❌ Error vendiendo {currency}: {e}")
+                    logger.warning(f"⚠️ No se pudo calcular valor de {currency}: {e}")
                     sold_assets[currency] = Decimal('0')
             
+            logger.info(f"💰 Total de activos vendidos: {len(sold_positions)} monedas")
             return sold_assets
             
         except Exception as e:
@@ -285,7 +270,7 @@ class RestartCleanupUseCase:
             )
             
             # Enviar notificación usando método correcto
-            self.notification_service.send_error_notification("Restart Cleanup", message)
+            self.notification_service.send_bot_status_notification("SYSTEM", "CLEANUP_COMPLETE", message)
             logger.info("📱 Notificación de limpieza enviada")
             
         except Exception as e:
