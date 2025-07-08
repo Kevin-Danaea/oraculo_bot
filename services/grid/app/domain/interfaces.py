@@ -180,6 +180,11 @@ class NotificationService(ABC):
         pass
 
     @abstractmethod
+    def send_info_notification(self, service_name: str, message: str) -> None:
+        """Envía notificación informativa (no es un error)."""
+        pass
+
+    @abstractmethod
     def send_trade_notification(self, trade: GridTrade) -> None:
         """Envía notificación de una operación completada."""
         pass

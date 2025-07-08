@@ -74,11 +74,11 @@ class RestartCleanupUseCase:
             cleaned_orders = self._clean_database_orders()
             logger.info(f"✅ Limpiadas {cleaned_orders} órdenes de la base de datos")
             
-            # PASO 4: Resetear estado de bots a pausado
-            logger.info("🔄 PASO 4: Reseteando estado de bots...")
-            reset_bots = self._reset_bot_states()
-            cleanup_results['bots_reset'] = reset_bots
-            logger.info(f"✅ Reseteados {reset_bots} bots a estado pausado")
+            # PASO 4: Sincronizar estado de bots con decisiones del brain
+            logger.info("🔄 PASO 4: Sincronizando estado de bots con decisiones del brain...")
+            synced_bots = self._reset_bot_states()
+            cleanup_results['bots_reset'] = synced_bots
+            logger.info(f"✅ Sincronizados {synced_bots} bots con decisiones del brain")
             
             # PASO 5: Verificar balance final
             logger.info("💰 PASO 5: Verificando balance final...")
@@ -186,30 +186,37 @@ class RestartCleanupUseCase:
     
     def _reset_bot_states(self) -> int:
         """
-        Resetea el estado de todos los bots a pausado.
+        Sincroniza el estado de los bots con las decisiones del brain.
+        NO resetea todo a pausado, sino que lee las decisiones actuales.
         
         Returns:
-            Número de bots reseteados
+            Número de bots sincronizados
         """
         try:
-            active_configs = self.grid_repository.get_active_configs()
-            reset_count = 0
+            # Obtener configuraciones con decisiones actuales del brain
+            configs_with_decisions = self.grid_repository.get_configs_with_decisions()
+            sync_count = 0
             
-            for config in active_configs:
+            for config, current_decision, previous_state in configs_with_decisions:
                 if config.id is not None:
-                    # Actualizar estado a pausado
+                    # Determinar si debe estar ejecutándose según la decisión del brain
+                    should_be_running = current_decision == "OPERAR_GRID"
+                    
+                    # Actualizar estado según la decisión del brain
                     self.grid_repository.update_config_status(
                         config.id,
-                        is_running=False,
-                        last_decision='PAUSAR_GRID'
+                        is_running=should_be_running,
+                        last_decision=current_decision
                     )
-                    reset_count += 1
-                    logger.info(f"🔄 Bot {config.pair} reseteado a pausado")
+                    sync_count += 1
+                    
+                    status = "ACTIVO" if should_be_running else "PAUSADO"
+                    logger.info(f"🔄 Bot {config.pair} sincronizado: {current_decision} → {status}")
             
-            return reset_count
+            return sync_count
             
         except Exception as e:
-            logger.error(f"❌ Error reseteando bots: {e}")
+            logger.error(f"❌ Error sincronizando bots: {e}")
             return 0
     
     def _verify_final_balance(self) -> Dict[str, Any]:
@@ -262,7 +269,7 @@ class RestartCleanupUseCase:
                 f"📋 <b>Órdenes canceladas:</b> {results['orders_cancelled']}\n"
                 f"💰 <b>Activos vendidos:</b> {len(results['assets_sold'])} monedas\n"
                 f"💵 <b>USDT recuperado:</b> ${results['total_usdt_recovered']:.2f}\n"
-                f"🔄 <b>Bots reseteados:</b> {results['bots_reset']}\n"
+                f"🔄 <b>Bots sincronizados:</b> {results['bots_reset']}\n"
                 f"💎 <b>Balance final USDT:</b> ${results['final_balance']['usdt_balance']:.2f}\n"
                 f"📊 <b>Órdenes activas:</b> {results['final_balance']['active_orders']}\n\n"
                 f"✅ <b>Estado:</b> {'Limpio' if results['final_balance']['cleanup_successful'] else 'Con problemas'}\n"

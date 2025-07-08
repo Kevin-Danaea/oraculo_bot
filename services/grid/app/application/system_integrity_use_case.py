@@ -394,8 +394,14 @@ class SystemIntegrityUseCase:
             
             message += f"\n🕐 <b>Validado:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
             
-            # Enviar notificación usando método correcto
-            self.notification_service.send_error_notification("System Integrity", message)
+            # Enviar notificación usando método correcto según el estado
+            if results['success'] and results['overall_status'] == 'HEALTHY':
+                # Es un mensaje de éxito, usar método informativo
+                self.notification_service.send_info_notification("System Integrity", message)
+            else:
+                # Es un mensaje de error o advertencia, usar método de error
+                self.notification_service.send_error_notification("System Integrity", message)
+            
             logger.info("📱 Notificación de integridad enviada")
             
         except Exception as e:

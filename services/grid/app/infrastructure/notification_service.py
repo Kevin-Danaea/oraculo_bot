@@ -58,6 +58,15 @@ class TelegramGridNotificationService(NotificationService):
         except Exception as e:
             logger.error(f"❌ Error enviando notificación de error: {e}")
 
+    def send_info_notification(self, service_name: str, message: str) -> None:
+        """Envía notificación informativa (no es un error)."""
+        try:
+            self.telegram_service.send_message(message)
+            logger.info(f"✅ Notificación informativa enviada para {service_name}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando notificación informativa: {e}")
+
     def send_trade_notification(self, trade: GridTrade) -> None:
         """Envía notificación de una operación completada (DESHABILITADA para evitar spam)."""
         # NOTA: Esta notificación está deshabilitada para evitar spam
