@@ -4,6 +4,7 @@ Implementación concreta de la interfaz NewsRepository.
 """
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from contextlib import contextmanager
 
 from app.domain.interfaces import NewsRepository
 from app.domain.entities import News, SentimentAnalysis, EmotionType, CategoryType
@@ -18,24 +19,29 @@ logger = get_logger(__name__)
 class SqlAlchemyNewsRepository(NewsRepository):
     """
     Implementación del repositorio de noticias usando SQLAlchemy.
+    MEJORADO: Manejo correcto de sesiones para evitar errores de transacción.
     """
     
     def __init__(self):
-        self._session: Optional[Session] = None
+        # Ya no mantenemos una sesión global
+        pass
     
-    def _get_session(self) -> Session:
-        """Obtiene o crea una sesión de base de datos."""
-        if self._session is None:
-            self._session = SessionLocal()
-        return self._session
-    
-    def _commit(self):
-        """Realiza commit de la sesión actual."""
+    @contextmanager
+    def _get_session(self):
+        """
+        Context manager para obtener una sesión de base de datos.
+        Maneja automáticamente commit, rollback y cierre de sesión.
+        """
+        session = SessionLocal()
         try:
-            self._get_session().commit()
+            yield session
+            session.commit()
         except Exception as e:
-            self._get_session().rollback()
-            raise e
+            logger.error(f"Error en transacción de BD: {e}")
+            session.rollback()
+            raise
+        finally:
+            session.close()
     
     def _model_to_entity(self, model: NoticiaModel) -> News:
         """Convierte un modelo de base de datos a una entidad del dominio."""
@@ -95,23 +101,23 @@ class SqlAlchemyNewsRepository(NewsRepository):
         Returns:
             Noticia guardada con ID asignado
         """
-        session = self._get_session()
-        
-        try:
-            # Convertir a modelo
-            model = self._entity_to_model(news)
-            
-            # Guardar
-            session.add(model)
-            self._commit()
-            
-            # Retornar con ID asignado
-            news.id = model.id  # type: ignore
-            return news
-            
-        except Exception as e:
-            logger.error(f"Error guardando noticia: {e}")
-            raise
+        with self._get_session() as session:
+            try:
+                # Convertir a modelo
+                model = self._entity_to_model(news)
+                
+                # Guardar
+                session.add(model)
+                session.flush()  # Para obtener el ID
+                
+                # Retornar con ID asignado
+                news.id = model.id  # type: ignore
+                logger.debug(f"✅ Noticia guardada con ID: {news.id}")
+                return news
+                
+            except Exception as e:
+                logger.error(f"Error guardando noticia: {e}")
+                raise
     
     def save_many(self, news_list: List[News]) -> List[News]:
         """
@@ -123,23 +129,22 @@ class SqlAlchemyNewsRepository(NewsRepository):
         Returns:
             Lista de noticias guardadas con IDs asignados
         """
-        session = self._get_session()
-        
-        try:
-            models = [self._entity_to_model(news) for news in news_list]
-            session.bulk_save_objects(models, return_defaults=True)
-            self._commit()
-            
-            
-            # Actualizar IDs en las entidades
-            for news, model in zip(news_list, models):
-                news.id = model.id  # type: ignore
-            
-            return news_list
-            
-        except Exception as e:
-            logger.error(f"Error guardando múltiples noticias: {e}")
-            raise
+        with self._get_session() as session:
+            try:
+                models = [self._entity_to_model(news) for news in news_list]
+                session.bulk_save_objects(models, return_defaults=True)
+                session.flush()  # Para obtener los IDs
+                
+                # Actualizar IDs en las entidades
+                for news, model in zip(news_list, models):
+                    news.id = model.id  # type: ignore
+                
+                logger.debug(f"✅ {len(news_list)} noticias guardadas en lote")
+                return news_list
+                
+            except Exception as e:
+                logger.error(f"Error guardando múltiples noticias: {e}")
+                raise
     
     def find_by_url(self, url: str) -> Optional[News]:
         """
@@ -151,20 +156,19 @@ class SqlAlchemyNewsRepository(NewsRepository):
         Returns:
             Noticia encontrada o None
         """
-        session = self._get_session()
-        
-        try:
-            model = session.query(NoticiaModel).filter(
-                NoticiaModel.url == url
-            ).first()
-            
-            if model:
-                return self._model_to_entity(model)
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error buscando noticia por URL: {e}")
-            raise
+        with self._get_session() as session:
+            try:
+                model = session.query(NoticiaModel).filter(
+                    NoticiaModel.url == url
+                ).first()
+                
+                if model:
+                    return self._model_to_entity(model)
+                return None
+                
+            except Exception as e:
+                logger.error(f"Error buscando noticia por URL: {e}")
+                raise
     
     def find_unanalyzed(self, limit: int = 500) -> List[News]:
         """
@@ -176,18 +180,19 @@ class SqlAlchemyNewsRepository(NewsRepository):
         Returns:
             Lista de noticias sin analizar
         """
-        session = self._get_session()
-        
-        try:
-            models = session.query(NoticiaModel).filter(
-                NoticiaModel.sentiment_score == None
-            ).limit(limit).all()
-            
-            return [self._model_to_entity(model) for model in models]
-            
-        except Exception as e:
-            logger.error(f"Error obteniendo noticias sin analizar: {e}")
-            raise
+        with self._get_session() as session:
+            try:
+                models = session.query(NoticiaModel).filter(
+                    NoticiaModel.sentiment_score == None
+                ).limit(limit).all()
+                
+                result = [self._model_to_entity(model) for model in models]
+                logger.debug(f"✅ Encontradas {len(result)} noticias sin analizar")
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error obteniendo noticias sin analizar: {e}")
+                raise
     
     def update_sentiment_analysis(self, news_id: int, analysis: SentimentAnalysis) -> News:
         """
@@ -200,31 +205,28 @@ class SqlAlchemyNewsRepository(NewsRepository):
         Returns:
             Noticia actualizada
         """
-        session = self._get_session()
-        
-        try:
-            model = session.query(NoticiaModel).filter(
-                NoticiaModel.id == news_id
-            ).first()
-            
-            if not model:
-                raise ValueError(f"Noticia con ID {news_id} no encontrada")
-            
-            # Actualizar campos de análisis
-            model.sentiment_score = analysis.sentiment_score  # type: ignore
-            model.primary_emotion = analysis.primary_emotion.value  # type: ignore
-            model.news_category = analysis.news_category.value  # type: ignore
-            
-            self._commit()
-            
-            return self._model_to_entity(model)
-            
-        except Exception as e:
-            logger.error(f"Error actualizando análisis de sentimiento: {e}")
-            raise
+        with self._get_session() as session:
+            try:
+                model = session.query(NoticiaModel).filter(
+                    NoticiaModel.id == news_id
+                ).first()
+                
+                if not model:
+                    raise ValueError(f"Noticia con ID {news_id} no encontrada")
+                
+                # Actualizar campos de análisis
+                model.sentiment_score = analysis.sentiment_score  # type: ignore
+                model.primary_emotion = analysis.primary_emotion.value  # type: ignore
+                model.news_category = analysis.news_category.value  # type: ignore
+                
+                logger.debug(f"✅ Análisis actualizado para noticia ID: {news_id}")
+                return self._model_to_entity(model)
+                
+            except Exception as e:
+                logger.error(f"Error actualizando análisis de sentimiento: {e}")
+                raise
     
     def close(self):
-        """Cierra la sesión de base de datos."""
-        if self._session:
-            self._session.close()
-            self._session = None 
+        """Cierra la sesión de base de datos. Ya no es necesario con el nuevo enfoque."""
+        logger.debug("✅ Repositorio cerrado (no hay sesión global que cerrar)")
+        pass 
