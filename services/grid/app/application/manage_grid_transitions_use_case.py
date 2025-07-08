@@ -140,34 +140,54 @@ class ManageGridTransitionsUseCase:
         # Detectar tipo de transición
         transition_type = self._detect_transition_type(current_decision, previous_state)
         
-        # NUEVO: Verificar si un bot activo necesita crear órdenes iniciales
+        # Solo crear órdenes iniciales si:
+        # 1. El bot pasa de pausado a activo (transición 'activate')
+        # 2. El bot está activo pero no tiene órdenes (tras reinicio)
+        existing_orders = self.grid_repository.get_active_orders(config.pair)
         if transition_type == 'no_change' and current_decision == "OPERAR_GRID":
-            # Verificar si el bot está activo pero no tiene órdenes
-            existing_orders = self.grid_repository.get_active_orders(config.pair)
             if not existing_orders:
                 logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes - creando órdenes iniciales")
                 transition_type = 'initialize_orders'
-        
-        if transition_type == 'no_change':
+            else:
+                logger.info(f"⏸️ Bot {config.pair} sigue activo y ya tiene {len(existing_orders)} órdenes. No se crean nuevas órdenes.")
+                return {
+                    'pair': config.pair,
+                    'transition_detected': False,
+                    'action': 'no_change',
+                    'success': True,
+                    'details': 'Bot activo y con órdenes, no se crean nuevas.'
+                }
+        elif transition_type == 'no_change':
             logger.debug(f"ℹ️ Sin cambios para {config.pair}")
             return {
                 'pair': config.pair,
                 'transition_detected': False,
                 'action': 'no_change',
-                'success': True
+                'success': True,
+                'details': 'Sin cambios en la decisión.'
             }
         
         try:
             if transition_type == 'activate':
-                result = self._handle_activation(config, current_decision)
-                return {
-                    'pair': config.pair,
-                    'transition_detected': True,
-                    'action': 'activation',
-                    'success': result['success'],
-                    'details': result
-                }
-                
+                # Solo crear órdenes iniciales si no existen
+                if not existing_orders:
+                    result = self._handle_activation(config, current_decision)
+                    return {
+                        'pair': config.pair,
+                        'transition_detected': True,
+                        'action': 'activation',
+                        'success': result['success'],
+                        'details': result
+                    }
+                else:
+                    logger.info(f"🔄 Bot {config.pair} activado pero ya tiene {len(existing_orders)} órdenes. No se crean nuevas.")
+                    return {
+                        'pair': config.pair,
+                        'transition_detected': False,
+                        'action': 'no_change',
+                        'success': True,
+                        'details': 'Bot activado pero ya tenía órdenes.'
+                    }
             elif transition_type == 'pause':
                 result = self._handle_pause(config, current_decision)
                 return {
@@ -177,7 +197,6 @@ class ManageGridTransitionsUseCase:
                     'success': result['success'],
                     'details': result
                 }
-                
             elif transition_type == 'initialize_orders':
                 result = self._handle_initialize_orders(config, current_decision)
                 return {
@@ -187,7 +206,6 @@ class ManageGridTransitionsUseCase:
                     'success': result['success'],
                     'details': result
                 }
-                
         except Exception as e:
             logger.error(f"❌ Error en transición {transition_type} para {config.pair}: {e}")
             return {

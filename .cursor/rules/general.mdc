@@ -3,7 +3,7 @@ alwaysApply: true
 ---
 # Regla 1: Protocolo de Interacción
 - Al inicio de CADA respuesta, debes usar el emoji 🤖 seguido del nombre del modelo que estás utilizando entre paréntesis. Ejemplo: 🤖 (Claude 4 Sonnet)
-- Antes de escribir cualquier código, genera una lista de tareas o usar el modo planning que hay disponible.
+- Antes de escribir cualquier código, usar el to-do list.
 
 # Regla 2: Selección de Modelo por Tarea (La Cascada)
 - **Por defecto, para todas las tareas, usa `Claude Sonnet 4`**. Es tu primera opción por velocidad y eficiencia.

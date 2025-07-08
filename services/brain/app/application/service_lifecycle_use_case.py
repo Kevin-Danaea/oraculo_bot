@@ -149,28 +149,14 @@ class ServiceLifecycleUseCase:
         while not self._stop_event.is_set():
             try:
                 logger.info(f"⏳ Esperando {ANALYSIS_INTERVAL} segundos hasta el próximo ciclo...")
-                
-                # Esperar hasta el próximo ciclo o hasta que se solicite parada
                 await asyncio.wait_for(self._stop_event.wait(), timeout=ANALYSIS_INTERVAL)
-                
-                if self._stop_event.is_set():
-                    logger.info("🛑 Bucle de análisis detenido por solicitud")
-                    break
-                
-                # Ejecutar análisis
-                await self._execute_analysis_cycle()
-                
             except asyncio.TimeoutError:
-                # Timeout normal, continuar con el siguiente ciclo
                 logger.info("⏰ Timeout alcanzado, ejecutando próximo ciclo de análisis...")
-                continue
-            except Exception as e:
-                logger.error(f"❌ Error en bucle de análisis: {e}")
-                await self.notification_service.notify_error(
-                    f"Error en bucle de análisis: {e}"
-                )
-                # Esperar un poco antes de continuar
-                await asyncio.sleep(60)
+                # Ejecutar análisis después del timeout
+                await self._execute_analysis_cycle()
+            if self._stop_event.is_set():
+                logger.info("🛑 Bucle de análisis detenido por solicitud")
+                break
         
         logger.info("🔄 Bucle de análisis terminado")
     
