@@ -140,23 +140,24 @@ class ManageGridTransitionsUseCase:
         # Detectar tipo de transición
         transition_type = self._detect_transition_type(current_decision, previous_state)
         
+        # Consultar órdenes activas directamente en el exchange
+        exchange_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+        if exchange_orders:
+            logger.info(f"🔎 [EXCHANGE] Se detectaron {len(exchange_orders)} órdenes activas en el exchange para {config.pair}. No se crearán nuevas órdenes iniciales.")
+            return {
+                'pair': config.pair,
+                'transition_detected': False,
+                'action': 'no_change',
+                'success': True,
+                'details': f'Órdenes activas detectadas en exchange: {len(exchange_orders)}'
+            }
+        
         # Solo crear órdenes iniciales si:
         # 1. El bot pasa de pausado a activo (transición 'activate')
-        # 2. El bot está activo pero no tiene órdenes (tras reinicio)
-        existing_orders = self.grid_repository.get_active_orders(config.pair)
+        # 2. El bot está activo pero no tiene órdenes en el exchange (tras reinicio)
         if transition_type == 'no_change' and current_decision == "OPERAR_GRID":
-            if not existing_orders:
-                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes - creando órdenes iniciales")
-                transition_type = 'initialize_orders'
-            else:
-                logger.info(f"⏸️ Bot {config.pair} sigue activo y ya tiene {len(existing_orders)} órdenes. No se crean nuevas órdenes.")
-                return {
-                    'pair': config.pair,
-                    'transition_detected': False,
-                    'action': 'no_change',
-                    'success': True,
-                    'details': 'Bot activo y con órdenes, no se crean nuevas.'
-                }
+            logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en el exchange - creando órdenes iniciales")
+            transition_type = 'initialize_orders'
         elif transition_type == 'no_change':
             logger.debug(f"ℹ️ Sin cambios para {config.pair}")
             return {
@@ -169,25 +170,16 @@ class ManageGridTransitionsUseCase:
         
         try:
             if transition_type == 'activate':
-                # Solo crear órdenes iniciales si no existen
-                if not existing_orders:
-                    result = self._handle_activation(config, current_decision)
-                    return {
-                        'pair': config.pair,
-                        'transition_detected': True,
-                        'action': 'activation',
-                        'success': result['success'],
-                        'details': result
-                    }
-                else:
-                    logger.info(f"🔄 Bot {config.pair} activado pero ya tiene {len(existing_orders)} órdenes. No se crean nuevas.")
-                    return {
-                        'pair': config.pair,
-                        'transition_detected': False,
-                        'action': 'no_change',
-                        'success': True,
-                        'details': 'Bot activado pero ya tenía órdenes.'
-                    }
+                # Solo crear órdenes iniciales si no existen en el exchange
+                logger.info(f"🔧 Activando bot {config.pair} y no hay órdenes en el exchange - creando grilla inicial")
+                result = self._handle_activation(config, current_decision)
+                return {
+                    'pair': config.pair,
+                    'transition_detected': True,
+                    'action': 'activation',
+                    'success': result['success'],
+                    'details': result
+                }
             elif transition_type == 'pause':
                 result = self._handle_pause(config, current_decision)
                 return {
