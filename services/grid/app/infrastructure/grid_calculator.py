@@ -261,49 +261,47 @@ class GridTradingCalculator(GridCalculator):
             logger.error(f"❌ Error verificando trailing up: {e}")
             return False
 
-    def get_highest_sell_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
+    def get_highest_sell_price(self, active_orders) -> Optional[Decimal]:
         """
         Obtiene el precio más alto de las órdenes de venta activas.
-        
         Args:
-            active_orders: Lista de órdenes activas
-            
+            active_orders: Lista de órdenes activas (GridOrder o dict)
         Returns:
             Precio más alto de venta o None si no hay órdenes de venta
         """
         try:
-            sell_orders = [order for order in active_orders if order.side == 'sell' and order.status == 'open']
-            
+            sell_orders = [order for order in active_orders if (getattr(order, 'side', None) == 'sell' or (isinstance(order, dict) and order.get('side') == 'sell')) and (getattr(order, 'status', None) == 'open' or (isinstance(order, dict) and order.get('status') == 'open'))]
             if not sell_orders:
                 return None
-            
-            highest_price = max(order.price for order in sell_orders)
+            # Filtrar precios válidos (no None)
+            prices = [getattr(order, 'price', None) if not isinstance(order, dict) else order.get('price') for order in sell_orders]
+            prices = [p for p in prices if p is not None]
+            if not prices:
+                return None
+            highest_price = max(prices)
             return highest_price
-            
         except Exception as e:
             logger.error(f"❌ Error obteniendo precio más alto de venta: {e}")
             return None
 
-    def get_last_buy_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
+    def get_last_buy_price(self, active_orders) -> Optional[Decimal]:
         """
         Obtiene el precio de la última orden de compra ejecutada.
-        
         Args:
-            active_orders: Lista de órdenes activas
-            
+            active_orders: Lista de órdenes activas (GridOrder o dict)
         Returns:
             Precio de la última compra o None si no hay compras
         """
         try:
-            buy_orders = [order for order in active_orders if order.side == 'buy' and order.status == 'filled']
-            
+            buy_orders = [order for order in active_orders if (getattr(order, 'side', None) == 'buy' or (isinstance(order, dict) and order.get('side') == 'buy')) and (getattr(order, 'status', None) == 'filled' or (isinstance(order, dict) and order.get('status') == 'filled'))]
             if not buy_orders:
                 return None
-            
-            # Ordenar por timestamp y obtener la más reciente
-            latest_buy = max(buy_orders, key=lambda x: x.filled_at if x.filled_at else x.created_at if x.created_at else datetime.min)
-            return latest_buy.price
-            
+            def get_time(o):
+                if isinstance(o, dict):
+                    return o.get('filled_at') or o.get('created_at') or datetime.min
+                return o.filled_at if o.filled_at else o.created_at if o.created_at else datetime.min
+            latest_buy = max(buy_orders, key=get_time)
+            return getattr(latest_buy, 'price', None) if not isinstance(latest_buy, dict) else latest_buy.get('price')
         except Exception as e:
             logger.error(f"❌ Error obteniendo precio de última compra: {e}")
             return None
