@@ -191,6 +191,12 @@ class GridScheduler:
                 logger.info("✅ Grid Scheduler híbrido iniciado")
                 logger.info("  ⚡ Monitor tiempo real: cada 10 segundos")
                 logger.info(f"  ⏰ Gestión horaria: cada {MONITORING_INTERVAL_HOURS} hora(s)")
+                
+                # 🚀 EJECUCIÓN INMEDIATA: Gestión horaria al iniciar
+                logger.info("🚀 Ejecutando gestión horaria inicial...")
+                self._run_hourly_management()
+                logger.info("✅ Gestión horaria inicial completada")
+                
             else:
                 logger.warning("⚠️ Grid Scheduler ya está ejecutándose")
                 
