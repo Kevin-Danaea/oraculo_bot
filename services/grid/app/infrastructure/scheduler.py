@@ -82,20 +82,19 @@ class GridScheduler:
             logger.error(f"❌ Error inicializando servicios: {e}")
             raise
 
-    def _setup_jobs(self):
+    def _setup_jobs(self, include_realtime=True):
         """Configura los trabajos del scheduler."""
         try:
-            # 🚀 TRABAJO PRINCIPAL: Monitor en tiempo real (cada 10 segundos)
-            self.scheduler.add_job(
-                func=self._run_realtime_monitor,
-                trigger=IntervalTrigger(seconds=REALTIME_MONITOR_INTERVAL_SECONDS),
-                id='realtime_grid_monitor',
-                name='Real-Time Grid Monitor',
-                replace_existing=True,
-                max_instances=1,
-                misfire_grace_time=5  # 5 segundos de gracia
-            )
-            
+            if include_realtime:
+                self.scheduler.add_job(
+                    func=self._run_realtime_monitor,
+                    trigger=IntervalTrigger(seconds=REALTIME_MONITOR_INTERVAL_SECONDS),
+                    id='realtime_grid_monitor',
+                    name='Real-Time Grid Monitor',
+                    replace_existing=True,
+                    max_instances=1,
+                    misfire_grace_time=5  # 5 segundos de gracia
+                )
             # ⏰ TRABAJO HORARIO: Gestión de transiciones
             self.scheduler.add_job(
                 func=self._run_hourly_management,
@@ -106,11 +105,10 @@ class GridScheduler:
                 max_instances=1,
                 misfire_grace_time=300  # 5 minutos de gracia
             )
-            
             logger.info("✅ Trabajos configurados:")
-            logger.info(f"  ⚡ Monitor tiempo real: cada {REALTIME_MONITOR_INTERVAL_SECONDS} segundos")
+            if include_realtime:
+                logger.info(f"  ⚡ Monitor tiempo real: cada {REALTIME_MONITOR_INTERVAL_SECONDS} segundos")
             logger.info(f"  ⏰ Gestión horaria: cada {MONITORING_INTERVAL_HOURS} hora(s)")
-            
         except Exception as e:
             logger.error(f"❌ Error configurando trabajos del scheduler: {e}")
             raise
@@ -185,21 +183,28 @@ class GridScheduler:
             logger.error(f"❌ Error en gestión horaria: {e}")
             self.notification_service.send_error_notification("Grid Hourly Management", str(e))
 
+    def start_realtime_monitor(self):
+        """Agendar el monitor en tiempo real tras la limpieza inicial."""
+        self.scheduler.add_job(
+            func=self._run_realtime_monitor,
+            trigger=IntervalTrigger(seconds=REALTIME_MONITOR_INTERVAL_SECONDS),
+            id='realtime_grid_monitor',
+            name='Real-Time Grid Monitor',
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=5
+        )
+        logger.info("✅ Monitor en tiempo real agendado tras limpieza inicial")
+
     def start(self):
-        """Inicia el scheduler híbrido."""
+        """Inicia el scheduler híbrido (sin monitor en tiempo real hasta que se llame explícitamente)."""
         try:
             if not self.scheduler.running:
                 self.scheduler.start()
                 logger.info("✅ Grid Scheduler híbrido iniciado")
-                logger.info("  ⚡ Monitor tiempo real: cada 10 segundos")
                 logger.info(f"  ⏰ Gestión horaria: cada {MONITORING_INTERVAL_HOURS} hora(s)")
-                
-                # NOTA: La gestión horaria inicial se ejecutará después de la limpieza
-                # para evitar crear órdenes que luego se cancelen
-                
             else:
                 logger.warning("⚠️ Grid Scheduler ya está ejecutándose")
-                
         except Exception as e:
             logger.error(f"❌ Error iniciando Grid Scheduler: {e}")
             raise

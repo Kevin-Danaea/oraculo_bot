@@ -42,13 +42,12 @@ async def lifespan(app: FastAPI):
             raise Exception("No se pudo obtener sesión de base de datos")
         
         scheduler = GridScheduler(db)
+        scheduler._setup_jobs(include_realtime=False)  # Solo agenda la gestión horaria
+        scheduler.start()
         
         # Inicializar bot de Telegram
         telegram_bot = GridTelegramBot(scheduler)
         telegram_bot.start()
-        
-        # Iniciar scheduler
-        scheduler.start()
         
         # Inicializar servicios
         notification_service = TelegramGridNotificationService()
@@ -140,6 +139,13 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Estado inicial generado (notificación detallada deshabilitada)")
         except Exception as e:
             logger.error(f"❌ Error generando estado inicial: {e}")
+        
+        # 🚦 Activar el monitor en tiempo real solo después de limpieza y gestión horaria
+        try:
+            scheduler.start_realtime_monitor()
+            logger.info("✅ Monitor en tiempo real activado tras limpieza y gestión horaria inicial")
+        except Exception as e:
+            logger.error(f"❌ Error activando monitor en tiempo real: {e}")
         
         logger.info("✅ Servicio Grid Trading iniciado correctamente")
         for feature in features:
