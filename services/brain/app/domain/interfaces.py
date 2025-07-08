@@ -13,8 +13,7 @@ from .entities import (
     TradingDecision, 
     MarketIndicators, 
     TradingRecipe, 
-    BotType,
-    BrainStatus
+    BotType
 )
 
 
@@ -193,44 +192,7 @@ class NotificationService(ABC):
         pass
 
 
-class BrainStatusRepository(ABC):
-    """Interfaz para el repositorio de estado del brain."""
-    
-    @abstractmethod
-    async def save_status(self, status: BrainStatus) -> bool:
-        """
-        Guarda el estado actual del brain.
-        
-        Args:
-            status: Estado a guardar
-            
-        Returns:
-            True si se guardó correctamente
-        """
-        pass
-    
-    @abstractmethod
-    async def get_status(self) -> Optional[BrainStatus]:
-        """
-        Obtiene el estado actual del brain.
-        
-        Returns:
-            Estado actual o None si no existe
-        """
-        pass
-    
-    @abstractmethod
-    async def update_cycle_count(self, cycle_count: int) -> bool:
-        """
-        Actualiza el contador de ciclos.
-        
-        Args:
-            cycle_count: Nuevo contador de ciclos
-            
-        Returns:
-            True si se actualizó correctamente
-        """
-        pass
+
 
 
 class LLMService(ABC):

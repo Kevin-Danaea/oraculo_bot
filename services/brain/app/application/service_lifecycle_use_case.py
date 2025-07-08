@@ -10,8 +10,8 @@ import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from app.domain.entities import BrainStatus, BotType
-from app.domain.interfaces import BrainStatusRepository, NotificationService
+from app.domain.interfaces import NotificationService
+from app.application.batch_analysis_use_case import BatchAnalysisUseCase
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +23,23 @@ class ServiceLifecycleUseCase:
     
     def __init__(
         self,
-        status_repo: BrainStatusRepository,
-        notification_service: NotificationService
+        notification_service: NotificationService,
+        batch_analysis_use_case: BatchAnalysisUseCase
     ):
         """
         Inicializa el caso de uso.
         
         Args:
-            status_repo: Repositorio de estado del brain
             notification_service: Servicio de notificaciones
+            batch_analysis_use_case: Caso de uso para análisis batch
         """
-        self.status_repo = status_repo
         self.notification_service = notification_service
+        self.batch_analysis_use_case = batch_analysis_use_case
         self._analysis_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
         self._is_running = False
+        self._cycle_count = 0
+        self._last_analysis_time: Optional[datetime] = None
     
     async def start_service(self) -> Dict[str, Any]:
         """
@@ -49,32 +51,18 @@ class ServiceLifecycleUseCase:
         try:
             if self._is_running:
                 logger.warning("⚠️ El servicio brain ya está ejecutándose")
-                current_status = await self.status_repo.get_status()
                 return {
                     "status": "already_running",
-                    "message": "El servicio brain ya está ejecutándose",
-                    "brain_status": current_status.to_dict() if current_status else None
+                    "message": "El servicio brain ya está ejecutándose"
                 }
             
             logger.info("🚀 Iniciando servicio brain...")
             
-            # Crear estado inicial
-            initial_status = BrainStatus(
-                is_running=True,
-                cycle_count=0,
-                last_analysis_time=None,
-                supported_pairs=[],  # Se actualizará en el primer análisis
-                active_bots=[BotType.GRID],
-                total_decisions_processed=0,
-                successful_decisions=0,
-                failed_decisions=0
-            )
-            
-            await self.status_repo.save_status(initial_status)
-            
             # Marcar como ejecutándose
             self._is_running = True
             self._stop_event.clear()
+            self._cycle_count = 0
+            self._last_analysis_time = None
             
             # Iniciar bucle de análisis en segundo plano
             self._analysis_task = asyncio.create_task(self._analysis_loop())
@@ -83,8 +71,7 @@ class ServiceLifecycleUseCase:
             
             return {
                 "status": "started",
-                "message": "Servicio brain iniciado correctamente",
-                "brain_status": initial_status.to_dict()
+                "message": "Servicio brain iniciado correctamente"
             }
             
         except Exception as e:
@@ -124,28 +111,7 @@ class ServiceLifecycleUseCase:
                     self._analysis_task.cancel()
                     logger.warning("⚠️ El bucle de análisis no respondió, fue forzado a detenerse")
             
-            # Actualizar estado
-            current_status = await self.status_repo.get_status()
-            if current_status:
-                stopped_status = BrainStatus(
-                    is_running=False,
-                    cycle_count=current_status.cycle_count,
-                    last_analysis_time=current_status.last_analysis_time,
-                    supported_pairs=current_status.supported_pairs,
-                    active_bots=current_status.active_bots,
-                    total_decisions_processed=current_status.total_decisions_processed,
-                    successful_decisions=current_status.successful_decisions,
-                    failed_decisions=current_status.failed_decisions
-                )
-                await self.status_repo.save_status(stopped_status)
-                
-                logger.info("✅ Servicio brain detenido correctamente")
-                
-                return {
-                    "status": "stopped",
-                    "message": "Servicio brain detenido correctamente",
-                    "brain_status": stopped_status.to_dict()
-                }
+            logger.info("✅ Servicio brain detenido correctamente")
             
             return {
                 "status": "stopped",
@@ -168,12 +134,11 @@ class ServiceLifecycleUseCase:
             Estado actual del servicio
         """
         try:
-            current_status = await self.status_repo.get_status()
-            
             return {
                 "status": "success",
                 "is_running": self._is_running,
-                "brain_status": current_status.to_dict() if current_status else None,
+                "cycle_count": self._cycle_count,
+                "last_analysis_time": self._last_analysis_time.isoformat() if self._last_analysis_time else None,
                 "analysis_task_active": self._analysis_task is not None and not self._analysis_task.done(),
                 "stop_event_set": self._stop_event.is_set()
             }
@@ -199,23 +164,30 @@ class ServiceLifecycleUseCase:
         logger.info("🚀 Ejecutando primer análisis al iniciar...")
         await self._execute_analysis_cycle()
         
-        while not self._stop_event.is_set():
+        # Bucle principal
+        while self._is_running and not self._stop_event.is_set():
             try:
-                logger.info(f"⏳ Esperando {ANALYSIS_INTERVAL} segundos para el próximo análisis...")
-                await asyncio.sleep(ANALYSIS_INTERVAL)
+                # Esperar hasta el próximo ciclo o hasta que se solicite parada
+                await asyncio.wait_for(self._stop_event.wait(), timeout=ANALYSIS_INTERVAL)
                 
                 if self._stop_event.is_set():
+                    logger.info("🛑 Bucle de análisis detenido por solicitud")
                     break
                 
-                logger.info("🔄 Ejecutando análisis programado...")
+                # Ejecutar análisis
                 await self._execute_analysis_cycle()
                 
-            except asyncio.CancelledError:
-                logger.info("🛑 Bucle de análisis cancelado")
-                break
+            except asyncio.TimeoutError:
+                # Timeout normal, continuar con el siguiente ciclo
+                continue
             except Exception as e:
-                logger.error(f"❌ Error en el bucle de análisis: {e}")
-                await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
+                logger.error(f"❌ Error en bucle de análisis: {e}")
+                await self.notification_service.notify_error(
+                    f"Error en bucle de análisis: {e}",
+                    {"cycle_count": self._cycle_count}
+                )
+                # Esperar un poco antes de continuar
+                await asyncio.sleep(60)
         
         logger.info("🔄 Bucle de análisis terminado")
     
@@ -224,40 +196,34 @@ class ServiceLifecycleUseCase:
         Ejecuta un ciclo de análisis completo.
         """
         try:
-            # Obtener estado actual
-            current_status = await self.status_repo.get_status()
-            if current_status:
-                new_cycle_count = current_status.cycle_count + 1
-                
-                # Actualizar estado con nuevo ciclo y tiempo de análisis
-                updated_status = BrainStatus(
-                    is_running=current_status.is_running,
-                    cycle_count=new_cycle_count,
-                    last_analysis_time=datetime.utcnow(),
-                    supported_pairs=current_status.supported_pairs,
-                    active_bots=current_status.active_bots,
-                    total_decisions_processed=current_status.total_decisions_processed,
-                    successful_decisions=current_status.successful_decisions,
-                    failed_decisions=current_status.failed_decisions
-                )
-                
-                # Guardar estado actualizado
-                success = await self.status_repo.save_status(updated_status)
-                if success:
-                    logger.info(f"✅ Ciclo #{new_cycle_count} completado y guardado")
-                else:
-                    logger.error(f"❌ Error guardando estado del ciclo #{new_cycle_count}")
+            self._cycle_count += 1
+            self._last_analysis_time = datetime.utcnow()
+            
+            logger.info(f"🧠 ========== CICLO DE ANÁLISIS #{self._cycle_count} ==========")
+            logger.info(f"⏰ Iniciado: {self._last_analysis_time}")
+            
+            # Ejecutar análisis batch real
+            logger.info("📊 Ejecutando análisis batch...")
+            result = await self.batch_analysis_use_case.execute()
+            
+            if result['status'] == 'completed':
+                logger.info(f"✅ Análisis completado: {result['successful_pairs']} exitosos, {result['failed_pairs']} fallidos")
             else:
-                logger.warning("⚠️ No se pudo obtener el estado actual para el análisis")
-                
+                logger.error(f"❌ Error en análisis batch: {result.get('error', 'Error desconocido')}")
+            
+            logger.info(f"✅ Ciclo #{self._cycle_count} completado")
+            
         except Exception as e:
-            logger.error(f"❌ Error ejecutando ciclo de análisis: {e}")
+            logger.error(f"❌ Error ejecutando ciclo #{self._cycle_count}: {e}")
+            await self.notification_service.notify_error(
+                f"Error en ciclo de análisis #{self._cycle_count}: {e}"
+            )
     
     def is_running(self) -> bool:
         """
         Verifica si el servicio está ejecutándose.
         
         Returns:
-            True si el servicio está ejecutándose
+            True si está ejecutándose
         """
         return self._is_running 

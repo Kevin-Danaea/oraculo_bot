@@ -14,10 +14,9 @@ from app.domain.interfaces import (
     MarketDataRepository, 
     DecisionRepository, 
     RecipeRepository,
-    NotificationService,
-    BrainStatusRepository
+    NotificationService
 )
-from app.domain.entities import TradingDecision, BotType, BrainStatus
+from app.domain.entities import TradingDecision, BotType
 from app.config import SUPPORTED_PAIRS
 
 logger = logging.getLogger(__name__)
@@ -33,8 +32,7 @@ class BatchAnalysisUseCase:
         market_data_repo: MarketDataRepository,
         decision_repo: DecisionRepository,
         recipe_repo: RecipeRepository,
-        notification_service: NotificationService,
-        status_repo: BrainStatusRepository
+        notification_service: NotificationService
     ):
         """
         Inicializa el caso de uso.
@@ -44,13 +42,11 @@ class BatchAnalysisUseCase:
             decision_repo: Repositorio de decisiones
             recipe_repo: Repositorio de recetas
             notification_service: Servicio de notificaciones
-            status_repo: Repositorio de estado del brain
         """
         self.market_data_repo = market_data_repo
         self.decision_repo = decision_repo
         self.recipe_repo = recipe_repo
         self.notification_service = notification_service
-        self.status_repo = status_repo
         self.logger = logging.getLogger(__name__)
     
     async def execute(self) -> Dict[str, Any]:
@@ -65,13 +61,6 @@ class BatchAnalysisUseCase:
         self.logger.info(f"📊 Analizando {len(SUPPORTED_PAIRS)} pares: {', '.join(SUPPORTED_PAIRS)}")
         
         try:
-            # Obtener estado actual
-            current_status = await self.status_repo.get_status()
-            if current_status:
-                cycle_count = current_status.cycle_count + 1
-            else:
-                cycle_count = 1
-            
             # Procesar cada par
             decisions: List[TradingDecision] = []
             successful_pairs = 0
@@ -130,26 +119,14 @@ class BatchAnalysisUseCase:
                         {"pair": pair, "error": str(e)}
                     )
             
-            # Actualizar estado del brain
-            total_decisions = current_status.total_decisions_processed + len(decisions) if current_status else len(decisions)
-            successful_decisions = current_status.successful_decisions + successful_pairs if current_status else successful_pairs
-            failed_decisions = current_status.failed_decisions + failed_pairs if current_status else failed_pairs
-            
-            new_status = BrainStatus(
-                is_running=True,
-                cycle_count=cycle_count,
-                last_analysis_time=start_time,
-                supported_pairs=SUPPORTED_PAIRS,
-                active_bots=[BotType.GRID],
-                total_decisions_processed=total_decisions,
-                successful_decisions=successful_decisions,
-                failed_decisions=failed_decisions
-            )
-            
-            await self.status_repo.save_status(new_status)
-            
             # Notificar estado del servicio
-            await self.notification_service.notify_service_status(new_status.to_dict())
+            await self.notification_service.notify_service_status({
+                "timestamp": start_time.isoformat(),
+                "total_pairs": len(SUPPORTED_PAIRS),
+                "successful_pairs": successful_pairs,
+                "failed_pairs": failed_pairs,
+                "decisions_made": len(decisions)
+            })
             
             end_time = datetime.utcnow()
             duration = (end_time - start_time).total_seconds()
@@ -158,7 +135,6 @@ class BatchAnalysisUseCase:
             self.logger.info(f"✅ Pares exitosos: {successful_pairs}/{len(SUPPORTED_PAIRS)}")
             self.logger.info(f"❌ Pares fallidos: {failed_pairs}/{len(SUPPORTED_PAIRS)}")
             self.logger.info(f"⏱️ Duración: {duration:.2f}s")
-            self.logger.info(f"🔄 Ciclo: {cycle_count}")
             
             return {
                 "status": "completed",
@@ -168,7 +144,6 @@ class BatchAnalysisUseCase:
                 "successful_pairs": successful_pairs,
                 "failed_pairs": failed_pairs,
                 "decisions_made": len(decisions),
-                "cycle_count": cycle_count,
                 "decisions": [decision.to_dict() for decision in decisions]
             }
             

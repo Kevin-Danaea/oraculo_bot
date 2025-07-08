@@ -113,27 +113,4 @@ class TradingRecipe:
         )
 
 
-@dataclass
-class BrainStatus:
-    """Estado del sistema brain."""
-    is_running: bool
-    cycle_count: int
-    last_analysis_time: Optional[datetime]
-    supported_pairs: List[str]
-    active_bots: List[BotType]
-    total_decisions_processed: int
-    successful_decisions: int
-    failed_decisions: int
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convierte el estado a diccionario."""
-        return {
-            'is_running': self.is_running,
-            'cycle_count': self.cycle_count,
-            'last_analysis_time': self.last_analysis_time.isoformat() if self.last_analysis_time else None,
-            'supported_pairs': self.supported_pairs,
-            'active_bots': [bot.value for bot in self.active_bots],
-            'total_decisions_processed': self.total_decisions_processed,
-            'successful_decisions': self.successful_decisions,
-            'failed_decisions': self.failed_decisions
-        } 
+ 

@@ -29,7 +29,6 @@ from infrastructure.market_data_repository import BinanceMarketDataRepository
 from infrastructure.recipe_repository import InMemoryRecipeRepository
 from infrastructure.decision_repository import DatabaseDecisionRepository
 from infrastructure.notification_service import HTTPNotificationService
-from infrastructure.brain_status_repository import DatabaseBrainStatusRepository
 
 # Configuración de logging
 config = get_config()
@@ -52,7 +51,6 @@ market_data_repo = BinanceMarketDataRepository()
 recipe_repo = InMemoryRecipeRepository()
 decision_repo = DatabaseDecisionRepository()
 notification_service = HTTPNotificationService()
-status_repo = DatabaseBrainStatusRepository()
 
 # Casos de uso
 analyze_pair_use_case = AnalyzePairUseCase(
@@ -65,13 +63,12 @@ batch_analysis_use_case = BatchAnalysisUseCase(
     market_data_repo=market_data_repo,
     decision_repo=decision_repo,
     recipe_repo=recipe_repo,
-    notification_service=notification_service,
-    status_repo=status_repo
+    notification_service=notification_service
 )
 
 service_lifecycle_use_case = ServiceLifecycleUseCase(
-    status_repo=status_repo,
-    notification_service=notification_service
+    notification_service=notification_service,
+    batch_analysis_use_case=batch_analysis_use_case
 )
 
 # ============================================================================

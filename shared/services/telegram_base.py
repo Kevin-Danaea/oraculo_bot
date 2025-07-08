@@ -62,37 +62,71 @@ class TelegramBaseService:
             # Limpiar mensaje antes de enviar
             clean_message = self.clean_html_message(message)
             
-            # Verificar si ya hay un event loop ejecutándose
+            # Recrear el bot si es necesario para evitar problemas de conexión
             try:
-                loop = asyncio.get_running_loop()
-                # Si hay un loop ejecutándose, usar asyncio.create_task
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        self._bot.send_message(
-                            chat_id=target_chat_id,
-                            text=clean_message,
-                            parse_mode=parse_mode
+                # Intentar enviar con el bot existente
+                if not self._bot:
+                    self._bot = Bot(token=self.bot_token)
+                
+                # Verificar si ya hay un event loop ejecutándose
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Si hay un loop ejecutándose, usar ThreadPoolExecutor
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            asyncio.run,
+                            self._send_message_async(target_chat_id, clean_message, parse_mode)
                         )
+                        future.result(timeout=15)  # Timeout de 15 segundos
+                except RuntimeError:
+                    # No hay loop ejecutándose, crear uno nuevo
+                    asyncio.run(
+                        self._send_message_async(target_chat_id, clean_message, parse_mode)
                     )
-                    future.result(timeout=10)  # Timeout de 10 segundos
-            except RuntimeError:
-                # No hay loop ejecutándose, crear uno nuevo
+                
+                logger.info("✅ Mensaje enviado a Telegram correctamente")
+                return True
+                
+            except Exception as e:
+                # Si falla, recrear el bot y reintentar una vez
+                logger.warning(f"⚠️ Error con bot existente, recreando: {e}")
+                self._bot = Bot(token=self.bot_token)
+                
+                # Reintentar una vez
                 asyncio.run(
-                    self._bot.send_message(
-                        chat_id=target_chat_id,
-                        text=clean_message,
-                        parse_mode=parse_mode
-                    )
+                    self._send_message_async(target_chat_id, clean_message, parse_mode)
                 )
-            
-            logger.info("✅ Mensaje enviado a Telegram correctamente")
-            return True
+                
+                logger.info("✅ Mensaje enviado a Telegram correctamente (reintento)")
+                return True
                 
         except Exception as e:
             logger.error(f"❌ Error enviando mensaje a Telegram: {e}")
             return False
+    
+    async def _send_message_async(self, chat_id: str, message: str, parse_mode: str = "HTML"):
+        """
+        Envía un mensaje de forma asíncrona con manejo de errores mejorado.
+        """
+        try:
+            await self._bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            # Si hay error de conexión, recrear el bot
+            if "closed" in str(e) or "TCPTransport" in str(e):
+                logger.warning("🔄 Recreando bot debido a conexión cerrada")
+                self._bot = Bot(token=self.bot_token)
+                await self._bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode=parse_mode
+                )
+            else:
+                raise e
 
     def clean_html_message(self, text: str) -> str:
         """
