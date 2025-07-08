@@ -285,6 +285,19 @@ class RealTimeGridMonitorUseCase:
             GridOrder creada o None si falla
         """
         try:
+            # 🔒 VALIDACIÓN: Evitar crear órdenes complementarias durante la inicialización
+            # Verificar si el bot tiene órdenes iniciales suficientes
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+            total_active_orders = len(active_orders)
+            
+            # Si el bot tiene menos de la mitad de los niveles de grid, probablemente está inicializando
+            min_orders_for_complementary = max(1, config.grid_levels // 2)
+            
+            if total_active_orders < min_orders_for_complementary:
+                logger.info(f"🚫 Bot {config.pair}: Solo {total_active_orders}/{config.grid_levels} órdenes activas. "
+                           f"Esperando a completar inicialización antes de crear órdenes complementarias.")
+                return None
+            
             # Extraer información de la orden completada
             side = filled_order['side']
             filled_amount = filled_order['filled']
@@ -393,9 +406,20 @@ class RealTimeGridMonitorUseCase:
         try:
             current_price = self.exchange_service.get_current_price(config.pair)
             
-            # Verificar límite de órdenes activas
+            # 🔒 VALIDACIÓN: Evitar crear órdenes complementarias durante la inicialización
+            # Verificar si el bot tiene órdenes iniciales suficientes
             active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             total_active_orders = len(active_orders)
+            
+            # Si el bot tiene menos de la mitad de los niveles de grid, probablemente está inicializando
+            min_orders_for_complementary = max(1, config.grid_levels // 2)
+            
+            if total_active_orders < min_orders_for_complementary:
+                logger.info(f"🚫 Bot {config.pair}: Solo {total_active_orders}/{config.grid_levels} órdenes activas. "
+                           f"Esperando a completar inicialización antes de crear órdenes complementarias.")
+                return None
+            
+            # Verificar límite de órdenes activas
             max_allowed_orders = config.grid_levels
             
             if total_active_orders >= max_allowed_orders:
