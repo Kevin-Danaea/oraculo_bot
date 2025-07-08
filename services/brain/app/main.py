@@ -191,8 +191,8 @@ async def root():
     return {
         "servicio": "Brain - Motor de Decisiones de Trading",
         "version": "1.0.0",
-        "arquitectura": "Clean Architecture",
-        "estado": "ejecutándose" if status_result.get('is_running') else "detenido",
+        "arquitectura": "Clean Architecture (Stateless)",
+        "tipo": "Servicio de análisis continuo sin estado propio",
         "descripcion": "Servicio de análisis continuo independiente que toma decisiones de trading",
         "pares_soportados": SUPPORTED_PAIRS,
         "total_pares": len(SUPPORTED_PAIRS),
@@ -228,14 +228,10 @@ async def health_check():
             "status": "healthy",
             "timestamp": datetime.utcnow().isoformat(),
             "service": "brain",
-            "is_running": status_result.get('is_running', False),
+            "service_type": status_result.get('service_type', 'brain'),
+            "description": status_result.get('description', 'Servicio de análisis de trading (estateless)'),
             "analysis_task_active": status_result.get('analysis_task_active', False),
-            "brain_status": status_result.get('brain_status'),
-            "cycle_count": status_result.get('cycle_count', 0),
-            "last_analysis_time": status_result.get('last_analysis_time'),
-            "total_decisions_processed": status_result.get('total_decisions_processed', 0),
-            "successful_decisions": status_result.get('successful_decisions', 0),
-            "failed_decisions": status_result.get('failed_decisions', 0)
+            "stop_event_set": status_result.get('stop_event_set', False)
         }
     except Exception as e:
         logger.error(f"❌ Error en health check: {e}")

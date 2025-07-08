@@ -2,7 +2,8 @@
 Caso de Uso: Ciclo de Vida del Servicio
 =======================================
 
-Gestiona el ciclo de vida del servicio brain, incluyendo inicio, parada y monitoreo.
+Gestiona el ciclo de vida del servicio brain de forma estateless.
+Solo ejecuta análisis cada hora sin mantener estado propio.
 """
 
 import logging
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 class ServiceLifecycleUseCase:
     """
     Caso de uso para gestionar el ciclo de vida del servicio brain.
+    Estateless: No mantiene estado propio, solo ejecuta análisis.
     """
     
     def __init__(
@@ -37,32 +39,19 @@ class ServiceLifecycleUseCase:
         self.batch_analysis_use_case = batch_analysis_use_case
         self._analysis_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
-        self._is_running = False
-        self._cycle_count = 0
-        self._last_analysis_time: Optional[datetime] = None
     
     async def start_service(self) -> Dict[str, Any]:
         """
-        Inicia el servicio brain.
+        Inicia el servicio brain (estateless).
         
         Returns:
-            Estado del servicio después del inicio
+            Resultado del inicio
         """
         try:
-            if self._is_running:
-                logger.warning("⚠️ El servicio brain ya está ejecutándose")
-                return {
-                    "status": "already_running",
-                    "message": "El servicio brain ya está ejecutándose"
-                }
+            logger.info("🚀 Iniciando servicio brain (estateless)...")
             
-            logger.info("🚀 Iniciando servicio brain...")
-            
-            # Marcar como ejecutándose
-            self._is_running = True
+            # Limpiar stop event
             self._stop_event.clear()
-            self._cycle_count = 0
-            self._last_analysis_time = None
             
             # Iniciar bucle de análisis en segundo plano
             self._analysis_task = asyncio.create_task(self._analysis_loop())
@@ -87,20 +76,12 @@ class ServiceLifecycleUseCase:
         Detiene el servicio brain.
         
         Returns:
-            Estado del servicio después de la parada
+            Resultado de la parada
         """
         try:
-            if not self._is_running:
-                logger.warning("⚠️ El servicio brain no está ejecutándose")
-                return {
-                    "status": "not_running",
-                    "message": "El servicio brain no está ejecutándose"
-                }
-            
             logger.info("🛑 Deteniendo servicio brain...")
             
             # Marcar para parada
-            self._is_running = False
             self._stop_event.set()
             
             # Esperar a que termine el bucle de análisis
@@ -128,45 +109,47 @@ class ServiceLifecycleUseCase:
     
     async def get_service_status(self) -> Dict[str, Any]:
         """
-        Obtiene el estado actual del servicio.
+        Obtiene información básica del servicio (estateless).
         
         Returns:
-            Estado actual del servicio
+            Información básica del servicio
         """
         try:
             return {
                 "status": "success",
-                "is_running": self._is_running,
-                "cycle_count": self._cycle_count,
-                "last_analysis_time": self._last_analysis_time.isoformat() if self._last_analysis_time else None,
+                "service_type": "brain",
+                "description": "Servicio de análisis de trading (estateless)",
                 "analysis_task_active": self._analysis_task is not None and not self._analysis_task.done(),
-                "stop_event_set": self._stop_event.is_set()
+                "stop_event_set": self._stop_event.is_set(),
+                "timestamp": datetime.utcnow().isoformat()
             }
             
         except Exception as e:
-            logger.error(f"❌ Error obteniendo estado del servicio: {e}")
+            logger.error(f"❌ Error obteniendo información del servicio: {e}")
             return {
                 "status": "error",
                 "error": str(e),
-                "message": "Error obteniendo estado del servicio"
+                "message": "Error obteniendo información del servicio"
             }
     
     async def _analysis_loop(self):
         """
-        Bucle principal de análisis que se ejecuta cada hora.
+        Bucle principal de análisis que se ejecuta cada hora (estateless).
         """
-        logger.info("🔄 Bucle de análisis iniciado")
+        logger.info("🔄 Bucle de análisis iniciado (estateless)")
         
-        # Intervalo de análisis (1 hora = 3600 segundos)
-        ANALYSIS_INTERVAL = 3600
+        # Importar configuración de análisis
+        from config import ANALYSIS_INTERVAL
         
         # Ejecutar primer análisis inmediatamente
         logger.info("🚀 Ejecutando primer análisis al iniciar...")
         await self._execute_analysis_cycle()
         
         # Bucle principal
-        while self._is_running and not self._stop_event.is_set():
+        while not self._stop_event.is_set():
             try:
+                logger.info(f"⏳ Esperando {ANALYSIS_INTERVAL} segundos hasta el próximo ciclo...")
+                
                 # Esperar hasta el próximo ciclo o hasta que se solicite parada
                 await asyncio.wait_for(self._stop_event.wait(), timeout=ANALYSIS_INTERVAL)
                 
@@ -179,12 +162,12 @@ class ServiceLifecycleUseCase:
                 
             except asyncio.TimeoutError:
                 # Timeout normal, continuar con el siguiente ciclo
+                logger.info("⏰ Timeout alcanzado, ejecutando próximo ciclo de análisis...")
                 continue
             except Exception as e:
                 logger.error(f"❌ Error en bucle de análisis: {e}")
                 await self.notification_service.notify_error(
-                    f"Error en bucle de análisis: {e}",
-                    {"cycle_count": self._cycle_count}
+                    f"Error en bucle de análisis: {e}"
                 )
                 # Esperar un poco antes de continuar
                 await asyncio.sleep(60)
@@ -193,14 +176,13 @@ class ServiceLifecycleUseCase:
     
     async def _execute_analysis_cycle(self):
         """
-        Ejecuta un ciclo de análisis completo.
+        Ejecuta un ciclo de análisis completo (estateless).
         """
         try:
-            self._cycle_count += 1
-            self._last_analysis_time = datetime.utcnow()
+            current_time = datetime.utcnow()
             
-            logger.info(f"🧠 ========== CICLO DE ANÁLISIS #{self._cycle_count} ==========")
-            logger.info(f"⏰ Iniciado: {self._last_analysis_time}")
+            logger.info(f"🧠 ========== CICLO DE ANÁLISIS ==========")
+            logger.info(f"⏰ Iniciado: {current_time}")
             
             # Ejecutar análisis batch real
             logger.info("📊 Ejecutando análisis batch...")
@@ -211,19 +193,10 @@ class ServiceLifecycleUseCase:
             else:
                 logger.error(f"❌ Error en análisis batch: {result.get('error', 'Error desconocido')}")
             
-            logger.info(f"✅ Ciclo #{self._cycle_count} completado")
+            logger.info(f"✅ Ciclo de análisis completado")
             
         except Exception as e:
-            logger.error(f"❌ Error ejecutando ciclo #{self._cycle_count}: {e}")
+            logger.error(f"❌ Error ejecutando ciclo de análisis: {e}")
             await self.notification_service.notify_error(
-                f"Error en ciclo de análisis #{self._cycle_count}: {e}"
-            )
-    
-    def is_running(self) -> bool:
-        """
-        Verifica si el servicio está ejecutándose.
-        
-        Returns:
-            True si está ejecutándose
-        """
-        return self._is_running 
+                f"Error en ciclo de análisis: {e}"
+            ) 
