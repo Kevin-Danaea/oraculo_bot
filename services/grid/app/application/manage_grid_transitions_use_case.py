@@ -572,6 +572,31 @@ class ManageGridTransitionsUseCase:
                 
                 logger.info(f"✅ Bot {pair}: Compra completada {filled_amount_gross} → {filled_amount_net} {base_currency} (después de comisiones)")
                 
+                # ESPERAR A QUE EL ACTIVO ESTÉ DISPONIBLE PARA VENTA
+                logger.info(f"⏳ Bot {pair}: Esperando a que {filled_amount_net} {base_currency} esté disponible para venta...")
+                max_retries = 10
+                retry_delay = 2  # segundos
+                
+                for retry in range(max_retries):
+                    try:
+                        # Verificar si el activo está disponible
+                        sell_check = self.exchange_service.can_bot_use_capital(config, filled_amount_net, 'sell')
+                        if sell_check['can_use']:
+                            logger.info(f"✅ Bot {pair}: {filled_amount_net} {base_currency} disponible para venta (intento {retry + 1})")
+                            break
+                        else:
+                            logger.info(f"⏳ Bot {pair}: {base_currency} aún no disponible. Disponible: {sell_check['available_balance']}. Reintentando en {retry_delay}s...")
+                            import time
+                            time.sleep(retry_delay)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Bot {pair}: Error verificando disponibilidad de {base_currency}: {e}")
+                        if retry < max_retries - 1:
+                            import time
+                            time.sleep(retry_delay)
+                else:
+                    logger.warning(f"⚠️ Bot {pair}: {base_currency} no disponible después de {max_retries} intentos. Continuando solo con órdenes de compra.")
+                    filled_amount_net = Decimal('0')  # No crear órdenes de venta
+                
             except Exception as e:
                 logger.error(f"❌ Error en compra de mercado para bot {pair}: {e}")
                 return []
@@ -591,11 +616,17 @@ class ManageGridTransitionsUseCase:
             upper_levels = upper_levels[:min_len]
 
             # 6) CALCULAR CANTIDADES POR ORDEN
+            # Usar todo el capital disponible para las órdenes de compra (no solo half_capital)
+            total_capital_for_orders = actual_capital - half_capital  # El otro 50% para órdenes de compra
+            
             amount_per_order = self.grid_calculator.calculate_order_amount(
-                total_capital=float(half_capital),
+                total_capital=float(total_capital_for_orders),
                 grid_levels=len(lower_levels),
                 current_price=current_price,
             )
+            
+            logger.info(f"💰 Bot {pair}: Capital para órdenes de compra: ${total_capital_for_orders:.2f}")
+            logger.info(f"📊 Bot {pair}: Cantidad por orden de compra: {amount_per_order} {base_currency}")
 
             # 7) CREAR ÓRDENES INICIALES CON AISLAMIENTO DE CAPITAL
             # 7a) Órdenes de venta usando filled_amount_net distribuido
@@ -619,7 +650,7 @@ class ManageGridTransitionsUseCase:
                     
                     # Verificar que no excedemos el capital asignado al bot
                     order_value = buy_price * amount_per_order
-                    if capital_used + order_value > half_capital:
+                    if capital_used + order_value > total_capital_for_orders:
                         logger.warning(f"⚠️ Bot {pair}: Límite de capital asignado alcanzado en nivel {idx}. Capital usado: ${capital_used:.2f}")
                         break
                     
@@ -647,7 +678,7 @@ class ManageGridTransitionsUseCase:
                             order_value = buy_price * amount_per_order
                             
                             # Verificar nuevamente que no excedemos el capital
-                            if capital_used + order_value > half_capital:
+                            if capital_used + order_value > total_capital_for_orders:
                                 logger.warning(f"⚠️ Bot {pair}: Ajuste de cantidad excede capital asignado")
                                 break
                     
@@ -713,7 +744,7 @@ class ManageGridTransitionsUseCase:
                     continue
 
             logger.info(f"🎉 Bot {pair}: Grilla inicial completada - {buy_orders_created} órdenes de compra, {sell_orders_created} órdenes de venta")
-            logger.info(f"💰 Bot {pair}: Capital utilizado ${capital_used:.2f} de ${half_capital:.2f} asignado")
+            logger.info(f"💰 Bot {pair}: Capital utilizado ${capital_used:.2f} de ${total_capital_for_orders:.2f} asignado")
             logger.info(f"📊 Bot {pair}: Total de órdenes creadas: {len(initial_orders)}")
             
             return initial_orders

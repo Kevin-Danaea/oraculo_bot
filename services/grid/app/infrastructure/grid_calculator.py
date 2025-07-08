@@ -21,8 +21,8 @@ class GridTradingCalculator(GridCalculator):
     def calculate_order_amount(self, total_capital: float, grid_levels: int, current_price: Decimal | None = None) -> Decimal:
         """Calcula la cantidad por orden asegurando no superar el capital total.
 
-        Usa solamente la mitad de los niveles (`grid_levels/2`) ya que es el número máximo
-        de órdenes simultáneas permitidas. Si `current_price` se proporciona, valida que el
+        Distribuye el capital total entre todos los niveles de la grilla para maximizar
+        el uso del capital asignado. Si `current_price` se proporciona, valida que el
         valor de la orden sea al menos 10 USDT; de lo contrario ajusta la cantidad.
         """
         try:
@@ -30,10 +30,9 @@ class GridTradingCalculator(GridCalculator):
             if grid_levels <= 0:
                 raise ValueError("grid_levels debe ser > 0")
 
-            # Máximo de órdenes simultáneas permitidas
-            active_levels = max(1, grid_levels // 2)
-
-            capital_per_order = Decimal(total_capital) / Decimal(active_levels)
+            # Distribuir capital entre todos los niveles de la grilla
+            # NOTA: Usamos grid_levels completo, no grid_levels // 2
+            capital_per_order = Decimal(total_capital) / Decimal(grid_levels)
 
             # Si se proporciona current_price, asegurar mínimo 10 USDT
             if current_price:
@@ -47,7 +46,7 @@ class GridTradingCalculator(GridCalculator):
 
             logger.debug(
                 f"💰 Cantidad por orden: {amount} (Capital total: ${total_capital:.2f}, "
-                f"Niveles activos: {active_levels})"
+                f"Niveles totales: {grid_levels}, Capital por nivel: ${capital_per_order:.2f})"
             )
             return amount
         except Exception as e:
@@ -61,8 +60,10 @@ class GridTradingCalculator(GridCalculator):
             spread_percent = Decimal(config.price_range_percent) / Decimal(config.grid_levels)
             spread_amount = current_price * (spread_percent / 100)
             
-            # Calcular cantidad por nivel
-            amount = self.calculate_order_amount(config.total_capital, config.grid_levels)
+            # Calcular cantidad por nivel usando la nueva lógica
+            # Usar la mitad del capital total para las órdenes de compra
+            half_capital = config.total_capital / 2
+            amount = self.calculate_order_amount(half_capital, config.grid_levels, current_price)
             
             # Ganancia por trade = spread * cantidad
             profit = spread_amount * amount
