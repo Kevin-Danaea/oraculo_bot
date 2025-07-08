@@ -94,10 +94,12 @@ class BinanceExchangeService(ExchangeService):
             if not self.exchange:
                 raise Exception("Exchange no inicializado")
             
-            # Verificar valor mínimo
+            # Verificar valor mínimo específico del par
             order_value = price * amount
-            if order_value < Decimal(MIN_ORDER_VALUE_USDT):
-                raise ValueError(f"Valor de orden ${order_value} menor al mínimo ${MIN_ORDER_VALUE_USDT}")
+            min_order_value = self.get_minimum_order_value(pair)
+            
+            if order_value < min_order_value:
+                raise ValueError(f"Valor de orden ${order_value:.2f} menor al mínimo ${min_order_value} para {pair}")
             
             # Crear orden en el exchange
             order_result = self.exchange.create_order(
@@ -123,7 +125,7 @@ class BinanceExchangeService(ExchangeService):
                 filled_at=None
             )
             
-            logger.info(f"✅ Orden creada: {side} {amount} {pair} a ${price} (ID: {order_result['id']})")
+            logger.info(f"✅ Orden creada: {side} {amount} {pair} a ${price} (${order_value:.2f}) (ID: {order_result['id']})")
             return grid_order
             
         except Exception as e:
@@ -181,7 +183,28 @@ class BinanceExchangeService(ExchangeService):
             limits = market_info.get('limits', {})
             cost_min = limits.get('cost', {}).get('min', MIN_ORDER_VALUE_USDT)
             
-            return Decimal(str(cost_min))
+            # Valores mínimos conocidos para pares comunes (fallback)
+            known_minimums = {
+                'BTC/USDT': Decimal('10.0'),    # $10 mínimo
+                'ETH/USDT': Decimal('10.0'),    # $10 mínimo
+                'BNB/USDT': Decimal('10.0'),    # $10 mínimo
+                'ADA/USDT': Decimal('10.0'),    # $10 mínimo
+                'SOL/USDT': Decimal('10.0'),    # $10 mínimo
+                'AVAX/USDT': Decimal('10.0'),   # $10 mínimo
+                'DOT/USDT': Decimal('10.0'),    # $10 mínimo
+                'LINK/USDT': Decimal('10.0'),   # $10 mínimo
+                'MATIC/USDT': Decimal('10.0'),  # $10 mínimo
+                'KMD/USDT': Decimal('10.0'),    # $10 mínimo
+            }
+            
+            # Usar valor del exchange o fallback conocido
+            if cost_min and cost_min > 0:
+                min_value = Decimal(str(cost_min))
+            else:
+                min_value = known_minimums.get(pair, Decimal(MIN_ORDER_VALUE_USDT))
+            
+            logger.debug(f"💰 Valor mínimo {pair}: ${min_value}")
+            return min_value
             
         except Exception as e:
             logger.error(f"❌ Error obteniendo valor mínimo para {pair}: {e}")
@@ -241,24 +264,187 @@ class BinanceExchangeService(ExchangeService):
         try:
             if not self.exchange:
                 raise Exception("Exchange no inicializado")
+            
             balances = self.exchange.fetch_balance()
+            
             for currency, info in balances.items():
                 free = Decimal(str(info.get('free', 0)))
+                
                 # Solo liquidar posiciones distintas a USDT y mayor a cero
                 if currency == 'USDT' or free <= 0:
                     continue
+                
                 pair = f"{currency}/USDT"
-                # Obtener precio de mercado para venta
-                ticker = self.exchange.fetch_ticker(pair)
-                price = Decimal(str(ticker['last']))
-                # Crear orden de mercado para vender toda la posición
-                self.exchange.create_order(symbol=pair, type='market', side='sell', amount=float(free))
-                sold[currency] = free
-                logger.info(f"🧹 Vendida posición {free} {currency} en mercado ({pair})")
+                
+                try:
+                    # Obtener precio de mercado para venta
+                    ticker = self.exchange.fetch_ticker(pair)
+                    price = Decimal(str(ticker['last']))
+                    
+                    # Calcular valor de la orden
+                    order_value = free * price
+                    
+                    # Obtener valor mínimo requerido
+                    min_order_value = self.get_minimum_order_value(pair)
+                    
+                    # Verificar si el valor es suficiente
+                    if order_value < min_order_value:
+                        logger.warning(f"⚠️ Posición {free} {currency} (${order_value:.2f}) menor al mínimo ${min_order_value} - Saltando")
+                        continue
+                    
+                    # Crear orden de mercado para vender toda la posición
+                    self.exchange.create_order(
+                        symbol=pair, 
+                        type='market', 
+                        side='sell', 
+                        amount=float(free)
+                    )
+                    
+                    sold[currency] = free
+                    logger.info(f"🧹 Vendida posición {free} {currency} por ~${order_value:.2f} USDT")
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    
+                    # Manejar error NOTIONAL específicamente
+                    if "NOTIONAL" in error_msg:
+                        logger.warning(f"⚠️ Posición {free} {currency} muy pequeña para vender (error NOTIONAL) - Saltando")
+                        continue
+                    elif "Filter failure" in error_msg:
+                        logger.warning(f"⚠️ Filtro de exchange rechazó venta de {free} {currency} - Saltando")
+                        continue
+                    else:
+                        logger.error(f"❌ Error vendiendo {free} {currency}: {error_msg}")
+                        continue
+            
             return sold
+            
         except Exception as e:
             logger.error(f"❌ Error vendiendo posiciones: {e}")
             return sold
+    
+    def sell_position_with_retry(self, currency: str, amount: Decimal, max_retries: int = 3) -> bool:
+        """
+        Intenta vender una posición con reintentos y manejo de errores específicos.
+        
+        Args:
+            currency: Moneda a vender
+            amount: Cantidad a vender
+            max_retries: Número máximo de reintentos
+            
+        Returns:
+            True si se vendió exitosamente
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            pair = f"{currency}/USDT"
+            
+            for attempt in range(max_retries):
+                try:
+                    # Obtener precio actual
+                    ticker = self.exchange.fetch_ticker(pair)
+                    price = Decimal(str(ticker['last']))
+                    
+                    # Calcular valor de la orden
+                    order_value = amount * price
+                    
+                    # Obtener valor mínimo requerido
+                    min_order_value = self.get_minimum_order_value(pair)
+                    
+                    # Verificar si el valor es suficiente
+                    if order_value < min_order_value:
+                        logger.warning(f"⚠️ Posición {amount} {currency} (${order_value:.2f}) menor al mínimo ${min_order_value}")
+                        return False
+                    
+                    # Intentar vender
+                    self.exchange.create_order(
+                        symbol=pair,
+                        type='market',
+                        side='sell',
+                        amount=float(amount)
+                    )
+                    
+                    logger.info(f"✅ Vendida posición {amount} {currency} por ~${order_value:.2f} USDT")
+                    return True
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    
+                    if "NOTIONAL" in error_msg or "Filter failure" in error_msg:
+                        logger.warning(f"⚠️ Intento {attempt + 1}: Posición {amount} {currency} muy pequeña")
+                        if attempt == max_retries - 1:
+                            logger.warning(f"⚠️ No se pudo vender {amount} {currency} después de {max_retries} intentos")
+                            return False
+                        continue
+                    else:
+                        logger.error(f"❌ Error vendiendo {amount} {currency}: {error_msg}")
+                        return False
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error en sell_position_with_retry: {e}")
+            return False
+    
+    def validate_order_after_fees(self, pair: str, side: str, amount: Decimal, price: Decimal) -> Dict[str, Any]:
+        """
+        Valida que una orden cumpla con el mínimo NOTIONAL después de las comisiones.
+        
+        Args:
+            pair: Par de trading
+            side: 'buy' o 'sell'
+            amount: Cantidad de la orden
+            price: Precio de la orden
+            
+        Returns:
+            Dict con resultado de la validación
+        """
+        try:
+            # Calcular valor bruto de la orden
+            gross_value = amount * price
+            
+            # Obtener valor mínimo requerido
+            min_order_value = self.get_minimum_order_value(pair)
+            
+            # Calcular cantidad neta después de comisiones
+            net_amount = self.calculate_net_amount_after_fees(amount, price, side, pair)
+            
+            # Calcular valor neto después de comisiones
+            if side == 'buy':
+                # En compra: recibimos menos cantidad, pero el valor pagado es el mismo
+                net_value = gross_value  # Pagamos el valor completo
+            else:
+                # En venta: recibimos menos USDT por las comisiones
+                net_value = net_amount * price
+            
+            # Verificar si cumple con el mínimo
+            meets_minimum = net_value >= min_order_value
+            
+            result = {
+                'valid': meets_minimum,
+                'gross_value': gross_value,
+                'net_value': net_value,
+                'min_required': min_order_value,
+                'net_amount': net_amount,
+                'fees_impact': gross_value - net_value,
+                'margin': net_value - min_order_value if meets_minimum else min_order_value - net_value
+            }
+            
+            if not meets_minimum:
+                logger.warning(f"⚠️ Orden {side} {amount} {pair} a ${price} no cumple mínimo después de comisiones: ${net_value:.2f} < ${min_order_value}")
+            else:
+                logger.debug(f"✅ Orden {side} {amount} {pair} válida: ${net_value:.2f} >= ${min_order_value} (margen: ${result['margin']:.2f})")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error validando orden después de comisiones: {e}")
+            return {
+                'valid': False,
+                'error': str(e)
+            }
 
     def get_trading_fees(self, pair: str) -> Dict[str, Decimal]:
         """Obtiene las comisiones de trading para un par."""

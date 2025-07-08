@@ -161,6 +161,11 @@ class ExchangeService(ABC):
         """Verifica si un bot puede usar una cantidad específica de capital sin exceder su asignación."""
         pass
 
+    @abstractmethod
+    def validate_order_after_fees(self, pair: str, side: str, amount: Decimal, price: Decimal) -> Dict[str, Any]:
+        """Valida que una orden cumpla con el mínimo NOTIONAL después de las comisiones."""
+        pass
+
 class NotificationService(ABC):
     """Interfaz para servicios de notificación."""
 

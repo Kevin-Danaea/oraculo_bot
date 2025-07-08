@@ -507,6 +507,28 @@ class ManageGridTransitionsUseCase:
                         logger.warning(f"⚠️ Bot {pair}: No puede usar ${order_value} USDT para orden de compra. Disponible: ${capital_check['available_balance']}")
                         break
                     
+                    # Validar que la orden cumple con el mínimo después de comisiones
+                    order_validation = self.exchange_service.validate_order_after_fees(
+                        pair=pair,
+                        side='buy',
+                        amount=amount_per_order,
+                        price=buy_price
+                    )
+                    
+                    if not order_validation['valid']:
+                        logger.warning(f"⚠️ Bot {pair}: Orden de compra no cumple mínimo después de comisiones: ${order_validation['net_value']:.2f} < ${order_validation['min_required']}")
+                        # Intentar ajustar la cantidad para cumplir con el mínimo
+                        min_amount = order_validation['min_required'] / buy_price
+                        if min_amount > amount_per_order:
+                            logger.info(f"🔧 Bot {pair}: Ajustando cantidad de compra de {amount_per_order} a {min_amount:.6f} {base_currency}")
+                            amount_per_order = min_amount.quantize(Decimal('0.000001'))
+                            order_value = buy_price * amount_per_order
+                            
+                            # Verificar nuevamente que no excedemos el capital
+                            if capital_used + order_value > half_capital:
+                                logger.warning(f"⚠️ Bot {pair}: Ajuste de cantidad excede capital asignado")
+                                break
+                    
                     # Crear orden BUY
                     logger.info(f"📈 Bot {pair}: Creando orden de compra {amount_per_order} {base_currency} a ${buy_price:.4f}")
                     buy_order = self.exchange_service.create_order(
@@ -530,6 +552,22 @@ class ManageGridTransitionsUseCase:
                         # Verificar que el bot puede vender esta cantidad
                         sell_check = self.exchange_service.can_bot_use_capital(config, amount_sell_each, 'sell')
                         if sell_check['can_use']:
+                            # Validar que la orden de venta cumple con el mínimo después de comisiones
+                            sell_validation = self.exchange_service.validate_order_after_fees(
+                                pair=pair,
+                                side='sell',
+                                amount=amount_sell_each,
+                                price=sell_price
+                            )
+                            
+                            if not sell_validation['valid']:
+                                logger.warning(f"⚠️ Bot {pair}: Orden de venta no cumple mínimo después de comisiones: ${sell_validation['net_value']:.2f} < ${sell_validation['min_required']}")
+                                # Intentar ajustar la cantidad para cumplir con el mínimo
+                                min_amount = sell_validation['min_required'] / sell_price
+                                if min_amount > amount_sell_each:
+                                    logger.info(f"🔧 Bot {pair}: Ajustando cantidad de venta de {amount_sell_each} a {min_amount:.6f} {base_currency}")
+                                    amount_sell_each = min_amount.quantize(Decimal('0.000001'))
+                            
                             logger.info(f"📉 Bot {pair}: Creando orden de venta {amount_sell_each} {base_currency} a ${sell_price:.4f}")
                             sell_order = self.exchange_service.create_order(
                                 pair=pair,

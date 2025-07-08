@@ -249,9 +249,15 @@ class RealTimeGridMonitorUseCase:
                     pair=config.pair
                 )
                 
-                # Verificar que el valor de la orden sea suficiente
-                order_value = sell_price * net_amount_received
-                if order_value >= Decimal(MIN_ORDER_VALUE_USDT):
+                # Validar que la orden de venta cumple con el mínimo después de comisiones
+                sell_validation = self.exchange_service.validate_order_after_fees(
+                    pair=config.pair,
+                    side='sell',
+                    amount=net_amount_received,
+                    price=sell_price
+                )
+                
+                if sell_validation['valid']:
                     # Verificar que el bot puede usar esta cantidad para venta
                     sell_check = self.exchange_service.can_bot_use_capital(config, net_amount_received, 'sell')
                     
@@ -271,7 +277,7 @@ class RealTimeGridMonitorUseCase:
                         logger.warning(f"⚠️ Bot {config.pair}: No puede vender {net_amount_received}. Disponible: {sell_check['available_balance']}")
                         return None
                 else:
-                    logger.warning(f"⚠️ Bot {config.pair}: Valor de orden de venta insuficiente: ${order_value:.2f} < ${MIN_ORDER_VALUE_USDT}")
+                    logger.warning(f"⚠️ Bot {config.pair}: Orden de venta no cumple mínimo después de comisiones: ${sell_validation['net_value']:.2f} < ${sell_validation['min_required']}")
                     return None
                     
             elif filled_order.side == 'sell':
@@ -289,9 +295,17 @@ class RealTimeGridMonitorUseCase:
                 
                 # Calcular cantidad a comprar con el USDT neto recibido
                 amount_to_buy = (net_usdt_received / buy_price).quantize(Decimal('0.000001'))
-                
                 order_value = buy_price * amount_to_buy
-                if order_value >= Decimal(MIN_ORDER_VALUE_USDT):
+                
+                # Validar que la orden de compra cumple con el mínimo después de comisiones
+                buy_validation = self.exchange_service.validate_order_after_fees(
+                    pair=config.pair,
+                    side='buy',
+                    amount=amount_to_buy,
+                    price=buy_price
+                )
+                
+                if buy_validation['valid']:
                     # Verificar que el bot puede usar este capital para compra
                     buy_check = self.exchange_service.can_bot_use_capital(config, order_value, 'buy')
                     
@@ -311,7 +325,7 @@ class RealTimeGridMonitorUseCase:
                         logger.warning(f"⚠️ Bot {config.pair}: No puede comprar con ${order_value} USDT. Disponible: ${buy_check['available_balance']}")
                         return None
                 else:
-                    logger.warning(f"⚠️ Bot {config.pair}: Valor de orden de compra insuficiente: ${order_value:.2f} < ${MIN_ORDER_VALUE_USDT}")
+                    logger.warning(f"⚠️ Bot {config.pair}: Orden de compra no cumple mínimo después de comisiones: ${buy_validation['net_value']:.2f} < ${buy_validation['min_required']}")
                     return None
             
             return None
