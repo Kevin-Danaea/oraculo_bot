@@ -119,14 +119,8 @@ class BatchAnalysisUseCase:
                         {"pair": pair, "error": str(e)}
                     )
             
-            # Notificar estado del servicio
-            await self.notification_service.notify_service_status({
-                "timestamp": start_time.isoformat(),
-                "total_pairs": len(SUPPORTED_PAIRS),
-                "successful_pairs": successful_pairs,
-                "failed_pairs": failed_pairs,
-                "decisions_made": len(decisions)
-            })
+            # El brain es estateless, no necesita notificar estado del servicio
+            # Solo notifica cambios de decisiones individuales
             
             end_time = datetime.utcnow()
             duration = (end_time - start_time).total_seconds()
