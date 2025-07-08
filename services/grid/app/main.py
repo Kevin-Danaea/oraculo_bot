@@ -125,6 +125,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"❌ Error en validación de integridad: {e}")
         
+        # 🚀 EJECUTAR GESTIÓN HORARIA INICIAL DESPUÉS DE LA LIMPIEZA
+        logger.info("🚀 Iniciando gestión horaria inicial (post-limpieza)...")
+        try:
+            scheduler.execute_initial_hourly_management()
+            logger.info("✅ Gestión horaria inicial completada exitosamente")
+        except Exception as e:
+            logger.error(f"❌ Error en gestión horaria inicial: {e}")
+        
         # Enviar estado detallado inicial
         logger.info("📊 Generando estado detallado inicial...")
         try:

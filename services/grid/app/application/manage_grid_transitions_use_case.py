@@ -58,6 +58,7 @@ class ManageGridTransitionsUseCase:
                     'transitions_processed': 0,
                     'activations': 0,
                     'pauses': 0,
+                    'initializations': 0,
                     'message': 'No hay configuraciones para evaluar'
                 }
             
@@ -67,6 +68,7 @@ class ManageGridTransitionsUseCase:
             transitions = []
             activations = 0
             pauses = 0
+            initializations = 0
             
             for config, current_decision, previous_state in configs_with_decisions:
                 try:
@@ -81,6 +83,8 @@ class ManageGridTransitionsUseCase:
                             activations += 1
                         elif transition_result['action'] == 'pause':
                             pauses += 1
+                        elif transition_result['action'] == 'initialize_orders':
+                            initializations += 1
                             
                 except Exception as e:
                     logger.error(f"❌ Error procesando transición para {config.pair}: {e}")
@@ -94,7 +98,7 @@ class ManageGridTransitionsUseCase:
             successful_transitions = sum(1 for t in transitions if t.get('success', False))
             
             logger.info(f"✅ Transiciones completadas: {successful_transitions}/{len(transitions)} exitosas")
-            logger.info(f"📈 Activaciones: {activations}, 📉 Pausas: {pauses}")
+            logger.info(f"📈 Activaciones: {activations}, 📉 Pausas: {pauses}, 🔧 Inicializaciones: {initializations}")
             
             return {
                 'success': True,
@@ -102,6 +106,7 @@ class ManageGridTransitionsUseCase:
                 'successful_transitions': successful_transitions,
                 'activations': activations,
                 'pauses': pauses,
+                'initializations': initializations,
                 'transitions': transitions
             }
             
@@ -135,6 +140,14 @@ class ManageGridTransitionsUseCase:
         # Detectar tipo de transición
         transition_type = self._detect_transition_type(current_decision, previous_state)
         
+        # NUEVO: Verificar si un bot activo necesita crear órdenes iniciales
+        if transition_type == 'no_change' and current_decision == "OPERAR_GRID":
+            # Verificar si el bot está activo pero no tiene órdenes
+            existing_orders = self.grid_repository.get_active_orders(config.pair)
+            if not existing_orders:
+                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes - creando órdenes iniciales")
+                transition_type = 'initialize_orders'
+        
         if transition_type == 'no_change':
             logger.debug(f"ℹ️ Sin cambios para {config.pair}")
             return {
@@ -165,6 +178,16 @@ class ManageGridTransitionsUseCase:
                     'details': result
                 }
                 
+            elif transition_type == 'initialize_orders':
+                result = self._handle_initialize_orders(config, current_decision)
+                return {
+                    'pair': config.pair,
+                    'transition_detected': True,
+                    'action': 'initialize_orders',
+                    'success': result['success'],
+                    'details': result
+                }
+                
         except Exception as e:
             logger.error(f"❌ Error en transición {transition_type} para {config.pair}: {e}")
             return {
@@ -187,7 +210,7 @@ class ManageGridTransitionsUseCase:
         Detecta el tipo de transición basado en el estado actual y anterior.
         
         Returns:
-            'activate', 'pause', o 'no_change'
+            'activate', 'pause', 'initialize_orders', o 'no_change'
         """
         # Normalizar estados para comparación
         is_currently_active = current_decision == "OPERAR_GRID"
@@ -368,6 +391,105 @@ class ManageGridTransitionsUseCase:
             
         except Exception as e:
             logger.error(f"❌ Error pausando bot {config.pair}: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def _handle_initialize_orders(self, config: GridConfig, decision: str) -> Dict[str, Any]:
+        """
+        Maneja la creación de órdenes iniciales para un bot activo sin órdenes.
+        Se ejecuta cuando un bot está activo pero no tiene órdenes (ej: después de reinicio).
+        
+        Args:
+            config: Configuración del bot
+            decision: Decisión actual
+            
+        Returns:
+            Dict con el resultado de la inicialización
+        """
+        logger.info(f"🔧 INICIALIZANDO órdenes para bot activo {config.pair}")
+        
+        try:
+            actions = []
+            
+            # 1. Verificar que el bot esté marcado como activo
+            if not config.is_running:
+                logger.warning(f"⚠️ Bot {config.pair} no está marcado como running, actualizando estado")
+                if config.id is not None:
+                    self.grid_repository.update_config_status(
+                        config.id, 
+                        is_running=True, 
+                        last_decision=decision
+                    )
+                    actions.append("Estado actualizado a activo")
+            
+            # 2. Obtener precio actual
+            current_price = self.exchange_service.get_current_price(config.pair)
+            logger.info(f"💰 Precio actual {config.pair}: ${current_price}")
+            
+            # 3. Verificar que no haya órdenes activas (doble verificación)
+            existing_orders = self.grid_repository.get_active_orders(config.pair)
+            if existing_orders:
+                logger.warning(f"⚠️ Bot {config.pair} ya tiene {len(existing_orders)} órdenes activas")
+                actions.append(f"Bot ya tiene {len(existing_orders)} órdenes activas")
+                return {
+                    'success': True,
+                    'actions': actions,
+                    'existing_orders': len(existing_orders),
+                    'initial_orders': 0
+                }
+            
+            # 4. Crear grilla inicial
+            initial_orders = self._create_initial_grid(config, current_price)
+            if initial_orders:
+                actions.append(f"Grilla inicial creada: {len(initial_orders)} órdenes")
+                logger.info(f"✅ Grilla inicial creada para {config.pair}: {len(initial_orders)} órdenes")
+                
+                # 5. Enviar notificación detallada
+                buy_orders = len([o for o in initial_orders if o.side == 'buy'])
+                sell_orders = len([o for o in initial_orders if o.side == 'sell'])
+                
+                # Obtener información del capital usado
+                bot_balance = self.exchange_service.get_bot_allocated_balance(config)
+                allocated_capital = bot_balance['allocated_capital']
+                
+                # Calcular capital utilizado (aproximado)
+                capital_used = sum(o.price * o.amount for o in initial_orders if o.side == 'buy')
+                
+                initialization_summary = (
+                    f"🔧 <b>ÓRDENES INICIALIZADAS - {config.pair}</b>\n\n"
+                    f"💰 <b>Capital asignado:</b> ${allocated_capital:.2f} USDT\n"
+                    f"💵 <b>Capital utilizado:</b> ${capital_used:.2f} USDT\n"
+                    f"📊 <b>Órdenes creadas:</b> {len(initial_orders)} total\n"
+                    f"   📈 Compras: {buy_orders} órdenes\n"
+                    f"   📉 Ventas: {sell_orders} órdenes\n"
+                    f"🎯 <b>Precio actual:</b> ${current_price:.4f}\n"
+                    f"⚙️ <b>Niveles de grilla:</b> {config.grid_levels}\n"
+                    f"📅 <b>Inicializado:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
+                )
+                
+                # Enviar notificación detallada
+                notification_service = TelegramGridNotificationService()
+                notification_service.telegram_service.send_message(initialization_summary)
+                logger.info(f"📱 Notificación detallada enviada para inicialización de {config.pair}")
+                
+            else:
+                actions.append("No se pudieron crear órdenes iniciales")
+                logger.warning(f"⚠️ No se pudieron crear órdenes iniciales para {config.pair}")
+            
+            logger.info(f"✅ Bot {config.pair} inicializado exitosamente")
+            
+            return {
+                'success': True,
+                'actions': actions,
+                'current_price': float(current_price),
+                'existing_orders': len(existing_orders),
+                'initial_orders': len(initial_orders) if initial_orders else 0
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error inicializando órdenes para bot {config.pair}: {e}")
             return {
                 'success': False,
                 'error': str(e)

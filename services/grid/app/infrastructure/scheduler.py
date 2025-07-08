@@ -192,16 +192,28 @@ class GridScheduler:
                 logger.info("  ⚡ Monitor tiempo real: cada 10 segundos")
                 logger.info(f"  ⏰ Gestión horaria: cada {MONITORING_INTERVAL_HOURS} hora(s)")
                 
-                # 🚀 EJECUCIÓN INMEDIATA: Gestión horaria al iniciar
-                logger.info("🚀 Ejecutando gestión horaria inicial...")
-                self._run_hourly_management()
-                logger.info("✅ Gestión horaria inicial completada")
+                # NOTA: La gestión horaria inicial se ejecutará después de la limpieza
+                # para evitar crear órdenes que luego se cancelen
                 
             else:
                 logger.warning("⚠️ Grid Scheduler ya está ejecutándose")
                 
         except Exception as e:
             logger.error(f"❌ Error iniciando Grid Scheduler: {e}")
+            raise
+
+    def execute_initial_hourly_management(self):
+        """
+        Ejecuta la gestión horaria inicial DESPUÉS de la limpieza.
+        Se debe llamar después de que se complete la limpieza de reinicio.
+        """
+        try:
+            logger.info("🚀 Ejecutando gestión horaria inicial (post-limpieza)...")
+            self._run_hourly_management()
+            logger.info("✅ Gestión horaria inicial completada")
+            
+        except Exception as e:
+            logger.error(f"❌ Error en gestión horaria inicial: {e}")
             raise
 
     def stop(self):
