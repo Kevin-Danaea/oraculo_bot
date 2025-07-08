@@ -14,7 +14,255 @@ from pathlib import Path
 from app.domain.interfaces import BrainStatusRepository
 from app.domain.entities import BrainStatus, BotType
 
+# Importar modelos de la base de datos compartida
+from shared.database.session import SessionLocal
+from shared.database.models import EstrategiaStatus
+
 logger = logging.getLogger(__name__)
+DATABASE_AVAILABLE = True
+
+
+class DatabaseBrainStatusRepository(BrainStatusRepository):
+    """
+    Implementación del repositorio de estado usando la base de datos SQLAlchemy.
+    """
+    
+    def __init__(self):
+        """
+        Inicializa el repositorio de base de datos.
+        """
+        self.logger = logging.getLogger(__name__)
+    
+    async def save_status(self, status: BrainStatus) -> bool:
+        """
+        Guarda el estado actual del brain en la base de datos.
+        
+        Args:
+            status: Estado a guardar
+            
+        Returns:
+            True si se guardó correctamente
+        """
+        try:
+            db = SessionLocal()
+            
+            try:
+                # Buscar registro existente o crear uno nuevo
+                estrategia_status = db.query(EstrategiaStatus).filter(
+                    EstrategiaStatus.nombre == "brain"
+                ).first()
+                
+                if estrategia_status is None:
+                    # Crear nuevo registro
+                    estrategia_status = EstrategiaStatus(
+                        nombre="brain",
+                        tipo="brain",
+                        estado=status.to_dict(),
+                        ultima_actualizacion=datetime.utcnow(),
+                        activo=status.is_running
+                    )
+                    db.add(estrategia_status)
+                else:
+                    # Actualizar registro existente
+                    estrategia_status.estado = status.to_dict()
+                    estrategia_status.ultima_actualizacion = datetime.utcnow()
+                    estrategia_status.activo = status.is_running
+                
+                db.commit()
+                self.logger.debug(f"✅ Estado guardado en BD: ciclo #{status.cycle_count}")
+                return True
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error guardando estado en BD: {e}")
+            return False
+    
+    async def get_status(self) -> Optional[BrainStatus]:
+        """
+        Obtiene el estado actual del brain desde la base de datos.
+        
+        Returns:
+            Estado actual o None si no existe
+        """
+        try:
+            db = SessionLocal()
+            
+            try:
+                estrategia_status = db.query(EstrategiaStatus).filter(
+                    EstrategiaStatus.nombre == "brain"
+                ).first()
+                
+                if estrategia_status is None:
+                    return None
+                
+                # Convertir estado de dict a BrainStatus
+                status_dict = estrategia_status.estado
+                
+                # Convertir bot_types de strings a enums
+                active_bots = []
+                for bot_str in status_dict.get('active_bots', []):
+                    try:
+                        active_bots.append(BotType(bot_str))
+                    except ValueError:
+                        self.logger.warning(f"⚠️ Tipo de bot desconocido: {bot_str}")
+                
+                # Convertir last_analysis_time de string a datetime
+                last_analysis_time = None
+                if status_dict.get('last_analysis_time'):
+                    try:
+                        last_analysis_time = datetime.fromisoformat(status_dict['last_analysis_time'])
+                    except ValueError:
+                        self.logger.warning("⚠️ Formato de fecha inválido en last_analysis_time")
+                
+                status = BrainStatus(
+                    is_running=status_dict.get('is_running', False),
+                    cycle_count=status_dict.get('cycle_count', 0),
+                    last_analysis_time=last_analysis_time,
+                    supported_pairs=status_dict.get('supported_pairs', []),
+                    active_bots=active_bots,
+                    total_decisions_processed=status_dict.get('total_decisions_processed', 0),
+                    successful_decisions=status_dict.get('successful_decisions', 0),
+                    failed_decisions=status_dict.get('failed_decisions', 0)
+                )
+                
+                self.logger.debug(f"✅ Estado cargado desde BD: ciclo #{status.cycle_count}")
+                return status
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error obteniendo estado desde BD: {e}")
+            return None
+    
+    async def update_cycle_count(self, cycle_count: int) -> bool:
+        """
+        Actualiza el contador de ciclos en la base de datos.
+        
+        Args:
+            cycle_count: Nuevo contador de ciclos
+            
+        Returns:
+            True si se actualizó correctamente
+        """
+        try:
+            current_status = await self.get_status()
+            if current_status:
+                updated_status = BrainStatus(
+                    is_running=current_status.is_running,
+                    cycle_count=cycle_count,
+                    last_analysis_time=current_status.last_analysis_time,
+                    supported_pairs=current_status.supported_pairs,
+                    active_bots=current_status.active_bots,
+                    total_decisions_processed=current_status.total_decisions_processed,
+                    successful_decisions=current_status.successful_decisions,
+                    failed_decisions=current_status.failed_decisions
+                )
+                return await self.save_status(updated_status)
+            else:
+                self.logger.warning("⚠️ No hay estado actual para actualizar")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error actualizando contador de ciclos: {e}")
+            return False
+    
+    async def update_analysis_time(self, analysis_time: datetime) -> bool:
+        """
+        Actualiza el tiempo del último análisis en la base de datos.
+        
+        Args:
+            analysis_time: Tiempo del análisis
+            
+        Returns:
+            True si se actualizó correctamente
+        """
+        try:
+            current_status = await self.get_status()
+            if current_status:
+                updated_status = BrainStatus(
+                    is_running=current_status.is_running,
+                    cycle_count=current_status.cycle_count,
+                    last_analysis_time=analysis_time,
+                    supported_pairs=current_status.supported_pairs,
+                    active_bots=current_status.active_bots,
+                    total_decisions_processed=current_status.total_decisions_processed,
+                    successful_decisions=current_status.successful_decisions,
+                    failed_decisions=current_status.failed_decisions
+                )
+                return await self.save_status(updated_status)
+            else:
+                self.logger.warning("⚠️ No hay estado actual para actualizar")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error actualizando tiempo de análisis: {e}")
+            return False
+    
+    async def update_decision_counts(
+        self, 
+        total_processed: int, 
+        successful: int, 
+        failed: int
+    ) -> bool:
+        """
+        Actualiza los contadores de decisiones en la base de datos.
+        
+        Args:
+            total_processed: Total de decisiones procesadas
+            successful: Decisiones exitosas
+            failed: Decisiones fallidas
+            
+        Returns:
+            True si se actualizó correctamente
+        """
+        try:
+            current_status = await self.get_status()
+            if current_status:
+                updated_status = BrainStatus(
+                    is_running=current_status.is_running,
+                    cycle_count=current_status.cycle_count,
+                    last_analysis_time=current_status.last_analysis_time,
+                    supported_pairs=current_status.supported_pairs,
+                    active_bots=current_status.active_bots,
+                    total_decisions_processed=total_processed,
+                    successful_decisions=successful,
+                    failed_decisions=failed
+                )
+                return await self.save_status(updated_status)
+            else:
+                self.logger.warning("⚠️ No hay estado actual para actualizar")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error actualizando contadores de decisiones: {e}")
+            return False
+    
+    async def reset_status(self) -> bool:
+        """
+        Resetea el estado del brain en la base de datos.
+        
+        Returns:
+            True si se reseteó correctamente
+        """
+        try:
+            reset_status = BrainStatus(
+                is_running=False,
+                cycle_count=0,
+                last_analysis_time=None,
+                supported_pairs=[],
+                active_bots=[BotType.GRID],
+                total_decisions_processed=0,
+                successful_decisions=0,
+                failed_decisions=0
+            )
+            return await self.save_status(reset_status)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error reseteando estado: {e}")
+            return False
 
 
 class FileBrainStatusRepository(BrainStatusRepository):

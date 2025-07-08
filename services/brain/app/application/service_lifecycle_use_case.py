@@ -195,6 +195,10 @@ class ServiceLifecycleUseCase:
         # Intervalo de análisis (1 hora = 3600 segundos)
         ANALYSIS_INTERVAL = 3600
         
+        # Ejecutar primer análisis inmediatamente
+        logger.info("🚀 Ejecutando primer análisis al iniciar...")
+        await self._execute_analysis_cycle()
+        
         while not self._stop_event.is_set():
             try:
                 logger.info(f"⏳ Esperando {ANALYSIS_INTERVAL} segundos para el próximo análisis...")
@@ -204,14 +208,7 @@ class ServiceLifecycleUseCase:
                     break
                 
                 logger.info("🔄 Ejecutando análisis programado...")
-                
-                # Aquí se ejecutaría el análisis batch
-                # Por ahora solo actualizamos el contador de ciclos
-                current_status = await self.status_repo.get_status()
-                if current_status:
-                    new_cycle_count = current_status.cycle_count + 1
-                    await self.status_repo.update_cycle_count(new_cycle_count)
-                    logger.info(f"✅ Ciclo #{new_cycle_count} completado")
+                await self._execute_analysis_cycle()
                 
             except asyncio.CancelledError:
                 logger.info("🛑 Bucle de análisis cancelado")
@@ -221,6 +218,40 @@ class ServiceLifecycleUseCase:
                 await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
         
         logger.info("🔄 Bucle de análisis terminado")
+    
+    async def _execute_analysis_cycle(self):
+        """
+        Ejecuta un ciclo de análisis completo.
+        """
+        try:
+            # Obtener estado actual
+            current_status = await self.status_repo.get_status()
+            if current_status:
+                new_cycle_count = current_status.cycle_count + 1
+                
+                # Actualizar estado con nuevo ciclo y tiempo de análisis
+                updated_status = BrainStatus(
+                    is_running=current_status.is_running,
+                    cycle_count=new_cycle_count,
+                    last_analysis_time=datetime.utcnow(),
+                    supported_pairs=current_status.supported_pairs,
+                    active_bots=current_status.active_bots,
+                    total_decisions_processed=current_status.total_decisions_processed,
+                    successful_decisions=current_status.successful_decisions,
+                    failed_decisions=current_status.failed_decisions
+                )
+                
+                # Guardar estado actualizado
+                success = await self.status_repo.save_status(updated_status)
+                if success:
+                    logger.info(f"✅ Ciclo #{new_cycle_count} completado y guardado")
+                else:
+                    logger.error(f"❌ Error guardando estado del ciclo #{new_cycle_count}")
+            else:
+                logger.warning("⚠️ No se pudo obtener el estado actual para el análisis")
+                
+        except Exception as e:
+            logger.error(f"❌ Error ejecutando ciclo de análisis: {e}")
     
     def is_running(self) -> bool:
         """

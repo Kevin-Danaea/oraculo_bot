@@ -29,7 +29,7 @@ from infrastructure.market_data_repository import BinanceMarketDataRepository
 from infrastructure.recipe_repository import InMemoryRecipeRepository
 from infrastructure.decision_repository import DatabaseDecisionRepository
 from infrastructure.notification_service import HTTPNotificationService
-from infrastructure.brain_status_repository import FileBrainStatusRepository
+from infrastructure.brain_status_repository import DatabaseBrainStatusRepository
 
 # Configuración de logging
 config = get_config()
@@ -52,7 +52,7 @@ market_data_repo = BinanceMarketDataRepository()
 recipe_repo = InMemoryRecipeRepository()
 decision_repo = DatabaseDecisionRepository()
 notification_service = HTTPNotificationService()
-status_repo = FileBrainStatusRepository(config['files']['status'])
+status_repo = DatabaseBrainStatusRepository()
 
 # Casos de uso
 analyze_pair_use_case = AnalyzePairUseCase(
