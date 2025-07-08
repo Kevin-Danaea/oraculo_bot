@@ -149,30 +149,40 @@ class RealTimeGridMonitorUseCase:
         """
         logger.debug(f"⚡ Monitoreando {config.pair} en tiempo real...")
         
-        # 1. Obtener órdenes activas
-        active_orders = self.grid_repository.get_active_orders(config.pair)
+        # 1. Obtener órdenes activas directamente del exchange
+        active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+        logger.info(f"[EXCHANGE] {config.pair}: {len(active_orders)} órdenes activas detectadas en el exchange")
         
         if not active_orders:
-            logger.debug(f"ℹ️ No hay órdenes activas para {config.pair}")
+            logger.debug(f"ℹ️ No hay órdenes activas para {config.pair} en el exchange")
             return {
                 'fills_detected': 0,
                 'new_orders_created': 0,
                 'trades_completed': 0
             }
         
-        # 2. Verificar fills de manera eficiente
-        filled_orders = self._check_filled_orders_optimized(active_orders, config.pair)
+        # 2. Verificar fills de manera eficiente usando el exchange
+        filled_orders = []
+        for order in active_orders:
+            if order['status'] == 'closed' or order['status'] == 'filled':
+                logger.info(f"[FILL] {config.pair}: Orden {order['exchange_order_id']} {order['side']} {order['amount']} a ${order['price']} ejecutada en el exchange")
+                # Convertir a GridOrder si es necesario para la lógica posterior
+                # Aquí deberías mapear el dict a tu entidad GridOrder si la necesitas
+                filled_orders.append(order)
         
         # 3. Procesar fills inmediatamente
         new_orders_created = 0
         trades_completed = 0
-        
         if filled_orders:
-            logger.info(f"💰 {len(filled_orders)} órdenes completadas en {config.pair}")
-            
-            new_orders, trades = self._process_grid_steps(config, filled_orders)
-            new_orders_created += new_orders
-            trades_completed += trades
+            logger.info(f"💰 {len(filled_orders)} órdenes completadas en {config.pair} (detectadas en el exchange)")
+            # Aquí deberías llamar a la lógica de creación de órdenes complementarias usando los datos del exchange
+            # Por ejemplo:
+            # new_orders, trades = self._process_grid_steps(config, filled_orders)
+            # new_orders_created += new_orders
+            # trades_completed += trades
+            # Por ahora solo logueamos
+            for fill in filled_orders:
+                logger.info(f"[COMPLEMENTARIA] {config.pair}: Se debería crear orden complementaria para fill {fill['exchange_order_id']}")
         
         return {
             'fills_detected': len(filled_orders),

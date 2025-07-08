@@ -47,7 +47,7 @@ class RiskManagementUseCase:
         try:
             pair = config.pair
             current_price = self.exchange_service.get_current_price(pair)
-            active_orders = self.grid_repository.get_active_orders(pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
             
             events_handled = []
             
@@ -86,7 +86,7 @@ class RiskManagementUseCase:
                 'error': str(e)
             }
 
-    def _check_stop_loss(self, config: GridConfig, current_price: Decimal, active_orders: List[GridOrder]) -> Optional[Dict[str, Any]]:
+    def _check_stop_loss(self, config: GridConfig, current_price: Decimal, active_orders: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
         Verifica si se debe activar el stop loss.
         
@@ -133,7 +133,7 @@ class RiskManagementUseCase:
             logger.error(f"❌ Error verificando stop loss para {config.pair}: {e}")
             return None
 
-    def _check_trailing_up(self, config: GridConfig, current_price: Decimal, active_orders: List[GridOrder]) -> Optional[Dict[str, Any]]:
+    def _check_trailing_up(self, config: GridConfig, current_price: Decimal, active_orders: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
         Verifica si se debe activar el trailing up.
         
@@ -192,19 +192,19 @@ class RiskManagementUseCase:
             actions = []
             
             # 1. Cancelar todas las órdenes activas
-            active_orders = self.grid_repository.get_active_orders(pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
             cancelled_orders = 0
             
             for order in active_orders:
-                if order.exchange_order_id and order.status == 'open':
+                if order.get('id') and order.get('status') == 'open':
                     try:
-                        success = self.exchange_service.cancel_order(pair, order.exchange_order_id)
-                        if success:
-                            cancelled_orders += 1
+                        # Cancelar la orden en el exchange
+                        self.exchange_service.cancel_order(pair, order['id'])
+                        cancelled_orders += 1
                     except Exception as e:
-                        logger.error(f"❌ Error cancelando orden {order.exchange_order_id}: {e}")
-            
-            actions.append(f"Canceladas {cancelled_orders} órdenes activas")
+                        logger.error(f"❌ Error cancelando orden {order.get('id')} para {pair}: {e}")
+                        continue
+            actions.append(f"Canceladas {cancelled_orders} órdenes activas para {pair}")
             
             # 2. Liquidar posiciones
             base_currency = pair.split('/')[0]
@@ -262,19 +262,20 @@ class RiskManagementUseCase:
             actions = []
             
             # 1. Cancelar todas las órdenes activas
-            active_orders = self.grid_repository.get_active_orders(pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
             cancelled_orders = 0
             
             for order in active_orders:
-                if order.exchange_order_id and order.status == 'open':
+                if order.get('id') and order.get('status') == 'open':
                     try:
-                        success = self.exchange_service.cancel_order(pair, order.exchange_order_id)
-                        if success:
-                            cancelled_orders += 1
+                        # Cancelar la orden en el exchange
+                        self.exchange_service.cancel_order(pair, order['id'])
+                        cancelled_orders += 1
                     except Exception as e:
-                        logger.error(f"❌ Error cancelando orden {order.exchange_order_id}: {e}")
+                        logger.error(f"❌ Error cancelando orden {order.get('id')} para {pair}: {e}")
+                        continue
             
-            actions.append(f"Canceladas {cancelled_orders} órdenes activas")
+            actions.append(f"Canceladas {cancelled_orders} órdenes activas para {pair}")
             
             # 2. Reinicializar grid con nuevo precio base
             # Obtener balance actual para reinicializar
@@ -296,8 +297,9 @@ class RiskManagementUseCase:
                 )
                 
                 # Obtener cantidad real llenada
-                if market_order.exchange_order_id:
-                    status = self.exchange_service.get_order_status(pair, market_order.exchange_order_id)
+                order_id = market_order['id'] if isinstance(market_order, dict) else getattr(market_order, 'exchange_order_id', None)
+                if order_id:
+                    status = self.exchange_service.get_order_status(pair, order_id)
                 else:
                     status = {'filled': amount_market}
                 

@@ -145,7 +145,7 @@ class TradingStatusUseCase:
             available_capital = exchange_balance.get('USDT', 0.0)
             
             # Obtener órdenes activas
-            active_orders = self.repository.get_active_orders(config.pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             active_orders_count = len(active_orders)
             
             # Calcular órdenes totales creadas (simulado por ahora)

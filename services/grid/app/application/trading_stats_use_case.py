@@ -196,12 +196,13 @@ class TradingStatsUseCase:
             
             # Calcular P&L (simplificado - en producción se calcularía con trades reales)
             # Usar órdenes de la base de datos para el cálculo de P&L
-            active_orders = self.grid_repository.get_active_orders(pair)
+            # active_orders = self.grid_repository.get_active_orders(pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
             pnl = self._calculate_bot_pnl(config, active_orders, current_price)
             pnl_percent = (pnl / allocated_capital * 100) if allocated_capital > 0 else 0
             
             # Contar trades completados (simulado)
-            trades_count = len([o for o in active_orders if o.status == 'filled'])
+            trades_count = len([o for o in active_orders if o.get('status') == 'filled'])
             
             stats = {
                 'pair': pair,
@@ -248,14 +249,14 @@ class TradingStatsUseCase:
                 'error': str(e)
             }
 
-    def _calculate_bot_pnl(self, config: GridConfig, active_orders: List[GridOrder], current_price: Decimal) -> Decimal:
+    def _calculate_bot_pnl(self, config: GridConfig, active_orders: List[Dict[str, Any]], current_price: Decimal) -> Decimal:
         """
         Calcula el P&L de un bot (simplificado).
         En producción, esto se calcularía con trades reales y posiciones.
         
         Args:
             config: Configuración del bot
-            active_orders: Órdenes activas
+            active_orders: Órdenes activas (dicts del exchange)
             current_price: Precio actual
             
         Returns:
@@ -263,14 +264,14 @@ class TradingStatsUseCase:
         """
         try:
             # Por ahora, calculamos un P&L simulado basado en órdenes de compra ejecutadas
-            filled_buy_orders = [o for o in active_orders if o.side == 'buy' and o.status == 'filled']
+            filled_buy_orders = [o for o in active_orders if o.get('side') == 'buy' and o.get('status') == 'filled']
             
             if not filled_buy_orders:
                 return Decimal('0')
             
             # Calcular valor promedio de compra
-            total_buy_value = sum(order.price * order.amount for order in filled_buy_orders)
-            total_buy_amount = sum(order.amount for order in filled_buy_orders)
+            total_buy_value = sum(Decimal(str(order['price'])) * Decimal(str(order['amount'])) for order in filled_buy_orders)
+            total_buy_amount = sum(Decimal(str(order['amount'])) for order in filled_buy_orders)
             
             if total_buy_amount == 0:
                 return Decimal('0')
@@ -282,7 +283,6 @@ class TradingStatsUseCase:
             pnl = current_value - total_buy_value
             
             return pnl
-            
         except Exception as e:
             logger.error(f"❌ Error calculando P&L para {config.pair}: {e}")
             return Decimal('0')

@@ -7,6 +7,8 @@ from decimal import Decimal
 from datetime import datetime
 
 from .entities import GridConfig, GridOrder, GridBotState, GridTrade
+from shared.services.logging_config import get_logger
+logger = get_logger(__name__)
 
 class GridRepository(ABC):
     """Interfaz para la persistencia de datos de grid trading."""
@@ -283,11 +285,43 @@ class GridCalculator(ABC):
         pass
 
     @abstractmethod
-    def get_highest_sell_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
-        """Obtiene el precio más alto de las órdenes de venta activas."""
-        pass
+    def get_highest_sell_price(self, active_orders) -> Optional[Decimal]:
+        """
+        Obtiene el precio más alto de las órdenes de venta activas.
+        Args:
+            active_orders: Lista de órdenes activas (GridOrder o dict)
+        Returns:
+            Precio más alto de venta o None si no hay órdenes de venta
+        """
+        try:
+            sell_orders = [o for o in active_orders if (getattr(o, 'side', None) == 'sell' or o.get('side') == 'sell') and (getattr(o, 'status', None) == 'open' or o.get('status') == 'open')]
+            if not sell_orders:
+                return None
+            highest_price = max([getattr(o, 'price', None) or o.get('price') for o in sell_orders])
+            return highest_price
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo precio más alto de venta: {e}")
+            return None
 
     @abstractmethod
-    def get_last_buy_price(self, active_orders: List[GridOrder]) -> Optional[Decimal]:
-        """Obtiene el precio de la última orden de compra ejecutada."""
-        pass 
+    def get_last_buy_price(self, active_orders) -> Optional[Decimal]:
+        """
+        Obtiene el precio de la última orden de compra ejecutada.
+        Args:
+            active_orders: Lista de órdenes activas (GridOrder o dict)
+        Returns:
+            Precio de la última compra o None si no hay compras
+        """
+        try:
+            # Soporta tanto GridOrder como dict
+            buy_orders = [o for o in active_orders if (getattr(o, 'side', None) == 'buy' or o.get('side') == 'buy') and (getattr(o, 'status', None) == 'filled' or o.get('status') == 'filled')]
+            if not buy_orders:
+                return None
+            # Ordenar por timestamp y obtener la más reciente
+            def get_time(o):
+                return getattr(o, 'filled_at', None) or getattr(o, 'created_at', None) or o.get('filled_at') or o.get('created_at')
+            latest_buy = max(buy_orders, key=get_time)
+            return getattr(latest_buy, 'price', None) or latest_buy.get('price')
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo precio de última compra: {e}")
+            return None 
