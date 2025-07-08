@@ -142,29 +142,14 @@ class BinanceMarketDataRepository(MarketDataRepository):
             
             latest = df.iloc[-1]
             
-            # Extraer indicadores con manejo de None y logging detallado
+            # Extraer indicadores con manejo de None
             adx_value = float(latest.get('ADX_14', 0)) if pd.notna(latest.get('ADX_14')) else 0.0
             
-            # Calcular volatilidad con múltiples métodos
-            bbw_value = float(latest.get('BBW_20_2.0', 0)) if pd.notna(latest.get('BBW_20_2.0')) else 0.0
+            # Métrica única de volatilidad: Ancho de las Bandas de Bollinger (bb_width)
+            bb_width_value = float(latest.get('bb_width', 0)) if pd.notna(latest.get('bb_width')) else 0.0
             
-            # Método alternativo: volatilidad basada en desviación estándar de retornos
-            if len(df) >= 20:
-                returns = df['close'].pct_change().dropna()
-                volatility_std = returns.rolling(window=20).std().iloc[-1]
-                # Convertir a porcentaje
-                volatility_std_pct = volatility_std * 100
-            else:
-                volatility_std_pct = 0.0
-            
-            # Usar el valor más alto entre BBW y volatilidad estándar
-            volatility_value = max(bbw_value, volatility_std_pct)
-            
-            # Logging detallado para debugging
-            self.logger.info(f"📊 Volatilidad calculada para {market_data.get('pair', 'unknown')}:")
-            self.logger.info(f"   BBW_20_2.0: {bbw_value:.6f}")
-            self.logger.info(f"   Volatilidad STD (20 períodos): {volatility_std_pct:.6f}")
-            self.logger.info(f"   Volatilidad final: {volatility_value:.6f}")
+            # Logging para debugging
+            self.logger.info(f"📊 Volatilidad (bb_width) para {market_data.get('pair', 'unknown')}: {bb_width_value:.6f}")
             
             sentiment_value = float(latest.get('sentiment_promedio', 0)) if pd.notna(latest.get('sentiment_promedio')) else None
             rsi_value = float(latest.get('RSI_14', 0)) if pd.notna(latest.get('RSI_14')) else 0.0
@@ -174,7 +159,7 @@ class BinanceMarketDataRepository(MarketDataRepository):
             
             indicators = MarketIndicators(
                 adx=adx_value,
-                volatility=volatility_value,
+                volatility=bb_width_value,
                 sentiment=sentiment_value,
                 rsi=rsi_value,
                 macd=macd_value,
@@ -206,12 +191,15 @@ class BinanceMarketDataRepository(MarketDataRepository):
             adx_data = ta.adx(df['high'], df['low'], df['close'], length=14)
             df['ADX_14'] = adx_data['ADX_14']  # Solo la columna ADX
             
-            # Bandas de Bollinger
-            bb = ta.bbands(df['close'], length=20, std=2)
-            df['BBL_20_2.0'] = bb['BBL_20_2.0']  # Lower
-            df['BBM_20_2.0'] = bb['BBM_20_2.0']  # Middle
-            df['BBU_20_2.0'] = bb['BBU_20_2.0']  # Upper
-            df['BBW_20_2.0'] = bb['BBW_20_2.0']  # Width (volatilidad)
+            # Bandas de Bollinger usando pandas-ta
+            df.ta.bbands(length=20, std=2, append=True)
+            
+            # Calcular bb_width (Ancho de las Bandas de Bollinger)
+            # Fórmula: (Banda Superior - Banda Inferior) / Banda Media
+            df['bb_width'] = (df['BBU_20_2.0'] - df['BBL_20_2.0']) / df['BBM_20_2.0']
+            
+            # Manejar posibles divisiones por cero
+            df['bb_width'] = df['bb_width'].replace([np.inf, -np.inf], np.nan)
             
             # RSI
             df['RSI_14'] = ta.rsi(df['close'], length=14)
