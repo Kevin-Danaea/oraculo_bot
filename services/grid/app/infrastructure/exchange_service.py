@@ -1,7 +1,7 @@
 """
 Servicio de exchange para interactuar con Binance.
 """
-from typing import Dict, Any
+from typing import Dict, Any, List
 from decimal import Decimal
 import ccxt
 import uuid
@@ -574,7 +574,7 @@ class BinanceExchangeService(ExchangeService):
     def get_bot_allocated_balance(self, config: GridConfig) -> Dict[str, Decimal]:
         """
         Obtiene el balance asignado específicamente para un bot, respetando el aislamiento de capital.
-        MEJORADO: Prioriza USDT para operaciones de compra.
+        MEJORADO: Prioriza USDT para operaciones de compra, pero usa balance real para ventas.
         
         Args:
             config: Configuración del bot con capital asignado
@@ -598,12 +598,14 @@ class BinanceExchangeService(ExchangeService):
             # Obtener precio actual
             current_price = self.get_current_price(pair)
             
-            # MEJORA: Priorizar USDT para operaciones de compra
-            # Si hay suficiente USDT disponible, asignar más USDT al bot
+            # MEJORA: Usar balance real de la moneda base para ventas
+            # Para operaciones de venta, siempre usar el balance real disponible
+            allocated_base_balance = total_base_balance
+            
+            # Para operaciones de compra, mantener la priorización de USDT
             if total_quote_balance >= allocated_capital:
                 # Hay suficiente USDT, asignar todo el capital en USDT
                 allocated_quote_balance = allocated_capital
-                allocated_base_balance = Decimal('0')
                 logger.debug(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f} en USDT puro")
                 
             else:
@@ -617,21 +619,21 @@ class BinanceExchangeService(ExchangeService):
                     else:
                         allocation_ratio = Decimal('0')
                     
-                    # Asignar proporcionalmente
-                    allocated_base_balance = total_base_balance * allocation_ratio
+                    # Asignar proporcionalmente solo al USDT (base ya está asignado con balance real)
                     allocated_quote_balance = total_quote_balance * allocation_ratio
                     
                     logger.debug(f"🔒 Bot {pair}: Capital asignado ${allocated_capital:.2f} de ${total_value_usdt:.2f} total (ratio: {allocation_ratio:.3f})")
                     
                 else:
                     # No hay suficiente balance, usar todo lo disponible
-                    allocated_base_balance = total_base_balance
                     allocated_quote_balance = total_quote_balance
                     logger.warning(f"⚠️ Bot {pair}: Capital insuficiente. Asignado: ${allocated_capital:.2f}, Disponible: ${total_value_usdt:.2f}")
             
             # Calcular valores en USDT
             allocated_base_value_usdt = allocated_base_balance * current_price
             allocated_quote_value_usdt = allocated_quote_balance
+            
+            logger.debug(f"💰 Bot {pair}: Balance asignado - {base_currency}: {allocated_base_balance} (${allocated_base_value_usdt:.2f}), {quote_currency}: {allocated_quote_balance} (${allocated_quote_value_usdt:.2f})")
             
             return {
                 'allocated_capital': allocated_capital,
@@ -715,4 +717,98 @@ class BinanceExchangeService(ExchangeService):
                 'currency_needed': 'UNKNOWN',
                 'remaining_after_use': Decimal('0'),
                 'total_bot_value': Decimal('0')
+            }
+
+    def get_active_orders_from_exchange(self, pair: str) -> List[Dict[str, Any]]:
+        """
+        Obtiene las órdenes activas directamente del exchange para un par específico.
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            
+        Returns:
+            Lista de órdenes activas con información completa del exchange
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            # Obtener órdenes abiertas del exchange
+            open_orders = self.exchange.fetch_open_orders(pair)
+            
+            # Formatear órdenes para consistencia
+            formatted_orders = []
+            for order in open_orders:
+                formatted_order = {
+                    'exchange_order_id': order['id'],
+                    'pair': order['symbol'],
+                    'side': order['side'],
+                    'amount': Decimal(str(order['amount'])),
+                    'price': Decimal(str(order['price'])),
+                    'status': order['status'],
+                    'filled': Decimal(str(order['filled'])),
+                    'remaining': Decimal(str(order['remaining'])),
+                    'timestamp': order['timestamp'],
+                    'type': order['type']
+                }
+                formatted_orders.append(formatted_order)
+            
+            logger.debug(f"📋 Órdenes activas en exchange para {pair}: {len(formatted_orders)} órdenes")
+            return formatted_orders
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo órdenes activas del exchange para {pair}: {e}")
+            return []
+
+    def get_real_balances_from_exchange(self, pair: str) -> Dict[str, Any]:
+        """
+        Obtiene los balances reales directamente del exchange para un par específico.
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            
+        Returns:
+            Dict con balances reales de ambas monedas del par
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            base_currency, quote_currency = pair.split('/')
+            
+            # Obtener balances reales del exchange
+            balances = self.exchange.fetch_balance()
+            
+            # Extraer balances libres (disponibles para trading)
+            base_balance = Decimal(str(balances.get(base_currency, {}).get('free', 0)))
+            quote_balance = Decimal(str(balances.get(quote_currency, {}).get('free', 0)))
+            
+            # Obtener precio actual para conversión a USDT
+            current_price = self.get_current_price(pair)
+            base_value_usdt = base_balance * current_price
+            
+            logger.debug(f"💰 Balances reales {pair}: {base_balance} {base_currency} (${base_value_usdt:.2f}) + {quote_balance} {quote_currency}")
+            
+            return {
+                'base_currency': base_currency,
+                'quote_currency': quote_currency,
+                'base_balance': base_balance,
+                'quote_balance': quote_balance,
+                'base_value_usdt': base_value_usdt,
+                'quote_value_usdt': quote_balance,  # Asumimos que quote es USDT
+                'total_value_usdt': base_value_usdt + quote_balance
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo balances reales del exchange para {pair}: {e}")
+            base_currency = pair.split('/')[0] if '/' in pair else 'UNKNOWN'
+            quote_currency = pair.split('/')[1] if '/' in pair else 'UNKNOWN'
+            return {
+                'base_currency': base_currency,
+                'quote_currency': quote_currency,
+                'base_balance': Decimal('0'),
+                'quote_balance': Decimal('0'),
+                'base_value_usdt': Decimal('0'),
+                'quote_value_usdt': Decimal('0'),
+                'total_value_usdt': Decimal('0')
             } 

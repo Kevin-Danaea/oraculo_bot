@@ -166,6 +166,16 @@ class ExchangeService(ABC):
         """Valida que una orden cumpla con el mínimo NOTIONAL después de las comisiones."""
         pass
 
+    @abstractmethod
+    def get_active_orders_from_exchange(self, pair: str) -> List[Dict[str, Any]]:
+        """Obtiene las órdenes activas directamente del exchange para un par específico."""
+        pass
+
+    @abstractmethod
+    def get_real_balances_from_exchange(self, pair: str) -> Dict[str, Any]:
+        """Obtiene los balances reales directamente del exchange para un par específico."""
+        pass
+
 class NotificationService(ABC):
     """Interfaz para servicios de notificación."""
 

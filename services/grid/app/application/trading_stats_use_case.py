@@ -154,6 +154,7 @@ class TradingStatsUseCase:
     def _get_bot_stats(self, config: GridConfig) -> Dict[str, Any]:
         """
         Obtiene estadísticas detalladas para un bot específico.
+        MEJORADO: Usa datos reales del exchange en lugar de la base de datos local.
         
         Args:
             config: Configuración del bot
@@ -164,26 +165,30 @@ class TradingStatsUseCase:
         try:
             pair = config.pair
             
-            # Obtener órdenes activas
-            active_orders = self.grid_repository.get_active_orders(pair)
+            # Obtener órdenes activas directamente del exchange
+            exchange_orders = self.exchange_service.get_active_orders_from_exchange(pair)
             
-            # Contar órdenes por tipo (solo órdenes abiertas)
-            open_orders = [o for o in active_orders if o.status == 'open']
-            buy_orders = len([o for o in open_orders if o.side == 'buy'])
-            sell_orders = len([o for o in open_orders if o.side == 'sell'])
+            # Contar órdenes por tipo (solo órdenes abiertas del exchange)
+            buy_orders = len([o for o in exchange_orders if o['side'] == 'buy'])
+            sell_orders = len([o for o in exchange_orders if o['side'] == 'sell'])
             
             # Obtener precio actual
             current_price = self.exchange_service.get_current_price(pair)
             
-            # Obtener balance asignado con detalles
+            # Obtener balances reales directamente del exchange
+            real_balances = self.exchange_service.get_real_balances_from_exchange(pair)
+            base_balance = real_balances.get('base_balance', Decimal('0'))
+            quote_balance = real_balances.get('quote_balance', Decimal('0'))
+            base_value_usdt = real_balances.get('base_value_usdt', Decimal('0'))
+            quote_value_usdt = real_balances.get('quote_value_usdt', Decimal('0'))
+            
+            # Obtener balance asignado para comparación
             bot_balance = self.exchange_service.get_bot_allocated_balance(config)
             allocated_capital = bot_balance.get('allocated_capital', Decimal('0'))
-            base_balance = bot_balance.get('base_balance', Decimal('0'))
-            quote_balance = bot_balance.get('quote_balance', Decimal('0'))
-            base_value_usdt = bot_balance.get('base_value_usdt', Decimal('0'))
-            quote_value_usdt = bot_balance.get('quote_value_usdt', Decimal('0'))
             
             # Calcular P&L (simplificado - en producción se calcularía con trades reales)
+            # Usar órdenes de la base de datos para el cálculo de P&L
+            active_orders = self.grid_repository.get_active_orders(pair)
             pnl = self._calculate_bot_pnl(config, active_orders, current_price)
             pnl_percent = (pnl / allocated_capital * 100) if allocated_capital > 0 else 0
             
@@ -194,8 +199,8 @@ class TradingStatsUseCase:
                 'pair': pair,
                 'current_price': float(current_price),
                 'allocated_capital': float(allocated_capital),
-                'capital_in_assets': float(base_value_usdt),  # Capital en cryptos
-                'capital_in_usdt': float(quote_value_usdt),   # Capital en USDT
+                'capital_in_assets': float(base_value_usdt),  # Capital real en cryptos
+                'capital_in_usdt': float(quote_value_usdt),   # Capital real en USDT
                 'buy_orders': buy_orders,
                 'sell_orders': sell_orders,
                 'total_orders': buy_orders + sell_orders,
