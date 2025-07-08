@@ -52,6 +52,10 @@ class RealTimeGridMonitorUseCase:
         self._active_configs_cache = []
         self._cache_expiry = None
         
+        # Tracking de órdenes para detección de fills
+        self._previous_active_orders = {}  # {pair: [orders]}
+        self._last_fill_check = {}  # {pair: timestamp}
+        
         logger.info("✅ RealTimeGridMonitorUseCase inicializado.")
 
     def execute(self) -> Dict[str, Any]:
@@ -139,7 +143,7 @@ class RealTimeGridMonitorUseCase:
 
     def _monitor_bot_realtime(self, config: GridConfig) -> Dict[str, Any]:
         """
-        Monitorea un bot individual en tiempo real.
+        Monitorea un bot individual en tiempo real usando métodos avanzados de detección de fills.
         
         Args:
             config: Configuración del bot
@@ -149,46 +153,187 @@ class RealTimeGridMonitorUseCase:
         """
         logger.debug(f"⚡ Monitoreando {config.pair} en tiempo real...")
         
-        # 1. Obtener órdenes activas directamente del exchange
-        active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
-        logger.info(f"[EXCHANGE] {config.pair}: {len(active_orders)} órdenes activas detectadas en el exchange")
+        pair = config.pair
+        fills_detected = []
         
-        if not active_orders:
-            logger.debug(f"ℹ️ No hay órdenes activas para {config.pair} en el exchange")
-            return {
-                'fills_detected': 0,
-                'new_orders_created': 0,
-                'trades_completed': 0
-            }
+        # 1. Obtener órdenes activas actuales del exchange
+        current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+        logger.debug(f"[EXCHANGE] {pair}: {len(current_active_orders)} órdenes activas")
         
-        # 2. Verificar fills de manera eficiente usando el exchange
-        filled_orders = []
-        for order in active_orders:
-            if order['status'] == 'closed' or order['status'] == 'filled':
-                logger.info(f"[FILL] {config.pair}: Orden {order['exchange_order_id']} {order['side']} {order['amount']} a ${order['price']} ejecutada en el exchange")
-                # Convertir a GridOrder si es necesario para la lógica posterior
-                # Aquí deberías mapear el dict a tu entidad GridOrder si la necesitas
-                filled_orders.append(order)
+        # 2. Detectar fills usando múltiples métodos
+        fills_detected.extend(self._detect_fills_method_1(pair, current_active_orders))
+        fills_detected.extend(self._detect_fills_method_2(pair))
+        fills_detected.extend(self._detect_fills_method_3(pair))
         
-        # 3. Procesar fills inmediatamente
+        # 3. Actualizar tracking de órdenes para el próximo ciclo
+        self._previous_active_orders[pair] = current_active_orders
+        
+        # 4. Procesar fills detectados
         new_orders_created = 0
         trades_completed = 0
-        if filled_orders:
-            logger.info(f"💰 {len(filled_orders)} órdenes completadas en {config.pair} (detectadas en el exchange)")
-            for fill in filled_orders:
-                logger.info(f"[FILL] {config.pair}: Orden {fill['exchange_order_id']} ejecutada, creando complementaria...")
-                comp_order = self._create_complementary_order(fill, config)
+        
+        if fills_detected:
+            logger.info(f"💰 {len(fills_detected)} fills detectados en {pair} usando métodos avanzados")
+            
+            # Eliminar duplicados basados en exchange_order_id
+            unique_fills = {}
+            for fill in fills_detected:
+                order_id = fill.get('exchange_order_id')
+                if order_id and order_id not in unique_fills:
+                    unique_fills[order_id] = fill
+            
+            fills_detected = list(unique_fills.values())
+            logger.info(f"🔄 {len(fills_detected)} fills únicos procesados en {pair}")
+            
+            for fill in fills_detected:
+                logger.info(f"[FILL] {pair}: Orden {fill['exchange_order_id']} {fill['side']} {fill['filled']} a ${fill['price']} ejecutada")
+                
+                # Crear orden complementaria
+                comp_order = self._create_complementary_order_from_dict(fill, config)
                 if comp_order:
-                    logger.info(f"[COMPLEMENTARIA] {config.pair}: Orden complementaria creada correctamente.")
+                    logger.info(f"[COMPLEMENTARIA] {pair}: Orden complementaria creada correctamente")
                     new_orders_created += 1
                 else:
-                    logger.warning(f"[COMPLEMENTARIA] {config.pair}: No se pudo crear la orden complementaria.")
+                    logger.warning(f"[COMPLEMENTARIA] {pair}: No se pudo crear la orden complementaria")
         
         return {
-            'fills_detected': len(filled_orders),
+            'fills_detected': len(fills_detected),
             'new_orders_created': new_orders_created,
             'trades_completed': trades_completed
         }
+
+    def _detect_fills_method_1(self, pair: str, current_orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Método 1: Detección por comparación de órdenes activas.
+        Detecta órdenes que desaparecieron del listado de activas.
+        """
+        try:
+            previous_orders = self._previous_active_orders.get(pair, [])
+            if not previous_orders:
+                return []
+            
+            fills = self.exchange_service.detect_fills_by_comparison(pair, previous_orders)
+            if fills:
+                logger.info(f"🔍 Método 1: {len(fills)} fills detectados por comparación en {pair}")
+            
+            return fills
+            
+        except Exception as e:
+            logger.error(f"❌ Error en método 1 de detección de fills para {pair}: {e}")
+            return []
+
+    def _detect_fills_method_2(self, pair: str) -> List[Dict[str, Any]]:
+        """
+        Método 2: Detección usando fetch_closed_orders.
+        Obtiene órdenes cerradas recientemente del exchange.
+        """
+        try:
+            # Obtener fills desde hace 5 minutos
+            since_timestamp = int((datetime.now().timestamp() - 300) * 1000)  # 5 minutos atrás
+            
+            fills = self.exchange_service.get_filled_orders_from_exchange(pair, since_timestamp)
+            if fills:
+                logger.info(f"📋 Método 2: {len(fills)} fills detectados por fetch_closed_orders en {pair}")
+            
+            return fills
+            
+        except Exception as e:
+            logger.error(f"❌ Error en método 2 de detección de fills para {pair}: {e}")
+            return []
+
+    def _detect_fills_method_3(self, pair: str) -> List[Dict[str, Any]]:
+        """
+        Método 3: Detección usando fetch_my_trades.
+        Obtiene trades recientes para detectar fills.
+        """
+        try:
+            # Obtener trades desde hace 5 minutos
+            since_timestamp = int((datetime.now().timestamp() - 300) * 1000)  # 5 minutos atrás
+            
+            trades = self.exchange_service.get_recent_trades_from_exchange(pair, since_timestamp)
+            if not trades:
+                return []
+            
+            # Convertir trades a formato de fills
+            fills = []
+            for trade in trades:
+                # Verificar si ya tenemos información de la orden
+                order_id = trade.get('order_id')
+                if order_id:
+                    order_status = self.exchange_service.get_order_status_from_exchange(pair, order_id)
+                    if order_status and order_status['status'] == 'closed':
+                        fills.append(order_status)
+            
+            if fills:
+                logger.info(f"💱 Método 3: {len(fills)} fills detectados por fetch_my_trades en {pair}")
+            
+            return fills
+            
+        except Exception as e:
+            logger.error(f"❌ Error en método 3 de detección de fills para {pair}: {e}")
+            return []
+
+    def _create_complementary_order_from_dict(self, filled_order: Dict[str, Any], config: GridConfig) -> Optional[GridOrder]:
+        """
+        Crea una orden complementaria basada en una orden completada (dict).
+        
+        Args:
+            filled_order: Orden completada como dict del exchange
+            config: Configuración del bot
+            
+        Returns:
+            GridOrder creada o None si falla
+        """
+        try:
+            # Extraer información de la orden completada
+            side = filled_order['side']
+            filled_amount = filled_order['filled']
+            executed_price = filled_order['price']
+            
+            # Determinar lado complementario
+            complementary_side = 'sell' if side == 'buy' else 'buy'
+            
+            # Calcular precio complementario
+            complementary_price = self._calculate_complementary_price(executed_price, config, complementary_side)
+            
+            # Validar que el bot puede usar el capital
+            capital_check = self.exchange_service.can_bot_use_capital(
+                config, filled_amount, complementary_side
+            )
+            
+            if not capital_check['can_use']:
+                logger.warning(f"🚫 Bot {config.pair} no puede crear orden complementaria: {capital_check}")
+                return None
+            
+            # Crear orden complementaria
+            complementary_order = self.exchange_service.create_order(
+                pair=config.pair,
+                side=complementary_side,
+                amount=filled_amount,
+                price=complementary_price,
+                order_type='limit'
+            )
+            
+            if complementary_order:
+                logger.info(f"✅ Orden complementaria creada: {complementary_side} {filled_amount} a ${complementary_price}")
+                
+                # Notificar creación de orden complementaria
+                self.notification_service.send_notification(
+                    f"🔄 Orden complementaria creada en {config.pair}\n"
+                    f"Lado: {complementary_side.upper()}\n"
+                    f"Cantidad: {filled_amount}\n"
+                    f"Precio: ${complementary_price}\n"
+                    f"Bot: {config.config_type}"
+                )
+                
+                return complementary_order
+            else:
+                logger.error(f"❌ Error creando orden complementaria en {config.pair}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error en _create_complementary_order_from_dict para {config.pair}: {e}")
+            return None
 
     def _check_filled_orders_optimized(self, active_orders: List[GridOrder], pair: str) -> List[GridOrder]:
         """

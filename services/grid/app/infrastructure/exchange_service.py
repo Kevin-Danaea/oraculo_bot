@@ -1,7 +1,7 @@
 """
 Servicio de exchange para interactuar con Binance.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from decimal import Decimal
 import ccxt
 import uuid
@@ -812,3 +812,218 @@ class BinanceExchangeService(ExchangeService):
                 'quote_value_usdt': Decimal('0'),
                 'total_value_usdt': Decimal('0')
             } 
+
+    def get_filled_orders_from_exchange(self, pair: str, since_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Obtiene órdenes completadas (fills) directamente del exchange.
+        Usa fetch_closed_orders para detectar fills de manera eficiente.
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            since_timestamp: Timestamp desde cuando buscar (opcional)
+            
+        Returns:
+            Lista de órdenes completadas con información completa
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            # Obtener órdenes cerradas recientemente del exchange
+            closed_orders = self.exchange.fetch_closed_orders(
+                symbol=pair,
+                since=since_timestamp,
+                limit=100  # Limitar para eficiencia
+            )
+            
+            # Filtrar solo órdenes completadas (filled)
+            filled_orders = []
+            for order in closed_orders:
+                try:
+                    # Verificar si la orden está completada
+                    filled_amount = order.get('filled', 0)
+                    if order.get('status') == 'closed' and filled_amount and float(filled_amount) > 0:
+                        formatted_order = {
+                            'exchange_order_id': str(order.get('id', '')),
+                            'pair': str(order.get('symbol', '')),
+                            'side': str(order.get('side', '')),
+                            'amount': Decimal(str(order.get('amount', 0))),
+                            'price': Decimal(str(order.get('price', 0))),
+                            'status': str(order.get('status', '')),
+                            'filled': Decimal(str(order.get('filled', 0))),
+                            'remaining': Decimal(str(order.get('remaining', 0))),
+                            'timestamp': int(order.get('timestamp', 0) or 0),
+                            'type': str(order.get('type', '')),
+                            'cost': Decimal(str(order.get('cost', 0))),
+                            'average': Decimal(str(order.get('average', 0)))
+                        }
+                        filled_orders.append(formatted_order)
+                except Exception as order_error:
+                    logger.warning(f"⚠️ Error procesando orden en {pair}: {order_error}")
+                    continue
+            
+            logger.debug(f"💰 Órdenes completadas en exchange para {pair}: {len(filled_orders)} fills")
+            return filled_orders
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo órdenes completadas del exchange para {pair}: {e}")
+            return []
+
+    def get_order_status_from_exchange(self, pair: str, order_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene el estado actual de una orden específica del exchange.
+        Usa fetch_order para verificación precisa de estado.
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            order_id: ID de la orden en el exchange
+            
+        Returns:
+            Dict con información completa de la orden o None si no existe
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            # Obtener estado actual de la orden
+            order = self.exchange.fetch_order(order_id, pair)
+            
+            if order:
+                formatted_order = {
+                    'exchange_order_id': order['id'],
+                    'pair': order['symbol'],
+                    'side': order['side'],
+                    'amount': Decimal(str(order['amount'])),
+                    'price': Decimal(str(order['price'])),
+                    'status': order['status'],
+                    'filled': Decimal(str(order['filled'])),
+                    'remaining': Decimal(str(order['remaining'])),
+                    'timestamp': order['timestamp'],
+                    'type': order['type'],
+                    'cost': Decimal(str(order.get('cost', 0))),
+                    'average': Decimal(str(order.get('average', 0)))
+                }
+                
+                logger.debug(f"📋 Estado de orden {order_id} en {pair}: {order['status']} (filled: {order['filled']})")
+                return formatted_order
+            else:
+                logger.warning(f"⚠️ Orden {order_id} no encontrada en {pair}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo estado de orden {order_id} en {pair}: {e}")
+            return None
+
+    def get_recent_trades_from_exchange(self, pair: str, since_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Obtiene trades recientes ejecutados directamente del exchange.
+        Usa fetch_my_trades para obtener información detallada de trades.
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            since_timestamp: Timestamp desde cuando buscar (opcional)
+            
+        Returns:
+            Lista de trades ejecutados con información completa
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            # Obtener trades recientes del exchange
+            trades = self.exchange.fetch_my_trades(
+                symbol=pair,
+                since=since_timestamp,
+                limit=50  # Limitar para eficiencia
+            )
+            
+            # Formatear trades para consistencia
+            formatted_trades = []
+            for trade in trades:
+                try:
+                    # Usar getattr para acceder a los campos de manera segura
+                    trade_id = str(getattr(trade, 'id', ''))
+                    order_id = str(getattr(trade, 'order', ''))
+                    trade_pair = str(getattr(trade, 'symbol', ''))
+                    side = str(getattr(trade, 'side', ''))
+                    amount = Decimal(str(getattr(trade, 'amount', 0)))
+                    price = Decimal(str(getattr(trade, 'price', 0)))
+                    cost = Decimal(str(getattr(trade, 'cost', 0)))
+                    
+                    # Manejar fee de manera segura
+                    fee_obj = getattr(trade, 'fee', {})
+                    fee_cost = getattr(fee_obj, 'cost', 0) if fee_obj else 0
+                    fee = Decimal(str(fee_cost))
+                    
+                    timestamp = int(getattr(trade, 'timestamp', 0) or 0)
+                    datetime_str = str(getattr(trade, 'datetime', ''))
+                    
+                    formatted_trade = {
+                        'trade_id': trade_id,
+                        'order_id': order_id,
+                        'pair': trade_pair,
+                        'side': side,
+                        'amount': amount,
+                        'price': price,
+                        'cost': cost,
+                        'fee': fee,
+                        'timestamp': timestamp,
+                        'datetime': datetime_str
+                    }
+                    formatted_trades.append(formatted_trade)
+                except Exception as trade_error:
+                    logger.warning(f"⚠️ Error procesando trade en {pair}: {trade_error}")
+                    continue
+            
+            logger.debug(f"💱 Trades recientes en exchange para {pair}: {len(formatted_trades)} trades")
+            return formatted_trades
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo trades recientes del exchange para {pair}: {e}")
+            return []
+
+    def detect_fills_by_comparison(self, pair: str, previous_orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Detecta fills comparando órdenes activas anteriores con las actuales.
+        Método eficaz para detectar órdenes que desaparecieron (se completaron).
+        
+        Args:
+            pair: Par de trading (ej: 'BTC/USDT')
+            previous_orders: Lista de órdenes activas del ciclo anterior
+            
+        Returns:
+            Lista de órdenes que se completaron (fills detectados)
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            # Obtener órdenes activas actuales
+            current_orders = self.get_active_orders_from_exchange(pair)
+            
+            # Crear sets de IDs para comparación eficiente
+            previous_ids = {order['exchange_order_id'] for order in previous_orders}
+            current_ids = {order['exchange_order_id'] for order in current_orders}
+            
+            # Órdenes que desaparecieron (potenciales fills)
+            disappeared_ids = previous_ids - current_ids
+            
+            if not disappeared_ids:
+                return []
+            
+            # Verificar estado de órdenes desaparecidas
+            fills_detected = []
+            for order_id in disappeared_ids:
+                order_status = self.get_order_status_from_exchange(pair, order_id)
+                if order_status and order_status['status'] == 'closed' and order_status['filled'] > 0:
+                    logger.info(f"💰 Fill detectado por comparación: {order_id} en {pair}")
+                    fills_detected.append(order_status)
+                else:
+                    logger.debug(f"ℹ️ Orden {order_id} desapareció pero no está completada")
+            
+            logger.info(f"🔍 Detección por comparación: {len(fills_detected)} fills de {len(disappeared_ids)} órdenes desaparecidas")
+            return fills_detected
+            
+        except Exception as e:
+            logger.error(f"❌ Error en detección de fills por comparación para {pair}: {e}")
+            return [] 

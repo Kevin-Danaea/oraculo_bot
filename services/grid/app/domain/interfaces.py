@@ -178,6 +178,26 @@ class ExchangeService(ABC):
         """Obtiene los balances reales directamente del exchange para un par específico."""
         pass
 
+    @abstractmethod
+    def get_filled_orders_from_exchange(self, pair: str, since_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Obtiene órdenes completadas (fills) directamente del exchange."""
+        pass
+
+    @abstractmethod
+    def get_order_status_from_exchange(self, pair: str, order_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene el estado actual de una orden específica del exchange."""
+        pass
+
+    @abstractmethod
+    def get_recent_trades_from_exchange(self, pair: str, since_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Obtiene trades recientes ejecutados directamente del exchange."""
+        pass
+
+    @abstractmethod
+    def detect_fills_by_comparison(self, pair: str, previous_orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Detecta fills comparando órdenes activas anteriores con las actuales."""
+        pass
+
 class NotificationService(ABC):
     """Interfaz para servicios de notificación."""
 
@@ -243,7 +263,12 @@ class NotificationService(ABC):
 
     @abstractmethod
     def force_send_summary(self) -> bool:
-        """Fuerza el envío de un resumen inmediatamente."""
+        """Fuerza el envío inmediato del resumen periódico."""
+        pass
+
+    @abstractmethod
+    def send_notification(self, message: str) -> None:
+        """Envía una notificación genérica."""
         pass
 
 class GridCalculator(ABC):
