@@ -36,10 +36,13 @@ async def lifespan(app: FastAPI):
         init_database()
         logger.info("🗄️ Base de datos inicializada.")
         
-        # Inicializar scheduler con sesión de base de datos
-        with next(get_db()) as db:
-            scheduler = GridScheduler(db)
-            
+                # Inicializar scheduler con sesión de base de datos
+        db = next(get_db())
+        if db is None:
+            raise Exception("No se pudo obtener sesión de base de datos")
+        
+        scheduler = GridScheduler(db)
+        
         # Inicializar bot de Telegram
         telegram_bot = GridTelegramBot(scheduler)
         telegram_bot.start()
@@ -47,20 +50,62 @@ async def lifespan(app: FastAPI):
         # Iniciar scheduler
         scheduler.start()
         
-        # Enviar notificación de inicio
+        # Inicializar servicios
         notification_service = TelegramGridNotificationService()
         lifecycle_use_case = ServiceLifecycleUseCase(notification_service)
         
+        # Realizar verificación de seguridad al reiniciar
+        from app.application.restart_safety_use_case import RestartSafetyUseCase
+        from app.application.trading_status_use_case import TradingStatusUseCase
+        
+        restart_safety_use_case = RestartSafetyUseCase(
+            scheduler.grid_repository, 
+            scheduler.exchange_service, 
+            notification_service
+        )
+        
+        trading_status_use_case = TradingStatusUseCase(
+            scheduler.grid_repository,
+            scheduler.exchange_service,
+            notification_service
+        )
+        
+        # Enviar notificación de inicio básica
         features = [
             "🤖 Monitoreo automático de órdenes de grid",
             f"⏰ Verificación cada {MONITORING_INTERVAL_HOURS} hora(s)",
             f"💰 Soporte para pares: {', '.join(SUPPORTED_PAIRS)}",
             "📊 Consulta directa a base de datos (sin Cerebro)",
             "🔄 Creación automática de órdenes complementarias",
-            "📱 Comandos básicos por Telegram: start_bot, stop_bot, status"
+            "📱 Comandos básicos por Telegram: start_bot, stop_bot, status",
+            "🔒 Verificación de seguridad al reiniciar",
+            "📊 Estado detallado de bots y capital"
         ]
         
         lifecycle_use_case.notify_startup("Grid Trading Service", features)
+        
+        # Realizar verificación de seguridad
+        logger.info("🔒 Iniciando verificación de seguridad al reiniciar...")
+        try:
+            safety_report = restart_safety_use_case.perform_restart_safety_check()
+            restart_safety_use_case.send_safety_report_notification(safety_report)
+            
+            if safety_report.is_safe_to_continue:
+                logger.info("✅ Verificación de seguridad exitosa, continuando...")
+            else:
+                logger.warning("⚠️ Verificación de seguridad detectó problemas")
+                
+        except Exception as e:
+            logger.error(f"❌ Error en verificación de seguridad: {e}")
+        
+        # Enviar estado detallado inicial
+        logger.info("📊 Generando estado detallado inicial...")
+        try:
+            detailed_status = trading_status_use_case.generate_detailed_status()
+            trading_status_use_case.send_detailed_status_notification()
+            logger.info("✅ Estado detallado inicial enviado")
+        except Exception as e:
+            logger.error(f"❌ Error generando estado detallado: {e}")
         
         logger.info("✅ Servicio Grid Trading iniciado correctamente")
         for feature in features:
@@ -127,9 +172,12 @@ def health_check():
     
     try:
         # Verificar conexión a base de datos
-        with next(get_db()) as db:
+        db = next(get_db())
+        if db is not None:
             db.execute(text("SELECT 1"))
             db_status = "connected"
+        else:
+            db_status = "disconnected"
     except Exception:
         db_status = "disconnected"
     

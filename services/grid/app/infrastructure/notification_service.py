@@ -201,6 +201,10 @@ Resumen del ciclo de monitoreo completado.
             # Crear mensaje de resumen
             message = "📊 <b>RESUMEN PERIÓDICO - GRID TRADING</b>\n\n"
             
+            # Balance total de la cuenta
+            total_account_balance = trading_stats.get('total_account_balance', 0.0)
+            message += f"💰 <b>Balance Total Cuenta:</b> ${total_account_balance:.2f} USDT\n\n"
+            
             # Información general
             active_bots = trading_stats.get('active_bots', 0)
             total_trades = trading_stats.get('total_trades', 0)
@@ -219,8 +223,11 @@ Resumen del ciclo de monitoreo completado.
                     pair = bot_detail.get('pair', 'N/A')
                     current_price = bot_detail.get('current_price', 0.0)
                     allocated_capital = bot_detail.get('allocated_capital', 0.0)
+                    capital_in_assets = bot_detail.get('capital_in_assets', 0.0)
+                    capital_in_usdt = bot_detail.get('capital_in_usdt', 0.0)
                     buy_orders = bot_detail.get('buy_orders', 0)
                     sell_orders = bot_detail.get('sell_orders', 0)
+                    has_orders = bot_detail.get('has_orders', False)
                     pnl = bot_detail.get('pnl', 0.0)
                     pnl_percent = bot_detail.get('pnl_percent', 0.0)
                     
@@ -229,8 +236,16 @@ Resumen del ciclo de monitoreo completado.
                     message += f"💱 <b>{pair}</b>\n"
                     message += f"   💵 Precio actual: ${current_price:.4f}\n"
                     message += f"   🏦 Capital asignado: ${allocated_capital:.2f}\n"
-                    message += f"   📈 Órdenes compra: {buy_orders}\n"
-                    message += f"   📉 Órdenes venta: {sell_orders}\n"
+                    message += f"   🪙 Capital en activos: ${capital_in_assets:.2f}\n"
+                    message += f"   💵 Capital en USDT: ${capital_in_usdt:.2f}\n"
+                    
+                    # Mostrar órdenes de forma más clara
+                    if has_orders:
+                        message += f"   📈 Órdenes compra: {buy_orders}\n"
+                        message += f"   📉 Órdenes venta: {sell_orders}\n"
+                    else:
+                        message += f"   ⏸️ Sin órdenes activas\n"
+                    
                     message += f"   {pnl_emoji} P&L: ${pnl:.4f} ({pnl_percent:+.2f}%)\n\n"
             
             # Información de riesgo
@@ -253,7 +268,7 @@ Resumen del ciclo de monitoreo completado.
             # Actualizar timestamp del último resumen
             self._last_summary_sent['last_summary_time'] = now
             
-            logger.info(f"✅ Resumen periódico enviado: {active_bots} bots activos, ${total_profit:.4f} ganancia")
+            logger.info(f"✅ Resumen periódico enviado: {active_bots} bots activos, ${total_profit:.4f} ganancia, Balance total: ${total_account_balance:.2f}")
             return True
             
         except Exception as e:
@@ -332,4 +347,130 @@ Resumen del ciclo de monitoreo completado.
             del self._last_summary_sent['last_summary_time']
         
         logger.info("✅ Forzando envío de resumen inmediato")
-        return True 
+        return True
+
+    def send_detailed_status_notification(self, summary) -> None:
+        """
+        Envía notificación con el estado detallado de trading.
+        
+        Args:
+            summary: Objeto TradingSummary con el estado detallado
+        """
+        try:
+            message = self._format_detailed_status_message(summary)
+            self.telegram_service.send_message(message)
+            logger.info("✅ Notificación de estado detallado enviada")
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando notificación de estado detallado: {e}")
+
+    def send_restart_safety_notification(self, report) -> None:
+        """
+        Envía notificación con el reporte de seguridad al reiniciar.
+        
+        Args:
+            report: Objeto RestartSafetyReport con el reporte de seguridad
+        """
+        try:
+            message = self._format_safety_report_message(report)
+            self.telegram_service.send_message(message)
+            logger.info("✅ Notificación de reporte de seguridad enviada")
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando notificación de seguridad: {e}")
+
+    def _format_detailed_status_message(self, summary) -> str:
+        """
+        Formatea el resumen detallado como mensaje legible.
+        
+        Args:
+            summary: Resumen del estado de trading
+            
+        Returns:
+            str: Mensaje formateado
+        """
+        try:
+            message = f"📊 **ESTADO DETALLADO DE TRADING**\n\n"
+            message += f"🕐 Actualizado: {summary.last_update.strftime('%H:%M:%S %d/%m/%Y')}\n"
+            message += f"💱 Modo: {summary.trading_mode.upper()}\n\n"
+            
+            # Resumen general
+            message += f"**📈 RESUMEN GENERAL**\n"
+            message += f"• Total de bots: {summary.total_bots}\n"
+            message += f"• Bots activos: {summary.active_bots} 🟢\n"
+            message += f"• Bots pausados: {summary.paused_bots} ⏸️\n"
+            message += f"• Capital asignado: ${summary.total_capital_allocated:,.2f} USDT\n"
+            message += f"• Capital disponible: ${summary.total_capital_available:,.2f} USDT\n"
+            message += f"• Órdenes activas: {summary.total_orders_active}\n\n"
+            
+            # Balance del exchange
+            message += f"**💰 BALANCE DEL EXCHANGE**\n"
+            for currency, amount in summary.exchange_balance.items():
+                if amount > 0:
+                    message += f"• {currency}: {amount:,.8f}\n"
+            message += "\n"
+            
+            # Estado de cada bot
+            message += f"**🤖 ESTADO DE BOTS**\n"
+            for bot in summary.bots_status:
+                if bot.is_active:  # Solo mostrar bots activos
+                    message += f"\n**{bot.pair}** {bot.status_summary}\n"
+                    message += f"• Capital: ${bot.allocated_capital:,.2f} USDT\n"
+                    message += f"• Precio actual: ${bot.current_price:,.8f}\n"
+                    message += f"• Niveles: {bot.grid_levels} | Rango: {bot.price_range_percent}%\n"
+                    message += f"• Órdenes activas: {bot.active_orders_count}\n"
+                    message += f"• Última decisión: {bot.last_decision}\n"
+            
+            return message
+            
+        except Exception as e:
+            logger.error(f"❌ Error formateando mensaje de estado: {e}")
+            return f"❌ Error generando estado detallado: {e}"
+
+    def _format_safety_report_message(self, report) -> str:
+        """
+        Formatea el reporte de seguridad como mensaje legible.
+        
+        Args:
+            report: Reporte de seguridad
+            
+        Returns:
+            str: Mensaje formateado
+        """
+        try:
+            message = f"🔒 **REPORTE DE SEGURIDAD AL REINICIAR**\n\n"
+            
+            # Resumen general
+            message += f"**📊 RESUMEN GENERAL**\n"
+            message += f"• Órdenes canceladas: {report.total_orders_cancelled}\n"
+            message += f"• Capital faltante total: ${report.total_missing_capital:,.2f} USDT\n"
+            message += f"• Capital excedente total: ${report.total_excess_capital:,.2f} USDT\n"
+            message += f"• Seguro para continuar: {'✅ SÍ' if report.is_safe_to_continue else '❌ NO'}\n\n"
+            
+            # Verificaciones por par
+            message += f"**💰 VERIFICACIÓN POR PAR**\n"
+            for verification in report.capital_verifications:
+                message += f"\n**{verification.pair}**\n"
+                message += f"• Capital asignado: ${verification.allocated_capital:,.2f} USDT\n"
+                message += f"• Balance USDT: ${verification.actual_balance_usdt:,.2f}\n"
+                message += f"• Balance {verification.pair.split('/')[0]}: {verification.actual_balance_crypto:,.8f}\n"
+                message += f"• Valor total: ${verification.total_value:,.2f} USDT\n"
+                
+                if verification.missing_capital > 0:
+                    message += f"• ⚠️ Capital faltante: ${verification.missing_capital:,.2f}\n"
+                if verification.excess_capital > 0:
+                    message += f"• 💰 Capital excedente: ${verification.excess_capital:,.2f}\n"
+                
+                message += f"• Estado: {'✅ SEGURO' if verification.is_safe else '❌ INSEGURO'}\n"
+            
+            # Recomendaciones
+            if report.recommendations:
+                message += f"\n**💡 RECOMENDACIONES**\n"
+                for rec in report.recommendations:
+                    message += f"• {rec}\n"
+            
+            return message
+            
+        except Exception as e:
+            logger.error(f"❌ Error formateando reporte de seguridad: {e}")
+            return f"❌ Error generando reporte de seguridad: {e}" 

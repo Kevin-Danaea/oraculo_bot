@@ -50,9 +50,13 @@ class TradingStatsUseCase:
                     'active_bots': 0,
                     'total_trades': 0,
                     'total_profit': 0.0,
+                    'total_account_balance': 0.0,
                     'bots_details': [],
                     'risk_events': {}
                 }
+            
+            # Obtener balance total de la cuenta
+            total_account_balance = self._get_total_account_balance()
             
             # Estadísticas generales
             total_trades = 0
@@ -82,12 +86,13 @@ class TradingStatsUseCase:
                 'active_bots': len(active_configs),
                 'total_trades': total_trades,
                 'total_profit': float(total_profit),
+                'total_account_balance': float(total_account_balance),
                 'bots_details': bots_details,
                 'risk_events': risk_events,
                 'timestamp': datetime.now()
             }
             
-            logger.debug(f"📊 Resumen generado: {len(active_configs)} bots, {total_trades} trades, ${total_profit:.4f}")
+            logger.debug(f"📊 Resumen generado: {len(active_configs)} bots, {total_trades} trades, ${total_profit:.4f}, Balance total: ${total_account_balance:.2f}")
             return summary
             
         except Exception as e:
@@ -96,10 +101,55 @@ class TradingStatsUseCase:
                 'active_bots': 0,
                 'total_trades': 0,
                 'total_profit': 0.0,
+                'total_account_balance': 0.0,
                 'bots_details': [],
                 'risk_events': {},
                 'error': str(e)
             }
+
+    def _get_total_account_balance(self) -> Decimal:
+        """
+        Obtiene el balance total de la cuenta en USDT.
+        
+        Returns:
+            Balance total en USDT
+        """
+        try:
+            # Obtener balance de USDT
+            usdt_balance = self.exchange_service.get_balance('USDT')
+            
+            # Obtener todos los pares activos para calcular valor de cryptos
+            active_configs = self.grid_repository.get_active_configs()
+            total_crypto_value = Decimal('0')
+            
+            for config in active_configs:
+                try:
+                    pair = config.pair
+                    base_currency = pair.split('/')[0]
+                    
+                    # Obtener balance de la crypto
+                    crypto_balance = self.exchange_service.get_balance(base_currency)
+                    
+                    if crypto_balance > 0:
+                        # Obtener precio actual
+                        current_price = self.exchange_service.get_current_price(pair)
+                        crypto_value = crypto_balance * current_price
+                        total_crypto_value += crypto_value
+                        
+                        logger.debug(f"💰 {base_currency}: {crypto_balance} (${crypto_value:.2f})")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error calculando valor de {config.pair}: {e}")
+                    continue
+            
+            total_balance = usdt_balance + total_crypto_value
+            logger.debug(f"💰 Balance total cuenta: ${usdt_balance:.2f} USDT + ${total_crypto_value:.2f} cryptos = ${total_balance:.2f}")
+            
+            return total_balance
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo balance total: {e}")
+            return Decimal('0')
 
     def _get_bot_stats(self, config: GridConfig) -> Dict[str, Any]:
         """
@@ -117,16 +167,21 @@ class TradingStatsUseCase:
             # Obtener órdenes activas
             active_orders = self.grid_repository.get_active_orders(pair)
             
-            # Contar órdenes por tipo
-            buy_orders = len([o for o in active_orders if o.side == 'buy' and o.status == 'open'])
-            sell_orders = len([o for o in active_orders if o.side == 'sell' and o.status == 'open'])
+            # Contar órdenes por tipo (solo órdenes abiertas)
+            open_orders = [o for o in active_orders if o.status == 'open']
+            buy_orders = len([o for o in open_orders if o.side == 'buy'])
+            sell_orders = len([o for o in open_orders if o.side == 'sell'])
             
             # Obtener precio actual
             current_price = self.exchange_service.get_current_price(pair)
             
-            # Obtener balance asignado
+            # Obtener balance asignado con detalles
             bot_balance = self.exchange_service.get_bot_allocated_balance(config)
             allocated_capital = bot_balance.get('allocated_capital', Decimal('0'))
+            base_balance = bot_balance.get('base_balance', Decimal('0'))
+            quote_balance = bot_balance.get('quote_balance', Decimal('0'))
+            base_value_usdt = bot_balance.get('base_value_usdt', Decimal('0'))
+            quote_value_usdt = bot_balance.get('quote_value_usdt', Decimal('0'))
             
             # Calcular P&L (simplificado - en producción se calcularía con trades reales)
             pnl = self._calculate_bot_pnl(config, active_orders, current_price)
@@ -139,14 +194,19 @@ class TradingStatsUseCase:
                 'pair': pair,
                 'current_price': float(current_price),
                 'allocated_capital': float(allocated_capital),
+                'capital_in_assets': float(base_value_usdt),  # Capital en cryptos
+                'capital_in_usdt': float(quote_value_usdt),   # Capital en USDT
                 'buy_orders': buy_orders,
                 'sell_orders': sell_orders,
                 'total_orders': buy_orders + sell_orders,
+                'has_orders': (buy_orders + sell_orders) > 0,  # Para claridad
                 'pnl': float(pnl),
                 'pnl_percent': float(pnl_percent),
                 'trades_count': trades_count,
                 'is_active': config.is_running,
-                'last_decision': config.last_decision
+                'last_decision': config.last_decision,
+                'base_balance': float(base_balance),
+                'quote_balance': float(quote_balance)
             }
             
             return stats
@@ -157,13 +217,18 @@ class TradingStatsUseCase:
                 'pair': config.pair,
                 'current_price': 0.0,
                 'allocated_capital': 0.0,
+                'capital_in_assets': 0.0,
+                'capital_in_usdt': 0.0,
                 'buy_orders': 0,
                 'sell_orders': 0,
                 'total_orders': 0,
+                'has_orders': False,
                 'pnl': 0.0,
                 'pnl_percent': 0.0,
                 'trades_count': 0,
                 'is_active': False,
+                'base_balance': 0.0,
+                'quote_balance': 0.0,
                 'error': str(e)
             }
 
