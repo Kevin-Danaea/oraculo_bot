@@ -283,6 +283,11 @@ Resumen del ciclo de monitoreo completado.
                     message += f"   🚨 Stop Loss: {stop_loss_events}\n"
                     message += f"   📈 Trailing Up: {trailing_up_events}\n\n"
             
+            # 📱 Información de órdenes complementarias acumuladas
+            complementary_orders_summary = trading_stats.get('complementary_orders_summary', '')
+            if complementary_orders_summary:
+                message += f"{complementary_orders_summary}\n\n"
+            
             message += f"⏰ <i>{now.strftime('%H:%M:%S %d/%m/%Y')}</i>\n"
             message += f"🔄 <i>Resumen cada 2 horas</i>"
             

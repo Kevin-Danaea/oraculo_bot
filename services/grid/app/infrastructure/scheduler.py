@@ -73,7 +73,8 @@ class GridScheduler:
             self.trading_stats_use_case = TradingStatsUseCase(
                 grid_repository=self.grid_repository,
                 exchange_service=self.exchange_service,
-                grid_calculator=self.grid_calculator
+                grid_calculator=self.grid_calculator,
+                realtime_monitor_use_case=self.realtime_monitor_use_case  # Pasar referencia para notificaciones acumuladas
             )
             
             logger.info("✅ Servicios de Grid y casos de uso inicializados correctamente")
@@ -173,6 +174,9 @@ class GridScheduler:
                 trading_summary['periodicity'] = 'Resumen cada 1 hora'
             self.notification_service.send_periodic_trading_summary(trading_summary)
             
+            # 📱 Limpiar notificaciones acumuladas después de enviar el resumen
+            self.realtime_monitor_use_case.clear_accumulated_notifications()
+            
             active_configs = self.grid_repository.get_active_configs()
             total_active_bots = len(active_configs)
                 
@@ -216,6 +220,11 @@ class GridScheduler:
         """
         try:
             logger.info("🚀 Ejecutando gestión horaria inicial (post-limpieza)...")
+            
+            # 🔒 RESETEAR ESTADO DE INICIALIZACIÓN ANTES DE LA GESTIÓN HORARIA
+            self.realtime_monitor_use_case.reset_initialization_status()
+            logger.info("🔄 Estado de inicialización reseteado para todos los bots")
+            
             self._run_hourly_management()
             logger.info("✅ Gestión horaria inicial completada")
             

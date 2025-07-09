@@ -27,11 +27,13 @@ class TradingStatsUseCase:
         self,
         grid_repository: GridRepository,
         exchange_service: ExchangeService,
-        grid_calculator: GridCalculator
+        grid_calculator: GridCalculator,
+        realtime_monitor_use_case=None  # Opcional para obtener notificaciones acumuladas
     ):
         self.grid_repository = grid_repository
         self.exchange_service = exchange_service
         self.grid_calculator = grid_calculator
+        self.realtime_monitor_use_case = realtime_monitor_use_case
         logger.info("✅ TradingStatsUseCase inicializado.")
 
     def generate_trading_summary(self) -> Dict[str, Any]:
@@ -82,6 +84,11 @@ class TradingStatsUseCase:
                 'trailing_up': 0
             }
             
+            # 📱 Obtener resumen de órdenes complementarias acumuladas
+            complementary_orders_summary = ""
+            if self.realtime_monitor_use_case:
+                complementary_orders_summary = self.realtime_monitor_use_case.format_complementary_orders_summary()
+            
             summary = {
                 'active_bots': len(active_configs),
                 'total_trades': total_trades,
@@ -89,6 +96,7 @@ class TradingStatsUseCase:
                 'total_account_balance': float(total_account_balance),
                 'bots_details': bots_details,
                 'risk_events': risk_events,
+                'complementary_orders_summary': complementary_orders_summary,
                 'timestamp': datetime.now()
             }
             

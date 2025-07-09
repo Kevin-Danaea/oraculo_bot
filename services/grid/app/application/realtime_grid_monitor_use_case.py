@@ -56,11 +56,20 @@ class RealTimeGridMonitorUseCase:
         self._previous_active_orders = {}  # {pair: [orders]}
         self._last_fill_check = {}  # {pair: timestamp}
         
+        # 🔒 NUEVO: Estado de inicialización por bot
+        self._bot_initialization_status = {}  # {pair: {'initialized': bool, 'initial_orders_count': int, 'first_initialization_completed': bool}}
+        self._initialization_check_interval = 30  # segundos entre verificaciones de inicialización
+        
+        # 📱 NUEVO: Acumulación de notificaciones de órdenes complementarias
+        self._complementary_orders_notifications = []  # Lista de notificaciones acumuladas
+        self._last_notification_cleanup = datetime.now()
+        
         logger.info("✅ RealTimeGridMonitorUseCase inicializado.")
 
     def execute(self) -> Dict[str, Any]:
         """
         Ejecuta un ciclo de monitoreo en tiempo real.
+        SOLO PARA BOTS COMPLETAMENTE INICIALIZADOS.
         
         Returns:
             Dict con el resultado del monitoreo en tiempo real
@@ -81,13 +90,31 @@ class RealTimeGridMonitorUseCase:
                     'message': 'No hay bots activos'
                 }
             
-            # 2. Monitorear cada bot activo
+            # 2. Verificar estado de inicialización de cada bot
+            ready_bots = []
+            for config in active_configs:
+                if self._is_bot_ready_for_realtime(config):
+                    ready_bots.append(config)
+                else:
+                    logger.debug(f"⏳ Bot {config.pair} aún no está listo para monitoreo en tiempo real")
+            
+            if not ready_bots:
+                logger.debug("⏳ No hay bots listos para monitoreo en tiempo real (esperando inicialización)")
+                return {
+                    'success': True,
+                    'monitored_bots': 0,
+                    'fills_detected': 0,
+                    'orders_created': 0,
+                    'message': 'Bots en proceso de inicialización'
+                }
+            
+            # 3. Monitorear solo bots listos
             total_fills = 0
             total_new_orders = 0
             total_trades = 0
             risk_events = 0
             
-            for config in active_configs:
+            for config in ready_bots:
                 try:
                     # Verificar eventos de riesgo primero
                     risk_result = self.risk_management.check_and_handle_risk_events(config)
@@ -106,13 +133,14 @@ class RealTimeGridMonitorUseCase:
                     logger.error(f"❌ Error en monitoreo tiempo real para {config.pair}: {e}")
                     continue
             
-            # 3. Log resumen solo si hubo actividad
+            # 4. Log resumen solo si hubo actividad
             if total_fills > 0 or total_new_orders > 0 or risk_events > 0:
-                logger.info(f"⚡ RT Monitor: {len(active_configs)} bots, {total_fills} fills, {total_new_orders} nuevas órdenes, {risk_events} eventos de riesgo")
+                logger.info(f"⚡ RT Monitor: {len(ready_bots)} bots listos, {total_fills} fills, {total_new_orders} nuevas órdenes, {risk_events} eventos de riesgo")
             
             return {
                 'success': True,
-                'monitored_bots': len(active_configs),
+                'monitored_bots': len(ready_bots),
+                'total_bots': len(active_configs),
                 'fills_detected': total_fills,
                 'orders_created': total_new_orders,
                 'trades_completed': total_trades,
@@ -140,6 +168,69 @@ class RealTimeGridMonitorUseCase:
             logger.debug(f"🔄 Cache de configs activas renovado: {len(self._active_configs_cache)} bots")
         
         return self._active_configs_cache
+
+    def _is_bot_ready_for_realtime(self, config: GridConfig) -> bool:
+        """
+        Verifica si un bot está listo para monitoreo en tiempo real.
+        Un bot está listo cuando:
+        1. Ha completado su primera inicialización (100% de órdenes iniciales)
+        2. O ya está operando normalmente (primera inicialización completada)
+        
+        Args:
+            config: Configuración del bot
+            
+        Returns:
+            bool: True si el bot está listo para monitoreo en tiempo real
+        """
+        pair = config.pair
+        
+        # Verificar cache de estado de inicialización
+        now = datetime.now()
+        last_check = self._bot_initialization_status.get(pair, {}).get('last_check')
+        
+        # Solo verificar cada 30 segundos para evitar spam de logs
+        if last_check and (now - last_check).total_seconds() < self._initialization_check_interval:
+            return self._bot_initialization_status.get(pair, {}).get('initialized', False)
+        
+        try:
+            # Obtener órdenes activas actuales
+            current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+            total_active_orders = len(current_active_orders)
+            
+            # Verificar si ya completó la primera inicialización
+            first_init_completed = self._bot_initialization_status.get(pair, {}).get('first_initialization_completed', False)
+            
+            if first_init_completed:
+                # Si ya completó la primera inicialización, está listo para operar normalmente
+                is_ready = True
+                logger.debug(f"✅ Bot {pair} ya completó primera inicialización, operando normalmente")
+            else:
+                # Verificar si está completando la primera inicialización (100% de órdenes iniciales)
+                min_orders_required = config.grid_levels
+                is_ready = total_active_orders >= min_orders_required
+                
+                if is_ready:
+                    # Marcar que completó la primera inicialización
+                    logger.info(f"🎉 Bot {pair} completó primera inicialización "
+                               f"({total_active_orders}/{config.grid_levels} órdenes activas)")
+            
+            # Actualizar estado de inicialización
+            self._bot_initialization_status[pair] = {
+                'initialized': is_ready,
+                'initial_orders_count': total_active_orders,
+                'required_orders': config.grid_levels,
+                'first_initialization_completed': first_init_completed or is_ready,
+                'last_check': now
+            }
+            
+            if not is_ready and not first_init_completed:
+                logger.debug(f"⏳ Bot {pair} aún en primera inicialización: {total_active_orders}/{config.grid_levels} órdenes requeridas")
+            
+            return is_ready
+            
+        except Exception as e:
+            logger.error(f"❌ Error verificando estado de inicialización para {pair}: {e}")
+            return False
 
     def _monitor_bot_realtime(self, config: GridConfig) -> Dict[str, Any]:
         """
@@ -226,16 +317,36 @@ class RealTimeGridMonitorUseCase:
         """
         Método 2: Detección usando fetch_closed_orders.
         Obtiene órdenes cerradas recientemente del exchange.
+        SOLO ÓRDENES ACTIVAS ACTUALES - NO HISTÓRICAS.
         """
         try:
-            # Obtener fills desde hace 5 minutos
-            since_timestamp = int((datetime.now().timestamp() - 300) * 1000)  # 5 minutos atrás
+            # 🔒 SOLO DETECTAR FILLS DE ÓRDENES ACTIVAS ACTUALES
+            # Obtener órdenes activas actuales
+            current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+            if not current_active_orders:
+                return []
+            
+            # Crear set de IDs de órdenes activas para verificación rápida
+            active_order_ids = {order['exchange_order_id'] for order in current_active_orders}
+            
+            # Obtener fills desde hace 2 minutos (ventana más corta para evitar históricos)
+            since_timestamp = int((datetime.now().timestamp() - 120) * 1000)  # 2 minutos atrás
             
             fills = self.exchange_service.get_filled_orders_from_exchange(pair, since_timestamp)
-            if fills:
-                logger.info(f"📋 Método 2: {len(fills)} fills detectados por fetch_closed_orders en {pair}")
             
-            return fills
+            # 🔒 FILTRAR: Solo fills de órdenes que estaban activas
+            valid_fills = []
+            for fill in fills:
+                order_id = fill.get('exchange_order_id')
+                if order_id and order_id in active_order_ids:
+                    valid_fills.append(fill)
+                else:
+                    logger.debug(f"🔍 Fill ignorado (orden no activa): {order_id} en {pair}")
+            
+            if valid_fills:
+                logger.info(f"📋 Método 2: {len(valid_fills)} fills válidos de {len(fills)} total en {pair}")
+            
+            return valid_fills
             
         except Exception as e:
             logger.error(f"❌ Error en método 2 de detección de fills para {pair}: {e}")
@@ -245,27 +356,39 @@ class RealTimeGridMonitorUseCase:
         """
         Método 3: Detección usando fetch_my_trades.
         Obtiene trades recientes para detectar fills.
+        SOLO ÓRDENES ACTIVAS ACTUALES - NO HISTÓRICAS.
         """
         try:
-            # Obtener trades desde hace 5 minutos
-            since_timestamp = int((datetime.now().timestamp() - 300) * 1000)  # 5 minutos atrás
+            # 🔒 SOLO DETECTAR FILLS DE ÓRDENES ACTIVAS ACTUALES
+            # Obtener órdenes activas actuales
+            current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+            if not current_active_orders:
+                return []
+            
+            # Crear set de IDs de órdenes activas para verificación rápida
+            active_order_ids = {order['exchange_order_id'] for order in current_active_orders}
+            
+            # Obtener trades desde hace 2 minutos (ventana más corta)
+            since_timestamp = int((datetime.now().timestamp() - 120) * 1000)  # 2 minutos atrás
             
             trades = self.exchange_service.get_recent_trades_from_exchange(pair, since_timestamp)
             if not trades:
                 return []
             
-            # Convertir trades a formato de fills
+            # Convertir trades a formato de fills, SOLO DE ÓRDENES ACTIVAS
             fills = []
             for trade in trades:
-                # Verificar si ya tenemos información de la orden
                 order_id = trade.get('order_id')
-                if order_id:
+                if order_id and order_id in active_order_ids:
                     order_status = self.exchange_service.get_order_status_from_exchange(pair, order_id)
                     if order_status and order_status['status'] == 'closed':
                         fills.append(order_status)
+                        logger.debug(f"💱 Fill válido detectado: {order_id} en {pair}")
+                else:
+                    logger.debug(f"💱 Trade ignorado (orden no activa): {order_id} en {pair}")
             
             if fills:
-                logger.info(f"💱 Método 3: {len(fills)} fills detectados por fetch_my_trades en {pair}")
+                logger.info(f"💱 Método 3: {len(fills)} fills válidos de trades en {pair}")
             
             return fills
             
@@ -290,13 +413,22 @@ class RealTimeGridMonitorUseCase:
             active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             total_active_orders = len(active_orders)
             
-            # Si el bot tiene menos de la mitad de los niveles de grid, probablemente está inicializando
-            min_orders_for_complementary = max(1, config.grid_levels // 2)
+            # Verificar si el bot ha completado su primera inicialización
+            first_init_completed = self._bot_initialization_status.get(config.pair, {}).get('first_initialization_completed', False)
             
-            if total_active_orders < min_orders_for_complementary:
-                logger.info(f"🚫 Bot {config.pair}: Solo {total_active_orders}/{config.grid_levels} órdenes activas. "
-                           f"Esperando a completar inicialización antes de crear órdenes complementarias.")
-                return None
+            if not first_init_completed:
+                # Si no ha completado la primera inicialización, verificar que tenga todas las órdenes iniciales
+                if total_active_orders < config.grid_levels:
+                    logger.info(f"🚫 Bot {config.pair}: Solo {total_active_orders}/{config.grid_levels} órdenes activas. "
+                               f"Esperando a completar primera inicialización antes de crear órdenes complementarias.")
+                    return None
+                else:
+                    # Marcar que completó la primera inicialización
+                    self._bot_initialization_status[config.pair] = {
+                        **self._bot_initialization_status.get(config.pair, {}),
+                        'first_initialization_completed': True
+                    }
+                    logger.info(f"🎉 Bot {config.pair} completó primera inicialización, ahora puede crear órdenes complementarias")
             
             # Extraer información de la orden completada
             side = filled_order['side']
@@ -330,14 +462,16 @@ class RealTimeGridMonitorUseCase:
             if complementary_order:
                 logger.info(f"✅ Orden complementaria creada: {complementary_side} {filled_amount} a ${complementary_price}")
                 
-                # Notificar creación de orden complementaria
-                self.notification_service.send_notification(
-                    f"🔄 Orden complementaria creada en {config.pair}\n"
-                    f"Lado: {complementary_side.upper()}\n"
-                    f"Cantidad: {filled_amount}\n"
-                    f"Precio: ${complementary_price}\n"
-                    f"Bot: {config.config_type}"
-                )
+                # 📱 Acumular notificación en lugar de enviar inmediatamente
+                notification = {
+                    'pair': config.pair,
+                    'side': complementary_side.upper(),
+                    'amount': filled_amount,
+                    'price': complementary_price,
+                    'bot_type': config.config_type,
+                    'timestamp': datetime.now()
+                }
+                self._complementary_orders_notifications.append(notification)
                 
                 return complementary_order
             else:
@@ -411,13 +545,22 @@ class RealTimeGridMonitorUseCase:
             active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             total_active_orders = len(active_orders)
             
-            # Si el bot tiene menos de la mitad de los niveles de grid, probablemente está inicializando
-            min_orders_for_complementary = max(1, config.grid_levels // 2)
+            # Verificar si el bot ha completado su primera inicialización
+            first_init_completed = self._bot_initialization_status.get(config.pair, {}).get('first_initialization_completed', False)
             
-            if total_active_orders < min_orders_for_complementary:
-                logger.info(f"🚫 Bot {config.pair}: Solo {total_active_orders}/{config.grid_levels} órdenes activas. "
-                           f"Esperando a completar inicialización antes de crear órdenes complementarias.")
-                return None
+            if not first_init_completed:
+                # Si no ha completado la primera inicialización, verificar que tenga todas las órdenes iniciales
+                if total_active_orders < config.grid_levels:
+                    logger.info(f"🚫 Bot {config.pair}: Solo {total_active_orders}/{config.grid_levels} órdenes activas. "
+                               f"Esperando a completar primera inicialización antes de crear órdenes complementarias.")
+                    return None
+                else:
+                    # Marcar que completó la primera inicialización
+                    self._bot_initialization_status[config.pair] = {
+                        **self._bot_initialization_status.get(config.pair, {}),
+                        'first_initialization_completed': True
+                    }
+                    logger.info(f"🎉 Bot {config.pair} completó primera inicialización, ahora puede crear órdenes complementarias")
             
             # Verificar límite de órdenes activas
             max_allowed_orders = config.grid_levels
@@ -563,6 +706,82 @@ class RealTimeGridMonitorUseCase:
         self._active_configs_cache = []
         self._cache_expiry = None
         logger.debug("🧹 Cache de configuraciones limpiado")
+
+    def reset_initialization_status(self, pair: Optional[str] = None):
+        """
+        Resetea el estado de inicialización para un bot específico o todos los bots.
+        Útil después de limpieza o reinicio.
+        
+        Args:
+            pair: Par específico a resetear, o None para resetear todos
+        """
+        if pair:
+            if pair in self._bot_initialization_status:
+                del self._bot_initialization_status[pair]
+                logger.info(f"🔄 Estado de inicialización reseteado para {pair}")
+        else:
+            self._bot_initialization_status.clear()
+            logger.info("🔄 Estado de inicialización reseteado para todos los bots")
+
+    def get_initialization_status(self) -> Dict[str, Any]:
+        """
+        Obtiene el estado actual de inicialización de todos los bots.
+        
+        Returns:
+            Dict con el estado de inicialización de cada bot
+        """
+        return self._bot_initialization_status.copy()
+
+    def get_accumulated_complementary_notifications(self) -> List[Dict[str, Any]]:
+        """
+        Obtiene las notificaciones de órdenes complementarias acumuladas.
+        
+        Returns:
+            Lista de notificaciones acumuladas
+        """
+        return self._complementary_orders_notifications.copy()
+
+    def clear_accumulated_notifications(self) -> None:
+        """
+        Limpia las notificaciones acumuladas después de enviarlas.
+        """
+        self._complementary_orders_notifications.clear()
+        self._last_notification_cleanup = datetime.now()
+        logger.debug("🧹 Notificaciones de órdenes complementarias limpiadas")
+
+    def format_complementary_orders_summary(self) -> str:
+        """
+        Formatea un resumen de las órdenes complementarias acumuladas.
+        
+        Returns:
+            String formateado con el resumen de órdenes complementarias
+        """
+        if not self._complementary_orders_notifications:
+            return ""
+        
+        # Agrupar por par
+        orders_by_pair = {}
+        for notification in self._complementary_orders_notifications:
+            pair = notification['pair']
+            if pair not in orders_by_pair:
+                orders_by_pair[pair] = []
+            orders_by_pair[pair].append(notification)
+        
+        # Formatear resumen
+        summary = "🔄 **ÓRDENES COMPLEMENTARIAS CREADAS**\n\n"
+        
+        for pair, orders in orders_by_pair.items():
+            summary += f"**{pair}**\n"
+            buy_count = sum(1 for order in orders if order['side'] == 'BUY')
+            sell_count = sum(1 for order in orders if order['side'] == 'SELL')
+            
+            summary += f"• Compras: {buy_count} órdenes\n"
+            summary += f"• Ventas: {sell_count} órdenes\n"
+            summary += f"• Total: {len(orders)} órdenes\n\n"
+        
+        summary += f"⏰ Período: {self._last_notification_cleanup.strftime('%H:%M:%S')} - {datetime.now().strftime('%H:%M:%S')}"
+        
+        return summary
 
     # ------------------------------------------------------------------
     # NUEVA LÓGICA BASADA EN GRIDSTEP
