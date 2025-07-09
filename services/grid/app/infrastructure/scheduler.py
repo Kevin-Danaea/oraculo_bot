@@ -77,6 +77,9 @@ class GridScheduler:
                 realtime_monitor_use_case=self.realtime_monitor_use_case  # Pasar referencia para notificaciones acumuladas
             )
             
+            # 🔄 NUEVO: Establecer referencia al monitor tiempo real en el servicio de notificaciones
+            self.notification_service.set_realtime_monitor_use_case(self.realtime_monitor_use_case)
+            
             logger.info("✅ Servicios de Grid y casos de uso inicializados correctamente")
             
         except Exception as e:

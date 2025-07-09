@@ -22,8 +22,22 @@ class TelegramGridNotificationService(NotificationService):
         # Control de spam para resúmenes periódicos
         self._last_summary_sent = {}
         self._summary_interval = timedelta(hours=1)  # Resumen cada 1 hora (coincide con MONITORING_INTERVAL_HOURS)
+        self._min_interval_for_activity = timedelta(minutes=30)  # Mínimo para envío anticipado con actividad
+        
+        # Referencia al monitor tiempo real para verificar actividad
+        self.realtime_monitor_use_case = None
         
         logger.info("✅ TelegramGridNotificationService inicializado.")
+
+    def set_realtime_monitor_use_case(self, realtime_monitor_use_case):
+        """
+        Establece la referencia al monitor tiempo real para verificar actividad.
+        
+        Args:
+            realtime_monitor_use_case: Instancia del RealTimeGridMonitorUseCase
+        """
+        self.realtime_monitor_use_case = realtime_monitor_use_case
+        logger.info("✅ Referencia al monitor tiempo real establecida")
 
     def send_startup_notification(self, service_name: str, features: List[str]) -> None:
         """Envía notificación de inicio del servicio."""
@@ -207,10 +221,31 @@ Resumen del ciclo de monitoreo completado.
                 logger.info(f"⏰ Tiempo transcurrido: {time_since_last}")
                 logger.info(f"⏰ Intervalo requerido: {self._summary_interval}")
                 
+                # 🔄 NUEVA LÓGICA: Permitir envío anticipado si hay trades acumulados
+                has_significant_activity = False
+                total_trades = 0
+                if self.realtime_monitor_use_case:
+                    total_trades = self.realtime_monitor_use_case.get_total_trades_count()
+                    has_significant_activity = total_trades > 0
+                    logger.info(f"📊 Trades acumulados: {total_trades}")
+                else:
+                    logger.debug("⚠️ Monitor tiempo real no disponible para verificar actividad")
+                
+                # Si hay actividad significativa, permitir envío después de 30 minutos
+                min_interval_for_activity = self._min_interval_for_activity
+                
                 if time_since_last < self._summary_interval:
-                    remaining_time = self._summary_interval - time_since_last
-                    logger.info(f"⏰ Resumen periódico no enviado: faltan {remaining_time}")
-                    return False
+                    if has_significant_activity and time_since_last >= min_interval_for_activity:
+                        logger.info(f"📱 Envío anticipado permitido: {total_trades} trades acumulados después de {time_since_last}")
+                        logger.info(f"📱 Intervalo mínimo para actividad: {min_interval_for_activity}")
+                    else:
+                        if has_significant_activity:
+                            remaining_time = min_interval_for_activity - time_since_last
+                            logger.info(f"⏰ Resumen con actividad no enviado: faltan {remaining_time} para envío anticipado")
+                        else:
+                            remaining_time = self._summary_interval - time_since_last
+                            logger.info(f"⏰ Resumen periódico no enviado: faltan {remaining_time}")
+                        return False
             else:
                 logger.info("⏰ Primer resumen - enviando inmediatamente")
             
@@ -374,6 +409,16 @@ Resumen del ciclo de monitoreo completado.
         """
         self._summary_interval = timedelta(hours=hours)
         logger.info(f"✅ Intervalo de resúmenes configurado: {hours} horas")
+
+    def set_min_activity_interval(self, minutes: int) -> None:
+        """
+        Configura el intervalo mínimo para envío anticipado cuando hay actividad.
+        
+        Args:
+            minutes: Número de minutos mínimos antes de permitir envío anticipado
+        """
+        self._min_interval_for_activity = timedelta(minutes=minutes)
+        logger.info(f"✅ Intervalo mínimo para actividad configurado: {minutes} minutos")
 
     def force_send_summary(self) -> bool:
         """
