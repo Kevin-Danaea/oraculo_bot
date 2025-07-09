@@ -2,7 +2,7 @@
 Caso de uso para manejar transiciones de estado de los bots de Grid Trading.
 Se encarga de detectar cambios de estado y ejecutar las acciones correspondientes.
 """
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 from decimal import Decimal
 
@@ -11,6 +11,7 @@ from app.domain.entities import GridConfig, GridOrder
 from app.config import MIN_ORDER_VALUE_USDT
 from shared.services.logging_config import get_logger
 from app.infrastructure.notification_service import TelegramGridNotificationService
+from .realtime_grid_monitor_use_case import RealTimeGridMonitorUseCase
 
 logger = get_logger(__name__)
 
@@ -30,12 +31,14 @@ class ManageGridTransitionsUseCase:
         grid_repository: GridRepository,
         exchange_service: ExchangeService,
         notification_service: NotificationService,
-        grid_calculator: GridCalculator
+        grid_calculator: GridCalculator,
+        realtime_monitor: Optional[RealTimeGridMonitorUseCase] = None
     ):
         self.grid_repository = grid_repository
         self.exchange_service = exchange_service
         self.notification_service = notification_service
         self.grid_calculator = grid_calculator
+        self.realtime_monitor = realtime_monitor
         logger.info("✅ ManageGridTransitionsUseCase inicializado.")
 
     def execute(self) -> Dict[str, Any]:
@@ -140,33 +143,29 @@ class ManageGridTransitionsUseCase:
         # Detectar tipo de transición
         transition_type = self._detect_transition_type(current_decision, previous_state)
         
-        # Consultar órdenes activas directamente en el exchange
-        exchange_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
-        if exchange_orders:
-            logger.info(f"🔎 [EXCHANGE] Se detectaron {len(exchange_orders)} órdenes activas en el exchange para {config.pair}. No se crearán nuevas órdenes iniciales.")
-            return {
-                'pair': config.pair,
-                'transition_detected': False,
-                'action': 'no_change',
-                'success': True,
-                'details': f'Órdenes activas detectadas en exchange: {len(exchange_orders)}'
-            }
-        
-        # Solo crear órdenes iniciales si:
-        # 1. El bot pasa de pausado a activo (transición 'activate')
-        # 2. El bot está activo pero no tiene órdenes en el exchange (tras reinicio)
-        if transition_type == 'no_change' and current_decision == "OPERAR_GRID":
-            logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en el exchange - creando órdenes iniciales")
-            transition_type = 'initialize_orders'
-        elif transition_type == 'no_change':
-            logger.debug(f"ℹ️ Sin cambios para {config.pair}")
-            return {
-                'pair': config.pair,
-                'transition_detected': False,
-                'action': 'no_change',
-                'success': True,
-                'details': 'Sin cambios en la decisión.'
-            }
+        # Si no hay cambio real, verificar si hay órdenes activas para inicialización
+        if transition_type == 'no_change':
+            # Consultar órdenes activas directamente en el exchange
+            exchange_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+            
+            # Solo crear órdenes iniciales si:
+            # 1. El bot está marcado como activo (is_running=True)
+            # 2. La decisión actual es OPERAR_GRID
+            # 3. No hay órdenes activas en el exchange
+            if (config.is_running and 
+                current_decision == "OPERAR_GRID" and 
+                not exchange_orders):
+                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en el exchange - creando órdenes iniciales")
+                transition_type = 'initialize_orders'
+            else:
+                logger.debug(f"ℹ️ Sin cambios para {config.pair}")
+                return {
+                    'pair': config.pair,
+                    'transition_detected': False,
+                    'action': 'no_change',
+                    'success': True,
+                    'details': 'Sin cambios en la decisión.'
+                }
         
         try:
             if transition_type == 'activate':
@@ -198,22 +197,24 @@ class ManageGridTransitionsUseCase:
                     'success': result['success'],
                     'details': result
                 }
+            else:
+                return {
+                    'pair': config.pair,
+                    'transition_detected': False,
+                    'action': 'no_change',
+                    'success': True,
+                    'details': 'Sin cambios en la decisión.'
+                }
+                
         except Exception as e:
-            logger.error(f"❌ Error en transición {transition_type} para {config.pair}: {e}")
+            logger.error(f"❌ Error procesando transición para {config.pair}: {e}")
             return {
                 'pair': config.pair,
-                'transition_detected': True,
-                'action': transition_type,
+                'transition_detected': False,
+                'action': 'error',
                 'success': False,
                 'error': str(e)
             }
-        
-        return {
-            'pair': config.pair,
-            'transition_detected': False,
-            'action': 'unknown',
-            'success': False
-        }
 
     def _detect_transition_type(self, current_decision: str, previous_state: str) -> str:
         """
@@ -225,6 +226,10 @@ class ManageGridTransitionsUseCase:
         # Normalizar estados para comparación
         is_currently_active = current_decision == "OPERAR_GRID"
         was_previously_active = previous_state == "OPERAR_GRID"
+        
+        # Si no hay cambio real en la decisión, no hay transición
+        if current_decision == previous_state:
+            return 'no_change'
         
         if not was_previously_active and is_currently_active:
             return 'activate'  # pausado → activo
@@ -266,7 +271,7 @@ class ManageGridTransitionsUseCase:
             logger.info(f"💰 Precio actual {config.pair}: ${current_price}")
             
             # 3. Verificar si ya hay órdenes activas
-            existing_orders = self.grid_repository.get_active_orders(config.pair)
+            existing_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             
             if not existing_orders:
                 # 4. Crear grilla inicial si no hay órdenes
@@ -285,7 +290,7 @@ class ManageGridTransitionsUseCase:
             self.notification_service.send_bot_status_notification(config.pair, "ACTIVADO", "Decisión del Cerebro")
             
             # 6. Enviar notificación detallada con resumen de activación
-            if initial_orders:
+            if 'initial_orders' in locals() and initial_orders:
                 buy_orders = len([o for o in initial_orders if o.side == 'buy'])
                 sell_orders = len([o for o in initial_orders if o.side == 'sell'])
                 
@@ -332,7 +337,7 @@ class ManageGridTransitionsUseCase:
 
     def _handle_pause(self, config: GridConfig, decision: str) -> Dict[str, Any]:
         """
-        Maneja la pausa de un bot (PRESERVA estado actual para reanudar después).
+        Maneja la pausa de un bot (CANCELA órdenes y preserva activos).
         
         Args:
             config: Configuración del bot
@@ -341,32 +346,37 @@ class ManageGridTransitionsUseCase:
         Returns:
             Dict con el resultado de la pausa
         """
-        logger.info(f"⏸️ PAUSANDO bot para {config.pair} (preservando estado)")
+        logger.info(f"⏸️ PAUSANDO bot para {config.pair} (cancelando órdenes)")
         
         try:
             actions = []
             
             # 1. Obtener órdenes activas y balance actual
-            active_orders = self.grid_repository.get_active_orders(config.pair)
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             bot_balance = self.exchange_service.get_bot_allocated_balance(config)
             
-            # 2. NO cancelar órdenes - solo pausar el bot
-            # Las órdenes se mantienen activas para preservar el estado
-            actions.append(f"Manteniendo {len(active_orders)} órdenes activas")
+            # 2. CANCELAR todas las órdenes activas
+            cancelled_orders = 0
+            if active_orders:
+                logger.info(f"🚫 Cancelando {len(active_orders)} órdenes activas para {config.pair}")
+                cancelled_orders = self.exchange_service.cancel_all_orders_for_pair(config.pair)
+                actions.append(f"Canceladas {cancelled_orders} órdenes activas")
+            else:
+                actions.append("No había órdenes activas para cancelar")
             
-            # 3. Actualizar estado en BD (solo marcar como no running)
+            # 3. Actualizar estado en BD (marcar como no running y PAUSAR_GRID)
             if config.id is not None:
                 self.grid_repository.update_config_status(
                     config.id, 
                     is_running=False, 
                     last_decision=decision
                 )
-                actions.append("Estado actualizado a pausado (órdenes preservadas)")
+                actions.append("Estado actualizado a pausado")
             else:
                 logger.error(f"❌ Config ID es None para {config.pair}")
                 return {'success': False, 'error': 'Config ID es None'}
             
-            # 4. Calcular estado preservado
+            # 4. Calcular estado preservado (solo activos, no órdenes)
             base_currency = config.pair.split('/')[0]
             assets_in_usdt = bot_balance['base_value_usdt']
             usdt_balance = bot_balance['quote_value_usdt']
@@ -379,21 +389,26 @@ class ManageGridTransitionsUseCase:
                 f"  🪙 {base_currency}: ${assets_in_usdt:.2f} USDT\n"
                 f"  💵 USDT: ${usdt_balance:.2f}\n"
                 f"  💎 Total: ${total_value:.2f}\n"
-                f"📋 <b>Órdenes activas:</b> {len(active_orders)}\n"
+                f"🚫 <b>Órdenes canceladas:</b> {cancelled_orders}\n"
                 f"📊 <b>Capital asignado:</b> ${config.total_capital:.2f}\n\n"
-                f"ℹ️ <b>Nota:</b> Las órdenes se mantienen activas para preservar el estado.\n"
-                f"🔄 <b>Reanudación:</b> El bot continuará con el estado actual cuando se active."
+                f"ℹ️ <b>Nota:</b> Las órdenes fueron canceladas pero los activos se preservan.\n"
+                f"🔄 <b>Reanudación:</b> Al activar, se crearán nuevas órdenes con los activos disponibles."
             )
             
             # Enviar notificación detallada
             self.notification_service.send_bot_status_notification(config.pair, "PAUSADO", "Decisión del Cerebro")
             
-            logger.info(f"✅ Bot {config.pair} pausado exitosamente (estado preservado)")
+            # 6. Resetear estado de inicialización para el bot pausado
+            if self.realtime_monitor:
+                self.realtime_monitor.reset_initialization_status_for_paused_bot(config.pair)
+                logger.info(f"🔄 Estado de inicialización reseteado para bot pausado {config.pair}")
+            
+            logger.info(f"✅ Bot {config.pair} pausado exitosamente (órdenes canceladas)")
             
             return {
                 'success': True,
                 'actions': actions,
-                'orders_preserved': len(active_orders),
+                'orders_cancelled': cancelled_orders,
                 'assets_preserved': float(assets_in_usdt),
                 'usdt_preserved': float(usdt_balance),
                 'total_preserved': float(total_value)
@@ -520,6 +535,11 @@ class ManageGridTransitionsUseCase:
         logger.info(f"🏗️ Creando grilla inicial para {config.pair} a precio ${current_price}")
         
         try:
+            # 1) VERIFICAR Y LIMPIAR ÓRDENES EXISTENTES
+            cancelled_existing = self._verify_and_cleanup_orders_before_initialization(config)
+            if cancelled_existing > 0:
+                logger.info(f"🧹 Bot {config.pair}: {cancelled_existing} órdenes existentes canceladas antes de crear grilla inicial")
+            
             initial_orders = []
             pair = config.pair
             configured_capital = Decimal(config.total_capital)
@@ -656,6 +676,11 @@ class ManageGridTransitionsUseCase:
 
             for idx, (buy_price, sell_price) in enumerate(zip(lower_levels, upper_levels)):
                 try:
+                    # 🔒 CONTROL DE LÍMITE: Verificar que no excedemos grid_levels
+                    if len(initial_orders) >= config.grid_levels:
+                        logger.warning(f"🚦 Bot {pair}: Límite de órdenes alcanzado ({len(initial_orders)}/{config.grid_levels}). Deteniendo creación de órdenes.")
+                        break
+                    
                     logger.info(f"🔧 Bot {pair}: Procesando nivel {idx+1}/{len(lower_levels)} - Compra: ${buy_price:.4f}, Venta: ${sell_price:.4f}")
                     
                     # Verificar que no excedemos el capital asignado al bot
@@ -762,3 +787,56 @@ class ManageGridTransitionsUseCase:
         except Exception as e:
             logger.error(f"❌ Error creando grilla inicial para bot {config.pair}: {e}")
             return [] 
+
+    def _verify_and_cleanup_orders_before_initialization(self, config: GridConfig) -> int:
+        """
+        Verifica y limpia órdenes existentes antes de crear la grilla inicial.
+        
+        Args:
+            config: Configuración del bot
+            
+        Returns:
+            int: Número de órdenes canceladas
+        """
+        try:
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+            if not active_orders:
+                return 0
+            
+            logger.info(f"🧹 Bot {config.pair}: Limpiando {len(active_orders)} órdenes existentes antes de inicialización")
+            
+            # Cancelar todas las órdenes existentes
+            cancelled_count = self.exchange_service.cancel_all_orders_for_pair(config.pair)
+            
+            if cancelled_count > 0:
+                logger.info(f"✅ Bot {config.pair}: {cancelled_count} órdenes canceladas antes de inicialización")
+            
+            return cancelled_count
+            
+        except Exception as e:
+            logger.error(f"❌ Error limpiando órdenes antes de inicialización para {config.pair}: {e}")
+            return 0
+
+# Ejemplo de uso del flujo corregido:
+"""
+# Ejemplo de uso del flujo de pausa corregido:
+
+# 1. El cerebro detecta cambios y envía decisión PAUSAR_GRID
+# 2. El caso de uso detecta la transición: OPERAR_GRID → PAUSAR_GRID
+# 3. Se ejecuta _handle_pause que:
+#    - Cancela todas las órdenes activas del exchange
+#    - Actualiza is_running=False en la BD
+#    - Actualiza last_decision=PAUSAR_GRID en la BD
+#    - Resetea el estado de inicialización
+#    - Envía notificación de pausa
+# 4. El bot queda completamente pausado (no genera órdenes complementarias)
+# 5. Al reactivar, se ejecuta _handle_activation que:
+#    - Actualiza is_running=True en la BD
+#    - Crea nuevas órdenes con los activos disponibles
+#    - Envía notificación de activación
+
+# Flujo de notificaciones:
+# - Solo se notifica cuando hay cambio real de estado
+# - No se repiten notificaciones para el mismo estado
+# - Se incluye información detallada de órdenes canceladas y activos preservados
+""" 

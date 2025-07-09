@@ -276,8 +276,7 @@ class TradingStatsUseCase:
 
     def _calculate_bot_pnl(self, config: GridConfig, active_orders: List[Dict[str, Any]], current_price: Decimal) -> Decimal:
         """
-        Calcula el P&L de un bot (simplificado).
-        En producción, esto se calcularía con trades reales y posiciones.
+        Calcula el P&L real de un bot basado en balances actuales y capital inicial.
         
         Args:
             config: Configuración del bot
@@ -288,26 +287,32 @@ class TradingStatsUseCase:
             P&L calculado
         """
         try:
-            # Por ahora, calculamos un P&L simulado basado en órdenes de compra ejecutadas
-            filled_buy_orders = [o for o in active_orders if o.get('side') == 'buy' and o.get('status') == 'filled']
+            # Obtener balance actual del bot
+            bot_balance = self.exchange_service.get_bot_allocated_balance(config)
+            current_total_value = bot_balance.get('total_value_usdt', Decimal('0'))
+            allocated_capital = bot_balance.get('allocated_capital', Decimal('0'))
             
-            if not filled_buy_orders:
-                return Decimal('0')
+            # Obtener balances reales del exchange
+            real_balances = self.exchange_service.get_real_balances_from_exchange(config.pair)
+            base_balance = real_balances.get('base_balance', Decimal('0'))
+            quote_balance = real_balances.get('quote_balance', Decimal('0'))
             
-            # Calcular valor promedio de compra
-            total_buy_value = sum(Decimal(str(order['price'])) * Decimal(str(order['amount'])) for order in filled_buy_orders)
-            total_buy_amount = sum(Decimal(str(order['amount'])) for order in filled_buy_orders)
+            # Calcular valor actual de los activos
+            base_value_usdt = base_balance * current_price
+            total_current_value = base_value_usdt + quote_balance
             
-            if total_buy_amount == 0:
-                return Decimal('0')
+            # Calcular P&L real: Valor actual - Capital inicial asignado
+            pnl = total_current_value - allocated_capital
             
-            avg_buy_price = total_buy_value / total_buy_amount
-            
-            # Calcular P&L basado en precio actual
-            current_value = total_buy_amount * current_price
-            pnl = current_value - total_buy_value
+            logger.debug(f"📊 P&L cálculo para {config.pair}:")
+            logger.debug(f"   Capital asignado: ${allocated_capital:.2f}")
+            logger.debug(f"   Balance base: {base_balance} (${base_value_usdt:.2f})")
+            logger.debug(f"   Balance quote: ${quote_balance:.2f}")
+            logger.debug(f"   Valor total actual: ${total_current_value:.2f}")
+            logger.debug(f"   P&L: ${pnl:.2f}")
             
             return pnl
+            
         except Exception as e:
             logger.error(f"❌ Error calculando P&L para {config.pair}: {e}")
             return Decimal('0')
@@ -393,3 +398,26 @@ class TradingStatsUseCase:
         except Exception as e:
             logger.error(f"❌ Error obteniendo estado de bots: {e}")
             return [] 
+
+# Ejemplo de uso del cálculo de P&L mejorado:
+"""
+# Ejemplo de uso del cálculo de P&L real:
+
+# 1. El método _calculate_bot_pnl ahora calcula P&L real:
+#    - Obtiene balance actual del bot (base + quote)
+#    - Calcula valor total actual en USDT
+#    - Resta el capital inicial asignado
+#    - Resultado: P&L real basado en balances actuales
+
+# 2. Ejemplo de cálculo:
+#    - Capital asignado: $300.00 USDT
+#    - Balance actual: 0.1 ETH ($275.00) + $25.00 USDT = $300.00
+#    - P&L = $300.00 - $300.00 = $0.00 (break-even)
+#    - Si ETH sube a $2800: P&L = $280.00 + $25.00 - $300.00 = $5.00 (ganancia)
+
+# 3. Ventajas del nuevo cálculo:
+#    - Basado en balances reales del exchange
+#    - Considera comisiones y slippage
+#    - Refleja ganancias/pérdidas reales
+#    - No depende de órdenes activas
+""" 

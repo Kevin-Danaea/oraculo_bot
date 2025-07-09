@@ -247,19 +247,24 @@ class RealTimeGridMonitorUseCase:
         pair = config.pair
         fills_detected = []
         
-        # 1. Obtener órdenes activas actuales del exchange
+        # 1. Verificar y limpiar órdenes excedentes antes de continuar
+        excess_orders_cancelled = self._cleanup_excess_orders(config)
+        if excess_orders_cancelled > 0:
+            logger.warning(f"🚦 Bot {pair}: {excess_orders_cancelled} órdenes excedentes canceladas antes del monitoreo")
+        
+        # 2. Obtener órdenes activas actuales del exchange
         current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
         logger.debug(f"[EXCHANGE] {pair}: {len(current_active_orders)} órdenes activas")
         
-        # 2. Detectar fills usando múltiples métodos
+        # 3. Detectar fills usando múltiples métodos
         fills_detected.extend(self._detect_fills_method_1(pair, current_active_orders))
         fills_detected.extend(self._detect_fills_method_2(pair))
         fills_detected.extend(self._detect_fills_method_3(pair))
         
-        # 3. Actualizar tracking de órdenes para el próximo ciclo
+        # 4. Actualizar tracking de órdenes para el próximo ciclo
         self._previous_active_orders[pair] = current_active_orders
         
-        # 4. Procesar fills detectados
+        # 5. Procesar fills detectados
         new_orders_created = 0
         trades_completed = 0
         
@@ -290,7 +295,8 @@ class RealTimeGridMonitorUseCase:
         return {
             'fills_detected': len(fills_detected),
             'new_orders_created': new_orders_created,
-            'trades_completed': trades_completed
+            'trades_completed': trades_completed,
+            'excess_orders_cancelled': excess_orders_cancelled
         }
 
     def _detect_fills_method_1(self, pair: str, current_orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -429,6 +435,15 @@ class RealTimeGridMonitorUseCase:
                         'first_initialization_completed': True
                     }
                     logger.info(f"🎉 Bot {config.pair} completó primera inicialización, ahora puede crear órdenes complementarias")
+            
+            # Verificar límite de órdenes activas ANTES de crear la orden complementaria
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+            total_active_orders = len(active_orders)
+            max_allowed_orders = config.grid_levels
+            
+            if total_active_orders >= max_allowed_orders:
+                logger.warning(f"🚦 Bot {config.pair}: Límite de órdenes alcanzado ({total_active_orders}/{max_allowed_orders}). No se crea nueva orden complementaria.")
+                return None
             
             # Extraer información de la orden completada
             side = filled_order['side']
@@ -710,7 +725,6 @@ class RealTimeGridMonitorUseCase:
     def reset_initialization_status(self, pair: Optional[str] = None):
         """
         Resetea el estado de inicialización para un bot específico o todos los bots.
-        Útil después de limpieza o reinicio.
         
         Args:
             pair: Par específico a resetear, o None para resetear todos
@@ -722,6 +736,20 @@ class RealTimeGridMonitorUseCase:
         else:
             self._bot_initialization_status.clear()
             logger.info("🔄 Estado de inicialización reseteado para todos los bots")
+
+    def reset_initialization_status_for_paused_bot(self, pair: str):
+        """
+        Resetea el estado de inicialización específicamente para un bot pausado.
+        Esto asegura que cuando se reactive, pase por el proceso de inicialización completo.
+        
+        Args:
+            pair: Par del bot pausado
+        """
+        if pair in self._bot_initialization_status:
+            del self._bot_initialization_status[pair]
+            logger.info(f"🔄 Estado de inicialización reseteado para bot pausado {pair}")
+        else:
+            logger.debug(f"ℹ️ No había estado de inicialización para resetear en {pair}")
 
     def get_initialization_status(self) -> Dict[str, Any]:
         """
@@ -890,3 +918,66 @@ class RealTimeGridMonitorUseCase:
         self.grid_repository.save_grid_steps(config.pair, list(steps_by_level.values()))
 
         return new_orders_created, trades_completed 
+
+    def _cleanup_excess_orders(self, config: GridConfig) -> int:
+        """
+        Limpia órdenes excedentes cuando se supera el límite de grid_levels.
+        
+        Args:
+            config: Configuración del bot
+            
+        Returns:
+            int: Número de órdenes canceladas
+        """
+        try:
+            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
+            total_active_orders = len(active_orders)
+            max_allowed_orders = config.grid_levels
+            
+            if total_active_orders <= max_allowed_orders:
+                return 0
+            
+            excess_orders = total_active_orders - max_allowed_orders
+            logger.warning(f"🚦 Bot {config.pair}: Detectadas {excess_orders} órdenes excedentes ({total_active_orders}/{max_allowed_orders})")
+            
+            # Ordenar órdenes por precio para cancelar las más alejadas del precio actual
+            current_price = self.exchange_service.get_current_price(config.pair)
+            
+            # Separar órdenes de compra y venta
+            buy_orders = [o for o in active_orders if o.get('side') == 'buy']
+            sell_orders = [o for o in active_orders if o.get('side') == 'sell']
+            
+            orders_to_cancel = []
+            
+            # Cancelar órdenes de compra más alejadas del precio actual
+            if buy_orders:
+                buy_orders.sort(key=lambda x: abs(Decimal(str(x.get('price', 0))) - current_price), reverse=True)
+                orders_to_cancel.extend(buy_orders[:excess_orders])
+            
+            # Si aún hay exceso, cancelar órdenes de venta más alejadas
+            if len(orders_to_cancel) < excess_orders and sell_orders:
+                remaining_excess = excess_orders - len(orders_to_cancel)
+                sell_orders.sort(key=lambda x: abs(Decimal(str(x.get('price', 0))) - current_price), reverse=True)
+                orders_to_cancel.extend(sell_orders[:remaining_excess])
+            
+            # Cancelar las órdenes seleccionadas
+            cancelled_count = 0
+            for order in orders_to_cancel:
+                try:
+                    order_id = order.get('exchange_order_id')
+                    if order_id:
+                        self.exchange_service.cancel_order(config.pair, order_id)
+                        cancelled_count += 1
+                        logger.info(f"🚫 Orden excedente cancelada: {order.get('side')} {order.get('amount')} a ${order.get('price')}")
+                except Exception as e:
+                    logger.error(f"❌ Error cancelando orden excedente: {e}")
+                    continue
+            
+            if cancelled_count > 0:
+                logger.info(f"✅ Bot {config.pair}: {cancelled_count} órdenes excedentes canceladas")
+            
+            return cancelled_count
+            
+        except Exception as e:
+            logger.error(f"❌ Error limpiando órdenes excedentes para {config.pair}: {e}")
+            return 0 

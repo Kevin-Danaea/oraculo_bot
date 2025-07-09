@@ -266,6 +266,41 @@ class BinanceExchangeService(ExchangeService):
             logger.error(f"❌ Error cancelando todas las órdenes: {e}")
             return 0
 
+    def cancel_all_orders_for_pair(self, pair: str) -> int:
+        """
+        Cancela todas las órdenes abiertas para un par específico.
+        
+        Args:
+            pair: Par de trading (ej: 'ETH/USDT')
+            
+        Returns:
+            int: Número de órdenes canceladas
+        """
+        try:
+            if not self.exchange:
+                raise Exception("Exchange no inicializado")
+            
+            open_orders = self.exchange.fetch_open_orders()
+            count = 0
+            
+            for order in open_orders:
+                order_symbol = str(order['symbol'])
+                if order_symbol == pair:
+                    try:
+                        order_id = str(order['id'])
+                        self.exchange.cancel_order(order_id, pair)
+                        count += 1
+                        logger.debug(f"✅ Orden cancelada: {order_id} en {pair}")
+                    except Exception as order_error:
+                        logger.warning(f"⚠️ Error cancelando orden {order.get('id', 'unknown')} en {pair}: {order_error}")
+                        continue
+                    
+            logger.info(f"✅ Canceladas {count} órdenes abiertas para {pair}")
+            return count
+        except Exception as e:
+            logger.error(f"❌ Error cancelando órdenes para {pair}: {e}")
+            return 0
+
     def sell_all_positions(self) -> Dict[str, Decimal]:
         """Vende todas las posiciones abiertas en el exchange. Retorna un dict con montos vendidos por moneda."""
         sold = {}
