@@ -77,7 +77,27 @@ class GridRepository(ABC):
 
     @abstractmethod
     def save_grid_steps(self, pair: str, steps) -> None:
-        """Guarda o actualiza la lista de GridStep para el par."""
+        """Guarda la lista de GridStep para el par."""
+        pass
+
+    @abstractmethod
+    def save_trade(self, trade: GridTrade) -> GridTrade:
+        """Guarda un trade completado."""
+        pass
+
+    @abstractmethod
+    def get_trades_by_pair(self, pair: str, limit: int = 100) -> List[GridTrade]:
+        """Obtiene los trades completados para un par específico."""
+        pass
+
+    @abstractmethod
+    def get_total_profit_by_pair(self, pair: str) -> Decimal:
+        """Calcula el P&L total basado en trades reales para un par."""
+        pass
+
+    @abstractmethod
+    def get_trades_summary_by_pair(self, pair: str) -> Dict[str, Any]:
+        """Obtiene un resumen de trades para un par específico."""
         pass
 
 class ExchangeService(ABC):

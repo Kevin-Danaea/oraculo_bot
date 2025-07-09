@@ -3,10 +3,12 @@ Bot de Telegram simplificado para comandos básicos del Grid Trading.
 """
 from typing import Optional
 import threading
+import re
 
 from shared.services.telegram_trading import TelegramTradingService
 from shared.services.logging_config import get_logger
 from app.application.mode_switch_use_case import ModeSwitchUseCase
+from telegram.ext import CommandHandler, MessageHandler, filters
 
 logger = get_logger(__name__)
 
@@ -72,7 +74,6 @@ class GridTelegramBot:
                 return
             
             # Importar CommandHandler aquí para evitar problemas de importación
-            from telegram.ext import CommandHandler
             
             # Comandos básicos - usar wrappers simples
             self.telegram_service._application.add_handler(
@@ -110,6 +111,16 @@ class GridTelegramBot:
             # Comando para forzar resumen
             self.telegram_service._application.add_handler(
                 CommandHandler("summary", self._handle_summary_command)
+            )
+            
+            # Comandos de trading
+            self.telegram_service._application.add_handler(
+                CommandHandler("trades", self._handle_trades_command)
+            )
+            
+            # Capturar comandos /trades con parámetros
+            self.telegram_service._application.add_handler(
+                MessageHandler(filters.Regex(r'^/trades\s+(\S+)$'), self._handle_trades_pair_command)
             )
             
             logger.info("✅ Comandos de Telegram registrados correctamente")
@@ -339,7 +350,7 @@ class GridTelegramBot:
             result = self.mode_switch_use_case.switch_to_sandbox()
             
             if result.get('exchange_cancelled_orders', 0) > 0 or result.get('db_cancelled_orders', 0) > 0:
-                message = f"🧪 <b>Cambiado a modo SANDBOX</b>\n\n"
+                message = f"🚫 <b>Cambiado a modo SANDBOX</b>\n\n"
                 message += f"🚫 Órdenes canceladas en exchange: {result.get('exchange_cancelled_orders', 0)}\n"
                 message += f"🗄️ Órdenes canceladas en BD: {result.get('db_cancelled_orders', 0)}\n"
                 if result.get('sold_positions'):
@@ -466,3 +477,91 @@ class GridTelegramBot:
                 
         except Exception as e:
             return f"❌ Error forzando resumen: {str(e)}" 
+
+    async def _handle_trades_command(self, update, context):
+        """Maneja el comando /trades para mostrar trades de todos los bots activos."""
+        try:
+            # Obtener configuraciones activas
+            active_configs = self.scheduler.grid_repository.get_active_configs()
+            
+            if not active_configs:
+                self.telegram_service.send_message(
+                    update.effective_chat.id, 
+                    "❌ No hay bots activos para mostrar trades."
+                )
+                return
+            
+            message = "📊 <b>RESUMEN DE TRADES - TODOS LOS BOTS</b>\n\n"
+            
+            for config in active_configs:
+                if config.is_running:
+                    # Obtener resumen de trades para este par
+                    trades_summary = self.scheduler.grid_repository.get_trades_summary_by_pair(config.pair)
+                    
+                    if trades_summary['total_trades'] > 0:
+                        profit_emoji = "🟢" if trades_summary['total_profit'] > 0 else "🔴"
+                        message += f"💱 <b>{config.pair}</b>\n"
+                        message += f"   {profit_emoji} P&L: ${trades_summary['total_profit']:.4f} ({trades_summary['total_profit_percent']:.2f}%)\n"
+                        message += f"   🎯 Trades: {trades_summary['total_trades']} (Win rate: {trades_summary['win_rate']:.1f}%)\n"
+                        message += f"   📈 Ganadores: {trades_summary['winning_trades']} | 📉 Perdedores: {trades_summary['losing_trades']}\n\n"
+                    else:
+                        message += f"💱 <b>{config.pair}</b>\n"
+                        message += f"   ⏳ Sin trades completados aún\n\n"
+            
+            message += "💡 Usa /trades [PAR] para ver detalles específicos (ej: /trades ETH/USDT)"
+            
+            self.telegram_service.send_message(update.effective_chat.id, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error en comando /trades: {e}")
+            self.telegram_service.send_message(
+                update.effective_chat.id, 
+                f"❌ Error obteniendo resumen de trades: {str(e)}"
+            )
+
+    async def _handle_trades_pair_command(self, update, context):
+        """Maneja el comando /trades [PAR] para mostrar trades de un par específico."""
+        try:
+            # Extraer el par del mensaje usando regex
+            message_text = update.message.text
+            match = re.match(r'^/trades\s+(\S+)$', message_text)
+            if not match:
+                self.telegram_service.send_message(
+                    update.effective_chat.id, 
+                    "❌ Formato incorrecto. Usa: /trades ETH/USDT"
+                )
+                return
+            
+            pair = match.group(1).upper()
+            
+            # Verificar que el par existe
+            config = self.scheduler.grid_repository.get_config_by_pair(pair)
+            if not config:
+                self.telegram_service.send_message(
+                    update.effective_chat.id, 
+                    f"❌ No se encontró configuración para {pair}"
+                )
+                return
+            
+            # Obtener resumen detallado de trades
+            if hasattr(self.scheduler, 'trading_stats_use_case'):
+                trades_summary = self.scheduler.trading_stats_use_case.format_trades_summary(config.pair)
+            else:
+                # Fallback: usar repositorio directamente
+                trades_summary = self.scheduler.grid_repository.get_trades_summary_by_pair(config.pair)
+                if trades_summary['total_trades'] == 0:
+                    trades_summary = f"📊 <b>{config.pair} - RESUMEN DE TRADES</b>\n\n🔄 No hay trades completados aún."
+                else:
+                    trades_summary = f"📊 <b>{config.pair} - RESUMEN DE TRADES</b>\n\n" \
+                                   f"🎯 Total de trades: {trades_summary['total_trades']}\n" \
+                                   f"💰 P&L total: ${trades_summary['total_profit']:.4f}\n" \
+                                   f"🏆 Win rate: {trades_summary['win_rate']:.1f}%"
+            
+            self.telegram_service.send_message(update.effective_chat.id, trades_summary)
+            
+        except Exception as e:
+            logger.error(f"❌ Error en comando /trades {pair}: {e}")
+            self.telegram_service.send_message(
+                update.effective_chat.id, 
+                f"❌ Error obteniendo trades para {pair}: {str(e)}"
+            ) 

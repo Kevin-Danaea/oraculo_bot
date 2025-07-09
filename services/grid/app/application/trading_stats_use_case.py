@@ -166,8 +166,7 @@ class TradingStatsUseCase:
 
     def _get_bot_stats(self, config: GridConfig) -> Dict[str, Any]:
         """
-        Obtiene estadísticas detalladas para un bot específico.
-        MEJORADO: Usa datos reales del exchange en lugar de la base de datos local.
+        Obtiene estadísticas detalladas de un bot específico.
         
         Args:
             config: Configuración del bot
@@ -178,17 +177,15 @@ class TradingStatsUseCase:
         try:
             pair = config.pair
             
-            # Obtener órdenes activas directamente del exchange
-            exchange_orders = self.exchange_service.get_active_orders_from_exchange(pair)
-            
-            # Contar órdenes por tipo (solo órdenes abiertas del exchange)
-            buy_orders = len([o for o in exchange_orders if o['side'] == 'buy'])
-            sell_orders = len([o for o in exchange_orders if o['side'] == 'sell'])
-            
             # Obtener precio actual
             current_price = self.exchange_service.get_current_price(pair)
             
-            # Obtener balances reales directamente del exchange
+            # Obtener órdenes activas del exchange
+            exchange_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+            buy_orders = len([o for o in exchange_orders if o.get('side') == 'buy'])
+            sell_orders = len([o for o in exchange_orders if o.get('side') == 'sell'])
+            
+            # Obtener balances reales
             real_balances = self.exchange_service.get_real_balances_from_exchange(pair)
             base_balance = real_balances.get('base_balance', Decimal('0'))
             quote_balance = real_balances.get('quote_balance', Decimal('0'))
@@ -207,12 +204,12 @@ class TradingStatsUseCase:
             bot_balance = self.exchange_service.get_bot_allocated_balance(config)
             allocated_capital = bot_balance.get('allocated_capital', Decimal('0'))
             
-            # Calcular P&L (simplificado - en producción se calcularía con trades reales)
-            # Usar órdenes de la base de datos para el cálculo de P&L
-            # active_orders = self.grid_repository.get_active_orders(pair)
-            active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
-            pnl = self._calculate_bot_pnl(config, active_orders, current_price)
+            # Calcular P&L basado en trades reales
+            pnl = self._calculate_bot_pnl(config, exchange_orders, current_price)
             pnl_percent = (pnl / allocated_capital * 100) if allocated_capital > 0 else 0
+            
+            # Obtener resumen de trades
+            trades_summary = self.grid_repository.get_trades_summary_by_pair(pair)
             
             # 📊 Contar trades reales acumulados del monitor tiempo real
             trades_count = 0
@@ -221,13 +218,8 @@ class TradingStatsUseCase:
                 trades_count = self.realtime_monitor_use_case.get_trades_count_by_pair(pair)
                 logger.debug(f"📊 {pair}: {trades_count} trades acumulados del monitor tiempo real")
             else:
-                # Fallback: contar trades desde la base de datos (si existe)
-                try:
-                    # Aquí podrías implementar conteo desde la base de datos si tienes una tabla de trades
-                    trades_count = 0
-                except Exception as e:
-                    logger.warning(f"⚠️ No se pudo obtener trades desde BD para {pair}: {e}")
-                    trades_count = 0
+                # Fallback: usar trades del repositorio
+                trades_count = trades_summary.get('total_trades', 0)
             
             stats = {
                 'pair': pair,
@@ -248,7 +240,9 @@ class TradingStatsUseCase:
                 'is_active': config.is_running,
                 'last_decision': config.last_decision,
                 'base_balance': float(base_balance),
-                'quote_balance': float(quote_balance)
+                'quote_balance': float(quote_balance),
+                # NUEVO: Información detallada de trades
+                'trades_summary': trades_summary
             }
             
             return stats
@@ -271,12 +265,13 @@ class TradingStatsUseCase:
                 'is_active': False,
                 'base_balance': 0.0,
                 'quote_balance': 0.0,
+                'trades_summary': {},
                 'error': str(e)
             }
 
     def _calculate_bot_pnl(self, config: GridConfig, active_orders: List[Dict[str, Any]], current_price: Decimal) -> Decimal:
         """
-        Calcula el P&L real de un bot basado en balances actuales y capital inicial.
+        Calcula el P&L real de un bot basado en trades reales ejecutados.
         
         Args:
             config: Configuración del bot
@@ -284,34 +279,16 @@ class TradingStatsUseCase:
             current_price: Precio actual
             
         Returns:
-            P&L calculado
+            P&L calculado basado en trades reales
         """
         try:
-            # Obtener balance actual del bot
-            bot_balance = self.exchange_service.get_bot_allocated_balance(config)
-            current_total_value = bot_balance.get('total_value_usdt', Decimal('0'))
-            allocated_capital = bot_balance.get('allocated_capital', Decimal('0'))
-            
-            # Obtener balances reales del exchange
-            real_balances = self.exchange_service.get_real_balances_from_exchange(config.pair)
-            base_balance = real_balances.get('base_balance', Decimal('0'))
-            quote_balance = real_balances.get('quote_balance', Decimal('0'))
-            
-            # Calcular valor actual de los activos
-            base_value_usdt = base_balance * current_price
-            total_current_value = base_value_usdt + quote_balance
-            
-            # Calcular P&L real: Valor actual - Capital inicial asignado
-            pnl = total_current_value - allocated_capital
+            # Obtener P&L total basado en trades reales
+            total_profit = self.grid_repository.get_total_profit_by_pair(config.pair)
             
             logger.debug(f"📊 P&L cálculo para {config.pair}:")
-            logger.debug(f"   Capital asignado: ${allocated_capital:.2f}")
-            logger.debug(f"   Balance base: {base_balance} (${base_value_usdt:.2f})")
-            logger.debug(f"   Balance quote: ${quote_balance:.2f}")
-            logger.debug(f"   Valor total actual: ${total_current_value:.2f}")
-            logger.debug(f"   P&L: ${pnl:.2f}")
+            logger.debug(f"   P&L basado en trades reales: ${total_profit:.4f}")
             
-            return pnl
+            return total_profit
             
         except Exception as e:
             logger.error(f"❌ Error calculando P&L para {config.pair}: {e}")
@@ -399,25 +376,115 @@ class TradingStatsUseCase:
             logger.error(f"❌ Error obteniendo estado de bots: {e}")
             return [] 
 
+    def format_trades_summary(self, pair: str) -> str:
+        """
+        Formatea un resumen detallado de trades para un par específico.
+        
+        Args:
+            pair: Par de trading
+            
+        Returns:
+            String formateado con resumen de trades
+        """
+        try:
+            trades_summary = self.grid_repository.get_trades_summary_by_pair(pair)
+            
+            if trades_summary['total_trades'] == 0:
+                return f"📊 <b>{pair} - RESUMEN DE TRADES</b>\n\n" \
+                       f"🔄 No hay trades completados aún.\n" \
+                       f"⏳ Esperando ejecución de órdenes de compra y venta..."
+            
+            # Obtener trades recientes
+            recent_trades = self.grid_repository.get_trades_by_pair(pair, limit=5)
+            
+            summary = f"📊 <b>{pair} - RESUMEN DE TRADES</b>\n\n"
+            
+            # Estadísticas generales
+            summary += f"🎯 <b>Total de trades:</b> {trades_summary['total_trades']}\n"
+            summary += f"💰 <b>P&L total:</b> ${trades_summary['total_profit']:.4f} ({trades_summary['total_profit_percent']:.2f}%)\n"
+            summary += f"📈 <b>Trades ganadores:</b> {trades_summary['winning_trades']}\n"
+            summary += f"📉 <b>Trades perdedores:</b> {trades_summary['losing_trades']}\n"
+            summary += f"🏆 <b>Win rate:</b> {trades_summary['win_rate']:.1f}%\n"
+            summary += f"📊 <b>Promedio por trade:</b> ${trades_summary['avg_profit_per_trade']:.4f}\n\n"
+            
+            # Mejor y peor trade
+            summary += f"🥇 <b>Mejor trade:</b> ${trades_summary['best_trade']:.4f}\n"
+            summary += f"🥉 <b>Peor trade:</b> ${trades_summary['worst_trade']:.4f}\n\n"
+            
+            # Trades recientes
+            if recent_trades:
+                summary += f"🕒 <b>TRADES RECIENTES:</b>\n"
+                for i, trade in enumerate(recent_trades[:3], 1):
+                    profit_emoji = "🟢" if trade.profit > 0 else "🔴"
+                    summary += f"{i}. {profit_emoji} {trade.amount} @ ${trade.buy_price:.4f} → ${trade.sell_price:.4f} = ${trade.profit:.4f} ({trade.profit_percent:.2f}%)\n"
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"❌ Error formateando resumen de trades para {pair}: {e}")
+            return f"❌ Error obteniendo resumen de trades para {pair}"
+
 # Ejemplo de uso del cálculo de P&L mejorado:
 """
 # Ejemplo de uso del cálculo de P&L real:
 
 # 1. El método _calculate_bot_pnl ahora calcula P&L real:
-#    - Obtiene balance actual del bot (base + quote)
-#    - Calcula valor total actual en USDT
+#    - Obtiene balance asignado específicamente al bot
+#    - Calcula valor total actual del bot (base + quote)
 #    - Resta el capital inicial asignado
-#    - Resultado: P&L real basado en balances actuales
+#    - Resultado: P&L real basado en el capital del bot específico
 
 # 2. Ejemplo de cálculo:
 #    - Capital asignado: $300.00 USDT
-#    - Balance actual: 0.1 ETH ($275.00) + $25.00 USDT = $300.00
+#    - Balance del bot: 0.1 ETH ($275.00) + $25.00 USDT = $300.00
 #    - P&L = $300.00 - $300.00 = $0.00 (break-even)
 #    - Si ETH sube a $2800: P&L = $280.00 + $25.00 - $300.00 = $5.00 (ganancia)
 
 # 3. Ventajas del nuevo cálculo:
-#    - Basado en balances reales del exchange
-#    - Considera comisiones y slippage
-#    - Refleja ganancias/pérdidas reales
-#    - No depende de órdenes activas
+#    - Basado en balance asignado específicamente al bot
+#    - No considera todo el capital de la cuenta
+#    - Refleja ganancias/pérdidas reales del bot específico
+#    - Respeta el aislamiento de capital
+""" 
+
+# Ejemplo de uso del nuevo sistema de P&L basado en trades reales:
+"""
+🎯 NUEVO SISTEMA DE P&L BASADO EN TRADES REALES
+
+El sistema ahora calcula el P&L basado en transacciones reales (compra → venta) en lugar de solo
+mirar el valor actual de los activos. Esto proporciona una visión más precisa de las ganancias/pérdidas.
+
+FLUJO DE TRADING:
+1. Bot crea orden de compra a $1000
+2. Orden se ejecuta → se registra como "compra pendiente"
+3. Bot crea orden de venta a $1010
+4. Orden se ejecuta → se detecta trade completo
+5. Se calcula P&L: ($1010 - $1000) × cantidad = $10 de ganancia
+6. Trade se guarda en el repositorio para P&L acumulado
+
+EJEMPLO DE USO:
+
+# Obtener estadísticas con P&L real
+stats = trading_stats_use_case.execute()
+
+# Para un bot específico (ej: ETH/USDT)
+eth_stats = stats['bots']['ETH/USDT']
+print(f"P&L real: ${eth_stats['pnl']:.2f}")
+print(f"Trades completados: {eth_stats['trades_count']}")
+print(f"Win rate: {eth_stats['trades_summary']['win_rate']:.1f}%")
+
+# Resumen de trades
+trades_summary = eth_stats['trades_summary']
+print(f"Trades ganadores: {trades_summary['winning_trades']}")
+print(f"Trades perdedores: {trades_summary['losing_trades']}")
+print(f"Mejor trade: ${trades_summary['best_trade']:.2f}")
+print(f"Peor trade: ${trades_summary['worst_trade']:.2f}")
+
+VENTAJAS DEL NUEVO SISTEMA:
+✅ P&L basado en trades reales ejecutados
+✅ No depende de fluctuaciones de precio actual
+✅ Muestra ganancias/pérdidas reales del grid trading
+✅ Incluye estadísticas detalladas (win rate, mejor/peor trade)
+✅ Respeta el capital asignado específicamente al bot
+✅ Tracking de trades individuales para análisis
 """ 

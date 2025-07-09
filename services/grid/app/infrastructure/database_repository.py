@@ -1,14 +1,15 @@
 """
 Repositorio de base de datos para el servicio Grid.
 """
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from sqlalchemy.exc import OperationalError, DisconnectionError
 
 from app.domain.interfaces import GridRepository
-from app.domain.entities import GridConfig, GridOrder, GridBotState, GridStep
+from app.domain.entities import GridConfig, GridOrder, GridBotState, GridStep, GridTrade
 from shared.database.models import GridBotConfig, GridBotState as GridBotStateModel, EstrategiaStatus
 from shared.database.session import get_db_session, health_check
 from shared.services.logging_config import get_logger
@@ -327,4 +328,120 @@ class DatabaseGridRepository(GridRepository):
     def save_grid_steps(self, pair: str, steps: List[GridStep]) -> None:
         """Guarda o reemplaza la lista de GridStep para el par."""
         self._grid_steps_store[pair] = steps
-        logger.debug(f"💾 save_grid_steps -> {pair}: {len(steps)} pasos guardados") 
+        logger.debug(f"💾 save_grid_steps -> {pair}: {len(steps)} pasos guardados")
+
+    def save_trade(self, trade: GridTrade) -> GridTrade:
+        """Guarda un trade completado."""
+        try:
+            # Por ahora almacenamos en memoria, en producción sería en BD
+            if not hasattr(self, '_trades_store'):
+                self._trades_store = {}
+            
+            pair = trade.pair
+            if pair not in self._trades_store:
+                self._trades_store[pair] = []
+            
+            self._trades_store[pair].append(trade)
+            logger.info(f"💾 Trade guardado: {trade.pair} - Profit: ${trade.profit:.4f}")
+            return trade
+            
+        except Exception as e:
+            logger.error(f"❌ Error guardando trade: {e}")
+            return trade
+
+    def get_trades_by_pair(self, pair: str, limit: int = 100) -> List[GridTrade]:
+        """Obtiene los trades completados para un par específico."""
+        try:
+            if not hasattr(self, '_trades_store'):
+                self._trades_store = {}
+            
+            trades = self._trades_store.get(pair, [])
+            # Ordenar por fecha de ejecución (más recientes primero)
+            trades.sort(key=lambda x: x.executed_at, reverse=True)
+            return trades[:limit]
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo trades para {pair}: {e}")
+            return []
+
+    def get_total_profit_by_pair(self, pair: str) -> Decimal:
+        """Calcula el P&L total basado en trades reales para un par."""
+        try:
+            trades = self.get_trades_by_pair(pair)
+            total_profit = sum(trade.profit for trade in trades)
+            # Asegurar que el resultado sea Decimal
+            if isinstance(total_profit, (int, float)):
+                total_profit = Decimal(str(total_profit))
+            logger.debug(f"📊 P&L total para {pair}: ${total_profit:.4f} (basado en {len(trades)} trades)")
+            return total_profit
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculando P&L total para {pair}: {e}")
+            return Decimal('0')
+
+    def get_trades_summary_by_pair(self, pair: str) -> Dict[str, Any]:
+        """Obtiene un resumen de trades para un par específico."""
+        try:
+            trades = self.get_trades_by_pair(pair)
+            
+            if not trades:
+                return {
+                    'total_trades': 0,
+                    'total_profit': Decimal('0'),
+                    'total_profit_percent': Decimal('0'),
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'avg_profit_per_trade': Decimal('0'),
+                    'best_trade': Decimal('0'),
+                    'worst_trade': Decimal('0'),
+                    'win_rate': Decimal('0')
+                }
+            
+            total_profit = sum(trade.profit for trade in trades)
+            # Asegurar que total_profit sea Decimal
+            if isinstance(total_profit, (int, float)):
+                total_profit = Decimal(str(total_profit))
+                
+            winning_trades = [t for t in trades if t.profit > 0]
+            losing_trades = [t for t in trades if t.profit < 0]
+            
+            avg_profit_per_trade = total_profit / len(trades) if trades else Decimal('0')
+            best_trade = max(trade.profit for trade in trades) if trades else Decimal('0')
+            worst_trade = min(trade.profit for trade in trades) if trades else Decimal('0')
+            
+            # Calcular porcentaje promedio de ganancia
+            total_invested = sum(trade.buy_price * trade.amount for trade in trades)
+            if isinstance(total_invested, (int, float)):
+                total_invested = Decimal(str(total_invested))
+            total_profit_percent = (total_profit / total_invested * 100) if total_invested > 0 else Decimal('0')
+            
+            # Calcular win rate
+            win_rate = (len(winning_trades) / len(trades) * 100) if trades else Decimal('0')
+            if isinstance(win_rate, (int, float)):
+                win_rate = Decimal(str(win_rate))
+            
+            return {
+                'total_trades': len(trades),
+                'total_profit': total_profit,
+                'total_profit_percent': total_profit_percent,
+                'winning_trades': len(winning_trades),
+                'losing_trades': len(losing_trades),
+                'avg_profit_per_trade': avg_profit_per_trade,
+                'best_trade': best_trade,
+                'worst_trade': worst_trade,
+                'win_rate': win_rate
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo resumen de trades para {pair}: {e}")
+            return {
+                'total_trades': 0,
+                'total_profit': Decimal('0'),
+                'total_profit_percent': Decimal('0'),
+                'winning_trades': 0,
+                'losing_trades': 0,
+                'avg_profit_per_trade': Decimal('0'),
+                'best_trade': Decimal('0'),
+                'worst_trade': Decimal('0'),
+                'win_rate': Decimal('0')
+            } 

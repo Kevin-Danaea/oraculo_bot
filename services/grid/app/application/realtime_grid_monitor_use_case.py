@@ -64,6 +64,10 @@ class RealTimeGridMonitorUseCase:
         self._complementary_orders_notifications = []  # Lista de notificaciones acumuladas
         self._last_notification_cleanup = datetime.now()
         
+        # 🎯 NUEVO: Sistema de tracking de trades completos
+        self._pending_buys = {}  # {pair: {order_id: {'price': Decimal, 'amount': Decimal, 'timestamp': datetime}}}
+        self._completed_trades = []  # Lista de trades completos para P&L
+        
         logger.info("✅ RealTimeGridMonitorUseCase inicializado.")
 
     def execute(self) -> Dict[str, Any]:
@@ -281,6 +285,10 @@ class RealTimeGridMonitorUseCase:
             fills_detected = list(unique_fills.values())
             logger.info(f"🔄 {len(fills_detected)} fills únicos procesados en {pair}")
             
+            # 🎯 NUEVO: Detectar trades completos
+            completed_trades = self._detect_completed_trades(pair, fills_detected)
+            trades_completed = len(completed_trades)
+            
             for fill in fills_detected:
                 logger.info(f"[FILL] {pair}: Orden {fill['exchange_order_id']} {fill['side']} {fill['filled']} a ${fill['price']} ejecutada")
                 
@@ -401,6 +409,85 @@ class RealTimeGridMonitorUseCase:
         except Exception as e:
             logger.error(f"❌ Error en método 3 de detección de fills para {pair}: {e}")
             return []
+
+    def _detect_completed_trades(self, pair: str, filled_orders: List[Dict[str, Any]]) -> List[GridTrade]:
+        """
+        Detecta trades completos (compra + venta) y calcula P&L real.
+        
+        Args:
+            pair: Par de trading
+            filled_orders: Lista de órdenes completadas
+            
+        Returns:
+            Lista de trades completos detectados
+        """
+        completed_trades = []
+        
+        try:
+            for filled_order in filled_orders:
+                order_id = filled_order.get('exchange_order_id')
+                side = filled_order.get('side')
+                price = Decimal(str(filled_order.get('price', 0)))
+                amount = Decimal(str(filled_order.get('filled', 0)))
+                timestamp = datetime.now()
+                
+                if side == 'buy':
+                    # Registrar compra pendiente
+                    if pair not in self._pending_buys:
+                        self._pending_buys[pair] = {}
+                    
+                    self._pending_buys[pair][order_id] = {
+                        'price': price,
+                        'amount': amount,
+                        'timestamp': timestamp
+                    }
+                    logger.debug(f"📈 Compra registrada para {pair}: {amount} a ${price}")
+                    
+                elif side == 'sell':
+                    # Buscar compra correspondiente para completar el trade
+                    if pair in self._pending_buys and self._pending_buys[pair]:
+                        # Encontrar la compra más antigua (FIFO)
+                        oldest_buy_id = min(self._pending_buys[pair].keys(), 
+                                          key=lambda k: self._pending_buys[pair][k]['timestamp'])
+                        buy_data = self._pending_buys[pair][oldest_buy_id]
+                        
+                        # Verificar que las cantidades coincidan (aproximadamente)
+                        if abs(buy_data['amount'] - amount) < Decimal('0.000001'):
+                            # Crear trade completo
+                            profit = (price - buy_data['price']) * amount
+                            profit_percent = (profit / (buy_data['price'] * amount) * 100) if buy_data['price'] > 0 else Decimal('0')
+                            
+                            trade = GridTrade(
+                                pair=pair,
+                                buy_order_id=str(oldest_buy_id),
+                                sell_order_id=str(order_id),
+                                buy_price=buy_data['price'],
+                                sell_price=price,
+                                amount=amount,
+                                profit=profit,
+                                profit_percent=profit_percent,
+                                executed_at=timestamp
+                            )
+                            
+                            completed_trades.append(trade)
+                            
+                            # Guardar trade en el repositorio
+                            self.grid_repository.save_trade(trade)
+                            
+                            # Remover la compra pendiente
+                            del self._pending_buys[pair][oldest_buy_id]
+                            
+                            logger.info(f"🎯 Trade completo detectado en {pair}: Compra ${buy_data['price']:.4f} → Venta ${price:.4f} = Profit ${profit:.4f} ({profit_percent:.2f}%)")
+                        else:
+                            logger.warning(f"⚠️ Cantidades no coinciden en {pair}: Compra {buy_data['amount']} vs Venta {amount}")
+                    else:
+                        logger.warning(f"⚠️ Venta sin compra correspondiente en {pair}: {amount} a ${price}")
+            
+            return completed_trades
+            
+        except Exception as e:
+            logger.error(f"❌ Error detectando trades completos para {pair}: {e}")
+            return completed_trades
 
     def _create_complementary_order_from_dict(self, filled_order: Dict[str, Any], config: GridConfig) -> Optional[GridOrder]:
         """
