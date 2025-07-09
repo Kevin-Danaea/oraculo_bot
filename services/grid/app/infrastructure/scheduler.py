@@ -172,7 +172,10 @@ class GridScheduler:
             trading_summary = self.trading_stats_use_case.generate_trading_summary()
             if 'timestamp' in trading_summary:
                 trading_summary['periodicity'] = 'Resumen cada 1 hora'
-            self.notification_service.send_periodic_trading_summary(trading_summary)
+            
+            logger.info(f"📊 Resumen generado con {trading_summary.get('active_bots', 0)} bots activos")
+            notification_sent = self.notification_service.send_periodic_trading_summary(trading_summary)
+            logger.info(f"📱 Notificación enviada: {notification_sent}")
             
             # 📱 Limpiar notificaciones acumuladas después de enviar el resumen
             self.realtime_monitor_use_case.clear_accumulated_notifications()
@@ -293,4 +296,28 @@ class GridScheduler:
             
         except Exception as e:
             logger.error(f"❌ Error en monitor tiempo real manual: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def force_send_summary(self):
+        """Fuerza el envío inmediato de un resumen periódico (útil para testing)."""
+        try:
+            logger.info("🔧 Forzando envío de resumen periódico...")
+            
+            # Generar resumen
+            trading_summary = self.trading_stats_use_case.generate_trading_summary()
+            if 'timestamp' in trading_summary:
+                trading_summary['periodicity'] = 'Resumen cada 1 hora'
+            
+            # Forzar envío ignorando el control de spam
+            self.notification_service.force_send_summary()
+            notification_sent = self.notification_service.send_periodic_trading_summary(trading_summary)
+            
+            return {
+                "success": notification_sent,
+                "message": f"Resumen forzado enviado: {notification_sent}",
+                "bots_active": trading_summary.get('active_bots', 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error forzando envío de resumen: {e}")
             return {"success": False, "error": str(e)} 

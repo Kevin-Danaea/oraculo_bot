@@ -741,6 +741,27 @@ class RealTimeGridMonitorUseCase:
         """
         return self._complementary_orders_notifications.copy()
 
+    def get_total_trades_count(self) -> int:
+        """
+        Obtiene el conteo total de trades acumulados.
+        
+        Returns:
+            Número total de trades acumulados
+        """
+        return len(self._complementary_orders_notifications)
+
+    def get_trades_count_by_pair(self, pair: str) -> int:
+        """
+        Obtiene el conteo de trades acumulados para un par específico.
+        
+        Args:
+            pair: Par de trading (ej: 'ETH/USDT')
+            
+        Returns:
+            Número de trades acumulados para el par
+        """
+        return len([n for n in self._complementary_orders_notifications if n.get('pair') == pair])
+
     def clear_accumulated_notifications(self) -> None:
         """
         Limpia las notificaciones acumuladas después de enviarlas.
@@ -768,18 +789,28 @@ class RealTimeGridMonitorUseCase:
             orders_by_pair[pair].append(notification)
         
         # Formatear resumen
-        summary = "🔄 **ÓRDENES COMPLEMENTARIAS CREADAS**\n\n"
+        summary = "🔄 <b>ÓRDENES COMPLEMENTARIAS CREADAS</b>\n\n"
+        
+        total_orders = len(self._complementary_orders_notifications)
+        total_buy = sum(1 for order in self._complementary_orders_notifications if order['side'] == 'BUY')
+        total_sell = sum(1 for order in self._complementary_orders_notifications if order['side'] == 'SELL')
+        
+        summary += f"📊 <b>Total general:</b> {total_orders} órdenes ({total_buy} compras, {total_sell} ventas)\n\n"
         
         for pair, orders in orders_by_pair.items():
-            summary += f"**{pair}**\n"
+            summary += f"💱 <b>{pair}</b>\n"
             buy_count = sum(1 for order in orders if order['side'] == 'BUY')
             sell_count = sum(1 for order in orders if order['side'] == 'SELL')
             
-            summary += f"• Compras: {buy_count} órdenes\n"
-            summary += f"• Ventas: {sell_count} órdenes\n"
-            summary += f"• Total: {len(orders)} órdenes\n\n"
+            summary += f"   📈 Compras: {buy_count} órdenes\n"
+            summary += f"   📉 Ventas: {sell_count} órdenes\n"
+            summary += f"   🔄 Total: {len(orders)} órdenes\n\n"
         
-        summary += f"⏰ Período: {self._last_notification_cleanup.strftime('%H:%M:%S')} - {datetime.now().strftime('%H:%M:%S')}"
+        # Mostrar período de tiempo
+        if self._complementary_orders_notifications:
+            first_time = min(order['timestamp'] for order in self._complementary_orders_notifications)
+            last_time = max(order['timestamp'] for order in self._complementary_orders_notifications)
+            summary += f"⏰ <b>Período:</b> {first_time.strftime('%H:%M:%S')} - {last_time.strftime('%H:%M:%S')}"
         
         return summary
 

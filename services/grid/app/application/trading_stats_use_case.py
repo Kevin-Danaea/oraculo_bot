@@ -65,13 +65,18 @@ class TradingStatsUseCase:
             total_profit = Decimal('0')
             bots_details = []
             
+            # 📊 Obtener trades acumulados del monitor tiempo real
+            if self.realtime_monitor_use_case:
+                total_trades = self.realtime_monitor_use_case.get_total_trades_count()
+                logger.info(f"📊 Total trades acumulados: {total_trades}")
+            
             # Procesar cada bot activo
             for config in active_configs:
                 try:
                     bot_stats = self._get_bot_stats(config)
                     bots_details.append(bot_stats)
                     
-                    total_trades += bot_stats.get('trades_count', 0)
+                    # No sumar trades_count aquí, ya se obtiene del monitor tiempo real
                     total_profit += Decimal(str(bot_stats.get('pnl', 0)))
                     
                 except Exception as e:
@@ -209,8 +214,20 @@ class TradingStatsUseCase:
             pnl = self._calculate_bot_pnl(config, active_orders, current_price)
             pnl_percent = (pnl / allocated_capital * 100) if allocated_capital > 0 else 0
             
-            # Contar trades completados (simulado)
-            trades_count = len([o for o in active_orders if o.get('status') == 'filled'])
+            # 📊 Contar trades reales acumulados del monitor tiempo real
+            trades_count = 0
+            if self.realtime_monitor_use_case:
+                # Obtener trades acumulados para este par específico
+                trades_count = self.realtime_monitor_use_case.get_trades_count_by_pair(pair)
+                logger.debug(f"📊 {pair}: {trades_count} trades acumulados del monitor tiempo real")
+            else:
+                # Fallback: contar trades desde la base de datos (si existe)
+                try:
+                    # Aquí podrías implementar conteo desde la base de datos si tienes una tabla de trades
+                    trades_count = 0
+                except Exception as e:
+                    logger.warning(f"⚠️ No se pudo obtener trades desde BD para {pair}: {e}")
+                    trades_count = 0
             
             stats = {
                 'pair': pair,

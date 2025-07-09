@@ -107,6 +107,11 @@ class GridTelegramBot:
                 CommandHandler("production", self._handle_production_command)
             )
             
+            # Comando para forzar resumen
+            self.telegram_service._application.add_handler(
+                CommandHandler("summary", self._handle_summary_command)
+            )
+            
             logger.info("✅ Comandos de Telegram registrados correctamente")
             
         except Exception as e:
@@ -139,6 +144,8 @@ class GridTelegramBot:
                 return self._handle_manual_monitor()
             elif command == "balance":
                 return self._handle_balance_check()
+            elif command == "summary":
+                return self._handle_force_summary()
             else:
                 return (
                     "🤖 <b>Comandos disponibles:</b>\n\n"
@@ -148,7 +155,8 @@ class GridTelegramBot:
                     "• <code>sandbox</code> - Cambiar a modo pruebas\n"
                     "• <code>production</code> - Cambiar a modo real\n"
                     "• <code>monitor</code> - Ejecutar monitoreo manual\n"
-                    "• <code>balance</code> - Verificar capital y balances"
+                    "• <code>balance</code> - Verificar capital y balances\n"
+                    "• <code>summary</code> - Forzar envío de resumen"
                 )
                 
         except Exception as e:
@@ -165,6 +173,7 @@ class GridTelegramBot:
             "📋 <b>Comandos principales:</b>\n"
             "• /status - Ver estado del sistema\n"
             "• /balance - Verificar capital y balances\n"
+            "• /summary - Forzar envío de resumen\n"
             "• /start_bot - Iniciar Grid Trading\n"
             "• /stop_bot - Detener Grid Trading\n"
             "• /monitor - Ejecutar monitoreo manual\n"
@@ -181,7 +190,8 @@ class GridTelegramBot:
             "🤖 <b>Comandos del Grid Trading Bot</b>\n\n"
             "📊 <b>Información:</b>\n"
             "• /status - Estado del sistema y scheduler\n"
-            "• /balance - Capital asignado y balances por bot\n\n"
+            "• /balance - Capital asignado y balances por bot\n"
+            "• /summary - Forzar envío de resumen periódico\n\n"
             "🎮 <b>Control:</b>\n"
             "• /start_bot - Iniciar Grid Trading\n"
             "• /stop_bot - Detener Grid Trading\n"
@@ -254,7 +264,16 @@ class GridTelegramBot:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
         except Exception as e:
             error_msg = f"❌ Error cambiando a producción: {str(e)}"
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
+
+    async def _handle_summary_command(self, update, context):
+        """Maneja el comando /summary para forzar envío de resumen."""
+        try:
+            result = self._handle_force_summary()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
+        except Exception as e:
+            error_msg = f"❌ Error forzando resumen: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
 
     # === MANEJADORES EXISTENTES (sin cambios) ===
 
@@ -427,4 +446,23 @@ class GridTelegramBot:
             return message
                 
         except Exception as e:
-            return f"❌ Error obteniendo balances: {str(e)}" 
+            return f"❌ Error obteniendo balances: {str(e)}"
+
+    def _handle_force_summary(self) -> str:
+        """Maneja el comando summary para forzar envío de resumen."""
+        try:
+            if not self.scheduler:
+                return "❌ Scheduler no disponible"
+            
+            if not hasattr(self.scheduler, 'force_send_summary'):
+                return "❌ Método force_send_summary no disponible en el scheduler"
+            
+            result = self.scheduler.force_send_summary()
+            
+            if result.get('success', False):
+                return f"✅ Resumen forzado enviado correctamente\n\n📊 Bots activos: {result.get('bots_active', 0)}"
+            else:
+                return f"❌ Error forzando resumen: {result.get('error', 'Error desconocido')}"
+                
+        except Exception as e:
+            return f"❌ Error forzando resumen: {str(e)}" 

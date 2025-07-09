@@ -3,11 +3,11 @@ alwaysApply: true
 ---
 # Regla 1: Protocolo de Interacción
 - Al inicio de CADA respuesta, debes usar el emoji 🤖 seguido del nombre del modelo que estás utilizando entre paréntesis. Ejemplo: 🤖 (Claude 4 Sonnet)
-- Antes de escribir cualquier código, usar el to-dos list.
+- Antes de escribir cualquier código, usar el modo planning para crear una lista de to-dos.
 - Despues de tener tu to-dos list ejecuta todas las soluciones que planteas.
 
 # Regla 2: Selección de Modelo por Tarea (La Cascada)
-- **Por defecto, para todas las tareas, usa `Claude Sonnet 4`**. Es tu primera opción por velocidad y eficiencia.
+- **Por defecto, para todas las tareas, usa `Claude Sonnet 4 Thinking`**. Es tu primera opción por velocidad y eficiencia.
 - **SI** mi prompt contiene alguna de las siguientes palabras clave: "arquitectura", "analizar", "refactorizar", "optimizar", "diseñar", "complejo" o "desde cero", **entonces** escala y usa un modelo de alto rendimiento como `Claude Opus 4` en "Max-Mode".
 
 # Regla 3: Mandato de Calidad de Código

@@ -21,7 +21,7 @@ class TelegramGridNotificationService(NotificationService):
         
         # Control de spam para resúmenes periódicos
         self._last_summary_sent = {}
-        self._summary_interval = timedelta(hours=2)  # Resumen cada 2 horas
+        self._summary_interval = timedelta(hours=1)  # Resumen cada 1 hora (coincide con MONITORING_INTERVAL_HOURS)
         
         logger.info("✅ TelegramGridNotificationService inicializado.")
 
@@ -203,9 +203,16 @@ Resumen del ciclo de monitoreo completado.
             # Verificar si ha pasado suficiente tiempo desde el último resumen
             if 'last_summary_time' in self._last_summary_sent:
                 time_since_last = now - self._last_summary_sent['last_summary_time']
+                logger.info(f"⏰ Último resumen enviado: {self._last_summary_sent['last_summary_time'].strftime('%H:%M:%S')}")
+                logger.info(f"⏰ Tiempo transcurrido: {time_since_last}")
+                logger.info(f"⏰ Intervalo requerido: {self._summary_interval}")
+                
                 if time_since_last < self._summary_interval:
-                    logger.debug(f"⏰ Resumen periódico no enviado: faltan {self._summary_interval - time_since_last}")
+                    remaining_time = self._summary_interval - time_since_last
+                    logger.info(f"⏰ Resumen periódico no enviado: faltan {remaining_time}")
                     return False
+            else:
+                logger.info("⏰ Primer resumen - enviando inmediatamente")
             
             # Crear mensaje de resumen
             message = "📊 <b>RESUMEN PERIÓDICO - GRID TRADING</b>\n\n"
@@ -289,15 +296,17 @@ Resumen del ciclo de monitoreo completado.
                 message += f"{complementary_orders_summary}\n\n"
             
             message += f"⏰ <i>{now.strftime('%H:%M:%S %d/%m/%Y')}</i>\n"
-            message += f"🔄 <i>Resumen cada 2 horas</i>"
+            message += f"🔄 <i>Resumen cada 1 hora</i>"
             
             # Enviar mensaje
+            logger.info("📱 Enviando resumen periódico a Telegram...")
             self.telegram_service.send_message(message)
             
             # Actualizar timestamp del último resumen
             self._last_summary_sent['last_summary_time'] = now
             
             logger.info(f"✅ Resumen periódico enviado: {active_bots} bots activos, ${total_profit:.4f} ganancia, Balance total: ${total_account_balance:.2f}")
+            logger.info(f"⏰ Próximo resumen programado para: {(now + self._summary_interval).strftime('%H:%M:%S')}")
             return True
             
         except Exception as e:
