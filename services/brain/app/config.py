@@ -44,6 +44,9 @@ MASTER_RECIPES = {
             'adx_threshold': 30,
             'bollinger_bandwidth_threshold': 0.025,
             'sentiment_threshold': -0.20,
+            # Umbrales específicos para TREND
+            'adx_trend_threshold': 25.0,
+            'sentiment_trend_threshold': -0.1,
         },
         'grid_config': {
             'price_range_percent': 10.0,
@@ -57,6 +60,9 @@ MASTER_RECIPES = {
             'adx_threshold': 25,
             'bollinger_bandwidth_threshold': 0.035,
             'sentiment_threshold': -0.20,
+            # Umbrales específicos para TREND
+            'adx_trend_threshold': 25.0,
+            'sentiment_trend_threshold': -0.1,
         },
         'grid_config': {
             'price_range_percent': 7.5,
@@ -70,12 +76,70 @@ MASTER_RECIPES = {
             'adx_threshold': 35,
             'bollinger_bandwidth_threshold': 0.020,
             'sentiment_threshold': -0.20,
+            # Umbrales específicos para TREND
+            'adx_trend_threshold': 25.0,
+            'sentiment_trend_threshold': -0.1,
         },
         'grid_config': {
             'price_range_percent': 10.0,
             'grid_levels': 30
         },
         'description': 'Condiciones optimizadas para AVAX/USDT basadas en backtesting'
+    }
+}
+
+# Recetas maestras específicas para TREND
+TREND_MASTER_RECIPES = {
+    'ETH/USDT': {
+        'name': 'Receta TREND Maestra ETH',
+        'conditions': {
+            'adx_threshold': 30,
+            'bollinger_bandwidth_threshold': 0.025,
+            'sentiment_threshold': -0.20,
+            'adx_trend_threshold': 25.0,
+            'sentiment_trend_threshold': -0.1,
+        },
+        'trend_config': {
+            'sma_short_period': 30,
+            'sma_long_period': 150,
+            'adx_period': 14,
+            'sentiment_avg_days': 7,
+        },
+        'description': 'Receta optimizada para estrategia TREND en ETH/USDT'
+    },
+    'BTC/USDT': {
+        'name': 'Receta TREND Maestra BTC',
+        'conditions': {
+            'adx_threshold': 25,
+            'bollinger_bandwidth_threshold': 0.035,
+            'sentiment_threshold': -0.20,
+            'adx_trend_threshold': 25.0,
+            'sentiment_trend_threshold': -0.1,
+        },
+        'trend_config': {
+            'sma_short_period': 30,
+            'sma_long_period': 150,
+            'adx_period': 14,
+            'sentiment_avg_days': 7,
+        },
+        'description': 'Receta optimizada para estrategia TREND en BTC/USDT'
+    },
+    'AVAX/USDT': {
+        'name': 'Receta TREND Maestra AVAX',
+        'conditions': {
+            'adx_threshold': 35,
+            'bollinger_bandwidth_threshold': 0.020,
+            'sentiment_threshold': -0.20,
+            'adx_trend_threshold': 25.0,
+            'sentiment_trend_threshold': -0.1,
+        },
+        'trend_config': {
+            'sma_short_period': 30,
+            'sma_long_period': 150,
+            'adx_period': 14,
+            'sentiment_avg_days': 7,
+        },
+        'description': 'Receta optimizada para estrategia TREND en AVAX/USDT'
     }
 }
 
@@ -136,6 +200,7 @@ def get_config() -> Dict[str, Any]:
             'model': LLM_MODEL
         },
         'recipes': MASTER_RECIPES,
+        'trend_recipes': TREND_MASTER_RECIPES,
         'supported_pairs': SUPPORTED_PAIRS,
         'notifications': {
             'timeout': NOTIFICATION_TIMEOUT,

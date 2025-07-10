@@ -6,13 +6,13 @@ Implementación concreta del repositorio de decisiones de trading.
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.domain.interfaces import DecisionRepository
-from app.domain.entities import TradingDecision, BotType, DecisionType, MarketIndicators, TradingThresholds
+from app.domain.entities import TradingDecision, TrendDecision, BotType, DecisionType, MarketIndicators, TradingThresholds
 from shared.database.session import SessionLocal
 from shared.database.models import EstrategiaStatus
 
@@ -28,7 +28,7 @@ class DatabaseDecisionRepository(DecisionRepository):
         """Inicializa el repositorio."""
         self.logger = logging.getLogger(__name__)
     
-    async def save_decision(self, decision: TradingDecision) -> bool:
+    async def save_decision(self, decision: Union[TradingDecision, TrendDecision]) -> bool:
         """
         Guarda o actualiza una decisión de trading en la base de datos.
         Si ya existe una decisión para el par y estrategia, la actualiza.
@@ -43,17 +43,23 @@ class DatabaseDecisionRepository(DecisionRepository):
             db = SessionLocal()
             
             try:
+                # Determinar el tipo de estrategia basado en el tipo de decisión
+                if isinstance(decision, TrendDecision):
+                    estrategia = "TREND"
+                else:
+                    estrategia = decision.bot_type.value
+                
                 # Buscar decisión existente para el par y estrategia
                 existing_decision = db.query(EstrategiaStatus).filter(
                     EstrategiaStatus.par == decision.pair,
-                    EstrategiaStatus.estrategia == decision.bot_type.value
+                    EstrategiaStatus.estrategia == estrategia
                 ).first()
                 
                 if existing_decision:
                     # Actualizar decisión existente usando update()
                     db.query(EstrategiaStatus).filter(
                         EstrategiaStatus.par == decision.pair,
-                        EstrategiaStatus.estrategia == decision.bot_type.value
+                        EstrategiaStatus.estrategia == estrategia
                     ).update({
                         'decision': decision.decision.value,
                         'razon': decision.reason,
@@ -72,7 +78,7 @@ class DatabaseDecisionRepository(DecisionRepository):
                     # Crear nueva decisión
                     db_decision = EstrategiaStatus(
                         par=decision.pair,
-                        estrategia=decision.bot_type.value,
+                        estrategia=estrategia,
                         decision=decision.decision.value,
                         razon=decision.reason,
                         adx_actual=decision.indicators.adx,

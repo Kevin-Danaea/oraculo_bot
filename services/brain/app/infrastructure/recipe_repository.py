@@ -32,7 +32,10 @@ class InMemoryRecipeRepository(RecipeRepository):
         Returns:
             Diccionario de recetas por par
         """
-        recipes = {
+        recipes = {}
+        
+        # Recetas para GRID
+        grid_recipes = {
             'ETH/USDT': TradingRecipe(
                 pair='ETH/USDT',
                 name='Receta Maestra ETH',
@@ -80,7 +83,72 @@ class InMemoryRecipeRepository(RecipeRepository):
             )
         }
         
-        self.logger.info(f"✅ Cargadas {len(recipes)} recetas maestras")
+        # Recetas para TREND
+        trend_recipes = {
+            'ETH/USDT': TradingRecipe(
+                pair='ETH/USDT',
+                name='Receta TREND Maestra ETH',
+                conditions={
+                    'adx_threshold': 30,
+                    'bollinger_bandwidth_threshold': 0.025,
+                    'sentiment_threshold': -0.20,
+                    'adx_trend_threshold': 25.0,
+                    'sentiment_trend_threshold': -0.1,
+                },
+                grid_config={
+                    'sma_short_period': 30,
+                    'sma_long_period': 150,
+                    'adx_period': 14,
+                    'sentiment_avg_days': 7,
+                },
+                description='Receta optimizada para estrategia TREND en ETH/USDT',
+                bot_type=BotType.TREND
+            ),
+            'BTC/USDT': TradingRecipe(
+                pair='BTC/USDT',
+                name='Receta TREND Maestra BTC',
+                conditions={
+                    'adx_threshold': 25,
+                    'bollinger_bandwidth_threshold': 0.035,
+                    'sentiment_threshold': -0.20,
+                    'adx_trend_threshold': 25.0,
+                    'sentiment_trend_threshold': -0.1,
+                },
+                grid_config={
+                    'sma_short_period': 30,
+                    'sma_long_period': 150,
+                    'adx_period': 14,
+                    'sentiment_avg_days': 7,
+                },
+                description='Receta optimizada para estrategia TREND en BTC/USDT',
+                bot_type=BotType.TREND
+            ),
+            'AVAX/USDT': TradingRecipe(
+                pair='AVAX/USDT',
+                name='Receta TREND Maestra AVAX',
+                conditions={
+                    'adx_threshold': 35,
+                    'bollinger_bandwidth_threshold': 0.020,
+                    'sentiment_threshold': -0.20,
+                    'adx_trend_threshold': 25.0,
+                    'sentiment_trend_threshold': -0.1,
+                },
+                grid_config={
+                    'sma_short_period': 30,
+                    'sma_long_period': 150,
+                    'adx_period': 14,
+                    'sentiment_avg_days': 7,
+                },
+                description='Receta optimizada para estrategia TREND en AVAX/USDT',
+                bot_type=BotType.TREND
+            )
+        }
+        
+        # Combinar todas las recetas
+        recipes.update(grid_recipes)
+        recipes.update(trend_recipes)
+        
+        self.logger.info(f"✅ Cargadas {len(recipes)} recetas maestras (GRID: {len(grid_recipes)}, TREND: {len(trend_recipes)})")
         return recipes
     
     async def get_recipe(self, pair: str, bot_type: BotType) -> Optional[TradingRecipe]:
@@ -95,14 +163,17 @@ class InMemoryRecipeRepository(RecipeRepository):
             Receta o None si no existe
         """
         try:
-            recipe = self._recipes.get(pair)
+            # Buscar receta específica para el par y tipo de bot
+            recipe_key = f"{pair}_{bot_type.value}"
             
-            if recipe and recipe.bot_type == bot_type:
-                self.logger.debug(f"✅ Receta encontrada para {pair} ({bot_type.value})")
-                return recipe
-            else:
-                self.logger.warning(f"⚠️ No se encontró receta para {pair} ({bot_type.value})")
-                return None
+            # Buscar en las recetas cargadas
+            for recipe in self._recipes.values():
+                if recipe.pair == pair and recipe.bot_type == bot_type:
+                    self.logger.debug(f"✅ Receta encontrada para {pair} ({bot_type.value})")
+                    return recipe
+            
+            self.logger.warning(f"⚠️ No se encontró receta para {pair} ({bot_type.value})")
+            return None
                 
         except Exception as e:
             self.logger.error(f"❌ Error obteniendo receta para {pair}: {e}")
