@@ -16,7 +16,7 @@ from .application.service_lifecycle_use_case import ServiceLifecycleUseCase
 from .infrastructure.brain_directive_repository import DatabaseBrainDirectiveRepository
 from .infrastructure.exchange_service import ExchangeService
 from .infrastructure.notification_service import NotificationService
-from .infrastructure.trend_bot_repository import JsonTrendBotRepository
+from .infrastructure.database_repository import DatabaseTrendBotRepository
 from .infrastructure.state_manager import TrendBotStateManager
 
 logger = logging.getLogger(__name__)
@@ -38,29 +38,24 @@ class TrendBotService:
             # Configurar logging
             setup_logging()
             
-            # Crear configuración del bot
-            bot_config = TrendBotConfig(
-                symbol=self.config.symbol,
-                capital_allocation=self.config.capital_allocation,
-                trailing_stop_percent=self.config.trailing_stop_percent,
-                sandbox_mode=self.config.binance_testnet
-            )
+            # El sistema ahora maneja múltiples pares automáticamente
+            logger.info("📊 Sistema multi-par configurado - cargará configuraciones desde BD automáticamente")
             
             # Inicializar servicios de infraestructura
-            repository = JsonTrendBotRepository()
+            repository = DatabaseTrendBotRepository()
             brain_repository = DatabaseBrainDirectiveRepository()
             exchange_service = ExchangeService()
             notification_service = NotificationService()
             state_manager = TrendBotStateManager(repository)
             
-            # Inicializar caso de uso del ciclo de vida
+            # Inicializar caso de uso del ciclo de vida multi-par
             self.lifecycle_use_case = ServiceLifecycleUseCase(
                 repository=repository,
                 brain_repository=brain_repository,
                 exchange_service=exchange_service,
                 notification_service=notification_service,
                 state_manager=state_manager,
-                config=bot_config
+                telegram_chat_id=self.config.telegram_chat_id
             )
             
             logger.info("✅ Trend Following Bot inicializado correctamente")

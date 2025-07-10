@@ -28,10 +28,10 @@ class TrendConfig:
     telegram_bot_token: str
     telegram_chat_id: str
     
-    # Trading Configuration
-    symbol: str
-    capital_allocation: Decimal
-    trailing_stop_percent: float
+    # Trading Configuration (se obtienen desde BD)
+    symbol: str = "ETH/USDT"  # Valor por defecto
+    capital_allocation: Decimal = Decimal("300")  # Valor por defecto
+    trailing_stop_percent: float = 20.0  # Valor por defecto
     
     # Service Configuration
     cycle_interval_hours: int = 1
@@ -44,16 +44,6 @@ class TrendConfig:
     def from_env(cls) -> "TrendConfig":
         """Crea la configuración desde variables de entorno."""
         # settings ya está importado arriba
-        
-        # Obtener símbolo del argumento --pair o variable de entorno
-        symbol = os.getenv("TREND_SYMBOL", "BTCUSDT")
-        
-        # Obtener capital allocation
-        capital_str = os.getenv("TREND_CAPITAL_ALLOCATION", "1000")
-        capital_allocation = Decimal(capital_str)
-        
-        # Obtener trailing stop
-        trailing_stop = float(os.getenv("TREND_TRAILING_STOP_PERCENT", "5.0"))
         
         return cls(
             # Database
@@ -72,11 +62,6 @@ class TrendConfig:
             telegram_bot_token=settings.TELEGRAM_BOT_TOKEN,
             telegram_chat_id=settings.TELEGRAM_CHAT_ID,
             
-            # Trading Configuration
-            symbol=symbol,
-            capital_allocation=capital_allocation,
-            trailing_stop_percent=trailing_stop,
-            
             # Service Configuration
             cycle_interval_hours=int(os.getenv("TREND_CYCLE_INTERVAL_HOURS", "1")),
             
@@ -84,6 +69,34 @@ class TrendConfig:
             log_level=os.getenv("TREND_LOG_LEVEL", "INFO"),
             log_file=os.getenv("TREND_LOG_FILE", "logs/trend_bot.log")
         )
+    
+    async def load_trading_config_from_db(self, telegram_chat_id: str) -> bool:
+        """Carga la configuración de trading desde la base de datos."""
+        try:
+            from shared.database.session import get_db_session
+            from shared.database.models import TrendBotConfig
+            
+            with get_db_session() as session:
+                if session is None:
+                    return False
+                    
+                config = session.query(TrendBotConfig).filter(
+                    TrendBotConfig.telegram_chat_id == telegram_chat_id,
+                    TrendBotConfig.is_active == True
+                ).first()
+                
+                if config:
+                    self.symbol = str(config.pair)
+                    self.capital_allocation = Decimal(str(config.capital_allocation))
+                    self.trailing_stop_percent = float(str(config.trailing_stop_percent))
+                    return True
+                else:
+                    # Usar valores por defecto si no hay configuración
+                    return False
+                    
+        except Exception as e:
+            print(f"Error cargando configuración desde BD: {str(e)}")
+            return False
 
 
 # Instancia global de configuración

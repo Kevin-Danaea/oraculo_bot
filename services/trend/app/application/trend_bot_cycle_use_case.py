@@ -135,7 +135,7 @@ class TrendBotCycleUseCase:
             return await self._handle_outside_market_state(
                 bot_status, brain_directive, current_price
             )
-        elif bot_status.state == TrendBotState.EN_POSICION_LARGA:
+        elif bot_status.state == TrendBotState.EN_POSICION:
             return await self._handle_in_position_state(
                 bot_status, brain_directive, current_price
             )
@@ -175,7 +175,7 @@ class TrendBotCycleUseCase:
                     return False
                 
                 # Actualizar estado del bot
-                bot_status.state = TrendBotState.EN_POSICION_LARGA
+                bot_status.state = TrendBotState.EN_POSICION
                 bot_status.current_position = position
                 bot_status.last_decision = brain_directive.decision
                 
@@ -201,6 +201,10 @@ class TrendBotCycleUseCase:
             logger.debug("Manteniendo estado fuera del mercado")
             return True
         
+        elif brain_directive.decision == BrainDecision.MANTENER_ESPERA:
+            logger.debug("Manteniendo espera fuera del mercado")
+            return True
+        
         else:
             logger.debug(f"Directiva no aplicable en estado fuera del mercado: {brain_directive.decision}")
             return True
@@ -211,7 +215,7 @@ class TrendBotCycleUseCase:
         brain_directive: BrainDirective,
         current_price: Decimal
     ) -> bool:
-        """Maneja el estado EN_POSICION_LARGA."""
+        """Maneja el estado EN_POSICION."""
         
         if not bot_status.current_position:
             logger.error("Bot en posición pero sin posición actual")
@@ -369,4 +373,70 @@ class TrendBotCycleUseCase:
             logger.debug(f"Métricas actualizadas: {metrics.total_trades} trades, {metrics.win_rate:.1%} win rate")
             
         except Exception as e:
-            logger.error(f"Error actualizando métricas: {str(e)}") 
+            logger.error(f"Error actualizando métricas: {str(e)}")
+    
+    async def check_trailing_stop(self) -> None:
+        """Verifica y aplica trailing stop si es necesario."""
+        try:
+            # Obtener estado actual del bot
+            bot_status = await self.state_manager.get_state(self.bot_id)
+            
+            if not bot_status or not bot_status.current_position:
+                return  # No hay posición abierta
+            
+            # Obtener precio actual
+            current_price = self._get_current_price()
+            if not current_price:
+                logger.warning("No se pudo obtener precio actual para trailing stop")
+                return
+            
+            position = bot_status.current_position
+            position.current_price = current_price
+            
+            # Actualizar precio más alto si es necesario
+            position.update_highest_price(current_price)
+            
+            # Verificar trailing stop
+            trailing_stop_price = position.calculate_trailing_stop(
+                self.config.trailing_stop_percent
+            )
+            
+            if current_price <= trailing_stop_price:
+                logger.info(f"🛑 Trailing stop activado: {current_price} <= {trailing_stop_price}")
+                
+                # Ejecutar orden de venta
+                sell_result = self._execute_sell_order(position.entry_quantity)
+                
+                if sell_result.success:
+                    # Actualizar posición
+                    position.exit_price = sell_result.executed_price
+                    position.exit_quantity = sell_result.executed_quantity
+                    position.exit_time = datetime.utcnow()
+                    position.exit_reason = ExitReason.TRAILING_STOP
+                    position.fees_paid += sell_result.fees
+                    
+                    # Actualizar estado del bot
+                    bot_status.state = TrendBotState.FUERA_DEL_MERCADO
+                    bot_status.current_position = None
+                    bot_status.last_decision = BrainDecision.CERRAR_POSICION
+                    
+                    # Guardar estado y posición
+                    await self.state_manager.save_state(bot_status)
+                    await self.repository.save_position(position)
+                    
+                    # Notificar salida por trailing stop
+                    await self.notification_service.send_trailing_stop_exit(
+                        position, current_price, trailing_stop_price
+                    )
+                    
+                    # Actualizar métricas
+                    await self._update_metrics(position)
+                    
+                    logger.info(f"✅ Posición cerrada por trailing stop: PnL = {position.realized_pnl()}")
+                else:
+                    logger.error(f"❌ Error ejecutando orden de venta por trailing stop: {sell_result.error_message}")
+            else:
+                logger.debug(f"Trailing stop OK: {current_price} > {trailing_stop_price}")
+                
+        except Exception as e:
+            logger.error(f"Error verificando trailing stop: {str(e)}", exc_info=True) 

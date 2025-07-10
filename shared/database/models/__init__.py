@@ -9,6 +9,7 @@ from .base import Base
 from .noticia import Noticia
 from .grid_bot_config import GridBotConfig
 from .grid_bot_state import GridBotState
+from .trend_bot_config import TrendBotConfig
 from .hype_event import HypeEvent
 from .estrategia_status import EstrategiaStatus
 from .hype_scan import HypeScan, HypeMention
@@ -19,6 +20,7 @@ __all__ = [
     'Noticia',
     'GridBotConfig', 
     'GridBotState',
+    'TrendBotConfig',
     'HypeEvent',
     'EstrategiaStatus',
     'HypeScan',

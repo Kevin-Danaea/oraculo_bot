@@ -10,13 +10,14 @@ from typing import Optional
 class TrendBotState(Enum):
     """Estados del bot de trend following."""
     FUERA_DEL_MERCADO = "FUERA_DEL_MERCADO"
-    EN_POSICION_LARGA = "EN_POSICION_LARGA"
+    EN_POSICION = "EN_POSICION"
 
 
 class BrainDecision(Enum):
     """Decisiones que puede tomar el cerebro."""
     INICIAR_COMPRA_TENDENCIA = "INICIAR_COMPRA_TENDENCIA"
     MANTENER_POSICION = "MANTENER_POSICION"
+    MANTENER_ESPERA = "MANTENER_ESPERA"
     CERRAR_POSICION = "CERRAR_POSICION"
 
 
