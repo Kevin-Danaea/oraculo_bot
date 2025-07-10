@@ -17,19 +17,19 @@ from datetime import datetime
 from typing import Dict, Any
 
 # Configuración
-from config import get_config, ANALYSIS_INTERVAL, SUPPORTED_PAIRS
+from app.config import get_config, ANALYSIS_INTERVAL, SUPPORTED_PAIRS
 
 # Casos de uso
-from application.analyze_pair_use_case import AnalyzePairUseCase
-from application.analyze_trend_use_case import AnalyzeTrendUseCase
-from application.batch_analysis_use_case import BatchAnalysisUseCase
-from application.service_lifecycle_use_case import ServiceLifecycleUseCase
+from app.application.analyze_pair_use_case import AnalyzePairUseCase
+from app.application.analyze_trend_use_case import AnalyzeTrendUseCase
+from app.application.batch_analysis_use_case import BatchAnalysisUseCase
+from app.application.service_lifecycle_use_case import ServiceLifecycleUseCase
 
 # Repositorios
-from infrastructure.market_data_repository import BinanceMarketDataRepository
-from infrastructure.recipe_repository import InMemoryRecipeRepository
-from infrastructure.decision_repository import DatabaseDecisionRepository
-from infrastructure.notification_service import HTTPNotificationService
+from app.infrastructure.market_data_repository import BinanceMarketDataRepository
+from app.infrastructure.recipe_repository import InMemoryRecipeRepository
+from app.infrastructure.decision_repository import DatabaseDecisionRepository
+from app.infrastructure.notification_service import HTTPNotificationService
 
 # Configuración de logging
 config = get_config()

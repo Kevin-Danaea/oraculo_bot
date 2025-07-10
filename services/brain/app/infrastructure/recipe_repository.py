@@ -28,15 +28,13 @@ class InMemoryRecipeRepository(RecipeRepository):
     def _load_master_recipes(self) -> Dict[str, TradingRecipe]:
         """
         Carga las recetas maestras desde la configuración.
-        
         Returns:
-            Diccionario de recetas por par
+            Diccionario de recetas por par y tipo de bot
         """
         recipes = {}
-        
         # Recetas para GRID
         grid_recipes = {
-            'ETH/USDT': TradingRecipe(
+            'ETH/USDT_GRID': TradingRecipe(
                 pair='ETH/USDT',
                 name='Receta Maestra ETH',
                 conditions={
@@ -51,7 +49,7 @@ class InMemoryRecipeRepository(RecipeRepository):
                 description='Condiciones optimizadas para ETH/USDT basadas en backtesting',
                 bot_type=BotType.GRID
             ),
-            'BTC/USDT': TradingRecipe(
+            'BTC/USDT_GRID': TradingRecipe(
                 pair='BTC/USDT',
                 name='Receta Maestra BTC',
                 conditions={
@@ -66,7 +64,7 @@ class InMemoryRecipeRepository(RecipeRepository):
                 description='Condiciones optimizadas para BTC/USDT basadas en backtesting',
                 bot_type=BotType.GRID
             ),
-            'AVAX/USDT': TradingRecipe(
+            'AVAX/USDT_GRID': TradingRecipe(
                 pair='AVAX/USDT',
                 name='Receta Maestra AVAX',
                 conditions={
@@ -82,10 +80,9 @@ class InMemoryRecipeRepository(RecipeRepository):
                 bot_type=BotType.GRID
             )
         }
-        
-        # Recetas para TREND
+        # Recetas para TREND (solo ETH/USDT por ahora)
         trend_recipes = {
-            'ETH/USDT': TradingRecipe(
+            'ETH/USDT_TREND': TradingRecipe(
                 pair='ETH/USDT',
                 name='Receta TREND Maestra ETH',
                 conditions={
@@ -103,86 +100,37 @@ class InMemoryRecipeRepository(RecipeRepository):
                 },
                 description='Receta optimizada para estrategia TREND en ETH/USDT',
                 bot_type=BotType.TREND
-            ),
-            'BTC/USDT': TradingRecipe(
-                pair='BTC/USDT',
-                name='Receta TREND Maestra BTC',
-                conditions={
-                    'adx_threshold': 25,
-                    'bollinger_bandwidth_threshold': 0.035,
-                    'sentiment_threshold': -0.20,
-                    'adx_trend_threshold': 25.0,
-                    'sentiment_trend_threshold': -0.1,
-                },
-                grid_config={
-                    'sma_short_period': 30,
-                    'sma_long_period': 150,
-                    'adx_period': 14,
-                    'sentiment_avg_days': 7,
-                },
-                description='Receta optimizada para estrategia TREND en BTC/USDT',
-                bot_type=BotType.TREND
-            ),
-            'AVAX/USDT': TradingRecipe(
-                pair='AVAX/USDT',
-                name='Receta TREND Maestra AVAX',
-                conditions={
-                    'adx_threshold': 35,
-                    'bollinger_bandwidth_threshold': 0.020,
-                    'sentiment_threshold': -0.20,
-                    'adx_trend_threshold': 25.0,
-                    'sentiment_trend_threshold': -0.1,
-                },
-                grid_config={
-                    'sma_short_period': 30,
-                    'sma_long_period': 150,
-                    'adx_period': 14,
-                    'sentiment_avg_days': 7,
-                },
-                description='Receta optimizada para estrategia TREND en AVAX/USDT',
-                bot_type=BotType.TREND
             )
         }
-        
-        # Combinar todas las recetas
         recipes.update(grid_recipes)
         recipes.update(trend_recipes)
-        
         self.logger.info(f"✅ Cargadas {len(recipes)} recetas maestras (GRID: {len(grid_recipes)}, TREND: {len(trend_recipes)})")
         return recipes
     
     async def get_recipe(self, pair: str, bot_type: BotType) -> Optional[TradingRecipe]:
         """
         Obtiene la receta para un par y tipo de bot específico.
-        
         Args:
             pair: Par de trading
             bot_type: Tipo de bot
-            
         Returns:
             Receta o None si no existe
         """
         try:
-            # Buscar receta específica para el par y tipo de bot
             recipe_key = f"{pair}_{bot_type.value}"
-            
-            # Buscar en las recetas cargadas
-            for recipe in self._recipes.values():
-                if recipe.pair == pair and recipe.bot_type == bot_type:
-                    self.logger.debug(f"✅ Receta encontrada para {pair} ({bot_type.value})")
-                    return recipe
-            
+            recipe = self._recipes.get(recipe_key)
+            if recipe:
+                self.logger.debug(f"✅ Receta encontrada para {pair} ({bot_type.value})")
+                return recipe
             self.logger.warning(f"⚠️ No se encontró receta para {pair} ({bot_type.value})")
             return None
-                
         except Exception as e:
             self.logger.error(f"❌ Error obteniendo receta para {pair}: {e}")
             return None
-    
+
     async def get_all_recipes(self) -> List[TradingRecipe]:
         """
         Obtiene todas las recetas disponibles.
-        
         Returns:
             Lista de todas las recetas
         """
@@ -190,23 +138,22 @@ class InMemoryRecipeRepository(RecipeRepository):
             recipes = list(self._recipes.values())
             self.logger.debug(f"✅ Obtenidas {len(recipes)} recetas")
             return recipes
-            
         except Exception as e:
             self.logger.error(f"❌ Error obteniendo todas las recetas: {e}")
             return []
-    
-    async def get_supported_pairs(self) -> List[str]:
+
+    async def get_supported_pairs(self, bot_type: Optional[BotType] = None) -> List[str]:
         """
-        Obtiene todos los pares soportados.
-        
+        Obtiene todos los pares soportados, opcionalmente filtrando por tipo de bot.
+        Args:
+            bot_type: Si se especifica, solo retorna los pares para ese tipo de bot
         Returns:
-            Lista de pares soportados
+            Lista de pares
         """
         try:
-            pairs = list(self._recipes.keys())
-            self.logger.debug(f"✅ Pares soportados: {pairs}")
-            return pairs
-            
+            if bot_type is not None:
+                return [r.pair for k, r in self._recipes.items() if k.endswith(f"_{bot_type.value}")]
+            return [r.pair for r in self._recipes.values()]
         except Exception as e:
             self.logger.error(f"❌ Error obteniendo pares soportados: {e}")
             return []
