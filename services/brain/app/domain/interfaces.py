@@ -6,11 +6,12 @@ Define las interfaces (contratos) que deben implementar las capas externas.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 
 from .entities import (
     TradingDecision, 
+    TrendDecision,
     MarketIndicators, 
     TradingRecipe, 
     BotType
@@ -58,12 +59,12 @@ class DecisionRepository(ABC):
     """Interfaz para el repositorio de decisiones."""
     
     @abstractmethod
-    async def save_decision(self, decision: TradingDecision) -> bool:
+    async def save_decision(self, decision: Union[TradingDecision, TrendDecision]) -> bool:
         """
         Guarda una decisión de trading en la base de datos.
         
         Args:
-            decision: Decisión a guardar
+            decision: Decisión a guardar (TradingDecision o TrendDecision)
             
         Returns:
             True si se guardó correctamente
@@ -71,7 +72,7 @@ class DecisionRepository(ABC):
         pass
     
     @abstractmethod
-    async def get_latest_decision(self, pair: str, bot_type: BotType) -> Optional[TradingDecision]:
+    async def get_latest_decision(self, pair: str, bot_type: BotType) -> Optional[Union[TradingDecision, TrendDecision]]:
         """
         Obtiene la última decisión para un par y tipo de bot.
         
@@ -80,7 +81,7 @@ class DecisionRepository(ABC):
             bot_type: Tipo de bot
             
         Returns:
-            Última decisión o None si no existe
+            Última decisión (TradingDecision o TrendDecision) o None si no existe
         """
         pass
     
@@ -90,7 +91,7 @@ class DecisionRepository(ABC):
         pair: str, 
         bot_type: BotType, 
         limit: int = 10
-    ) -> List[TradingDecision]:
+    ) -> List[Union[TradingDecision, TrendDecision]]:
         """
         Obtiene el historial de decisiones para un par y tipo de bot.
         
@@ -100,7 +101,7 @@ class DecisionRepository(ABC):
             limit: Número máximo de decisiones a obtener
             
         Returns:
-            Lista de decisiones ordenadas por timestamp descendente
+            Lista de decisiones (TradingDecision o TrendDecision) ordenadas por timestamp descendente
         """
         pass
 
@@ -147,12 +148,12 @@ class NotificationService(ABC):
     """Interfaz para el servicio de notificaciones."""
     
     @abstractmethod
-    async def notify_decision_change(self, decision: TradingDecision) -> bool:
+    async def notify_decision_change(self, decision: Union[TradingDecision, TrendDecision]) -> bool:
         """
         Notifica un cambio de decisión.
         
         Args:
-            decision: Decisión de trading
+            decision: Decisión de trading (TradingDecision o TrendDecision)
             
         Returns:
             True si se notificó correctamente

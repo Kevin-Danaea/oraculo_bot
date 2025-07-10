@@ -157,6 +157,11 @@ class BinanceMarketDataRepository(MarketDataRepository):
             ema21_value = float(latest.get('EMA_21', 0)) if pd.notna(latest.get('EMA_21')) else 0.0
             ema50_value = float(latest.get('EMA_50', 0)) if pd.notna(latest.get('EMA_50')) else 0.0
             
+            # Indicadores específicos para TREND
+            sma30_value = float(latest.get('SMA_30', 0)) if pd.notna(latest.get('SMA_30')) else 0.0
+            sma150_value = float(latest.get('SMA_150', 0)) if pd.notna(latest.get('SMA_150')) else 0.0
+            sentiment_7d_avg_value = float(latest.get('sentiment_promedio', 0)) if pd.notna(latest.get('sentiment_promedio')) else None
+            
             indicators = MarketIndicators(
                 adx=adx_value,
                 volatility=bb_width_value,
@@ -165,6 +170,9 @@ class BinanceMarketDataRepository(MarketDataRepository):
                 macd=macd_value,
                 ema21=ema21_value,
                 ema50=ema50_value,
+                sma30=sma30_value,
+                sma150=sma150_value,
+                sentiment_7d_avg=sentiment_7d_avg_value,
                 timestamp=datetime.utcnow()
             )
             
@@ -189,7 +197,8 @@ class BinanceMarketDataRepository(MarketDataRepository):
         try:
             # ADX (Average Directional Index) - pandas-ta devuelve múltiples columnas
             adx_data = ta.adx(df['high'], df['low'], df['close'], length=14)
-            df['ADX_14'] = adx_data['ADX_14']  # Solo la columna ADX
+            if adx_data is not None:
+                df['ADX_14'] = adx_data['ADX_14']  # Solo la columna ADX
             
             # Bandas de Bollinger usando pandas-ta
             df.ta.bbands(length=20, std=2, append=True)
@@ -198,21 +207,27 @@ class BinanceMarketDataRepository(MarketDataRepository):
             # Fórmula: (Banda Superior - Banda Inferior) / Banda Media
             df['bb_width'] = (df['BBU_20_2.0'] - df['BBL_20_2.0']) / df['BBM_20_2.0']
             
-            # Manejar posibles divisiones por cero
-            df['bb_width'] = df['bb_width'].replace([np.inf, -np.inf], np.nan)
+            # Indicadores específicos para TREND
+            # SMA (Simple Moving Average) de 30 y 150 periodos
+            df['SMA_30'] = ta.sma(df['close'], length=30)
+            df['SMA_150'] = ta.sma(df['close'], length=150)
             
             # RSI
             df['RSI_14'] = ta.rsi(df['close'], length=14)
             
             # MACD
-            macd = ta.macd(df['close'])
-            df['MACD_12_26_9'] = macd['MACD_12_26_9']
-            df['MACDs_12_26_9'] = macd['MACDs_12_26_9']
-            df['MACDh_12_26_9'] = macd['MACDh_12_26_9']
+            macd_data = ta.macd(df['close'])
+            if macd_data is not None:
+                df['MACD_12_26_9'] = macd_data['MACD_12_26_9']
+                df['MACDs_12_26_9'] = macd_data['MACDs_12_26_9']
+                df['MACDh_12_26_9'] = macd_data['MACDh_12_26_9']
             
-            # EMA 21 y 50
+            # EMA
             df['EMA_21'] = ta.ema(df['close'], length=21)
             df['EMA_50'] = ta.ema(df['close'], length=50)
+            
+            # Manejar posibles divisiones por cero
+            df['bb_width'] = df['bb_width'].replace([np.inf, -np.inf], np.nan)
             
             self.logger.debug("✅ Indicadores técnicos calculados con pandas-ta")
             

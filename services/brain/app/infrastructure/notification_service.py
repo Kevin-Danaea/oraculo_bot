@@ -7,11 +7,11 @@ Preparado para Redis pero actualmente solo registra en logs.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from datetime import datetime
 
 from app.domain.interfaces import NotificationService
-from app.domain.entities import TradingDecision
+from app.domain.entities import TradingDecision, TrendDecision
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,12 @@ class HTTPNotificationService(NotificationService):
         self.logger = logging.getLogger(__name__)
         self.logger.info("🔔 Servicio de notificaciones inicializado (modo log-only)")
     
-    async def notify_decision_change(self, decision: TradingDecision) -> bool:
+    async def notify_decision_change(self, decision: Union[TradingDecision, TrendDecision]) -> bool:
         """
         Notifica un cambio de decisión.
         
         Args:
-            decision: Decisión de trading
+            decision: Decisión de trading (TradingDecision o TrendDecision)
             
         Returns:
             True si se notificó correctamente
@@ -43,7 +43,14 @@ class HTTPNotificationService(NotificationService):
             # Registrar la notificación en logs
             self.logger.info(f"🔔 Notificación de cambio de decisión:")
             self.logger.info(f"   📊 Par: {decision.pair}")
-            self.logger.info(f"   🤖 Bot: {decision.bot_type.value}")
+            
+            # Determinar el tipo de bot basado en el tipo de decisión
+            if isinstance(decision, TrendDecision):
+                bot_type = "TREND"
+            else:
+                bot_type = decision.bot_type.value
+                
+            self.logger.info(f"   🤖 Bot: {bot_type}")
             self.logger.info(f"   📈 Decisión: {decision.decision.value}")
             self.logger.info(f"   📝 Razón: {decision.reason}")
             self.logger.info(f"   ⏰ Timestamp: {decision.timestamp}")

@@ -1,0 +1,1 @@
+"""Domain layer for Trend Following Bot.""" 

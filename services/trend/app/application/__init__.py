@@ -1,0 +1,1 @@
+"""Application layer for Trend Following Bot.""" 

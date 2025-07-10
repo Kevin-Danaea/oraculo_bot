@@ -100,6 +100,41 @@ services:
     networks:
       - oraculo-network
 
+  # Servicio Trend - Trend Following Bot
+  trend:
+    build:
+      context: .
+      dockerfile: services/trend/Dockerfile
+    container_name: oraculo-trend
+    ports:
+      - "8005:8005"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TREND_ANALYSIS_TIMEFRAME=${TREND_ANALYSIS_TIMEFRAME:-4h}
+      - TREND_CONFIRMATION_TIMEFRAME=${TREND_CONFIRMATION_TIMEFRAME:-1h}
+      - TREND_MIN_SIGNAL_CONFIDENCE=${TREND_MIN_SIGNAL_CONFIDENCE:-0.7}
+      - TREND_MAX_POSITIONS_PER_SYMBOL=${TREND_MAX_POSITIONS_PER_SYMBOL:-1}
+      - TREND_DEFAULT_STOP_LOSS_PERCENT=${TREND_DEFAULT_STOP_LOSS_PERCENT:-3.0}
+      - TREND_DEFAULT_TAKE_PROFIT_PERCENT=${TREND_DEFAULT_TAKE_PROFIT_PERCENT:-9.0}
+      - TREND_DEFAULT_TRAILING_STOP_PERCENT=${TREND_DEFAULT_TRAILING_STOP_PERCENT:-2.0}
+      - TREND_MAX_POSITION_SIZE_PERCENT=${TREND_MAX_POSITION_SIZE_PERCENT:-10.0}
+      - TREND_MARKET_ANALYSIS_INTERVAL=${TREND_MARKET_ANALYSIS_INTERVAL:-15}
+      - TREND_TRADE_EXECUTION_INTERVAL=${TREND_TRADE_EXECUTION_INTERVAL:-5}
+      - TREND_POSITION_MANAGEMENT_INTERVAL=${TREND_POSITION_MANAGEMENT_INTERVAL:-2}
+      - TREND_LOG_LEVEL=${TREND_LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+      - ./shared:/app/shared
+    depends_on:
+      - brain
+    restart: unless-stopped
+    networks:
+      - oraculo-network
+
 networks:
   oraculo-network:
     driver: bridge 

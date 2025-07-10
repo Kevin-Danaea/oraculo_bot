@@ -1,0 +1,1 @@
+"""Trend Following Bot Application Package.""" 
