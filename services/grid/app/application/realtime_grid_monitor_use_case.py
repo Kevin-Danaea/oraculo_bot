@@ -201,9 +201,10 @@ class RealTimeGridMonitorUseCase:
             first_init_completed = self._bot_initialization_status.get(pair, {}).get('first_initialization_completed', False)
             
             if first_init_completed:
-                # Si ya completó la primera inicialización, está listo para operar normalmente
+                # 🔧 CORRECCIÓN: Si ya completó la primera inicialización, está listo para operar normalmente
+                # NO importa cuántas órdenes activas tenga actualmente
                 is_ready = True
-                logger.debug(f"✅ Bot {pair} ya completó primera inicialización, operando normalmente")
+                logger.debug(f"✅ Bot {pair} ya completó primera inicialización, operando normalmente ({total_active_orders} órdenes activas)")
             else:
                 # Verificar si está completando la primera inicialización (100% de órdenes iniciales)
                 min_orders_required = config.grid_levels
@@ -709,23 +710,51 @@ class RealTimeGridMonitorUseCase:
 
     def reset_initialization_status(self, pair: Optional[str] = None):
         """
-        Resetea el estado de inicialización para un bot específico o todos los bots.
-        Útil después de limpieza o reinicio.
+        Resetea el estado de inicialización de un bot específico o todos los bots.
+        Útil para bots que se quedaron atascados en el estado de inicialización.
         
         Args:
-            pair: Par específico a resetear, o None para resetear todos
+            pair: Par específico a resetear. Si es None, resetea todos los bots.
         """
         if pair:
             if pair in self._bot_initialization_status:
                 del self._bot_initialization_status[pair]
                 logger.info(f"🔄 Estado de inicialización reseteado para {pair}")
+            else:
+                logger.info(f"ℹ️ No se encontró estado de inicialización para {pair}")
         else:
             self._bot_initialization_status.clear()
             logger.info("🔄 Estado de inicialización reseteado para todos los bots")
 
+    def force_bot_ready(self, pair: str):
+        """
+        Fuerza que un bot específico sea marcado como listo para operar.
+        Útil para bots que ya están operando pero el sistema los considera no listos.
+        
+        Args:
+            pair: Par a marcar como listo
+        """
+        try:
+            current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+            total_active_orders = len(current_active_orders)
+            
+            self._bot_initialization_status[pair] = {
+                'initialized': True,
+                'initial_orders_count': total_active_orders,
+                'required_orders': 30,  # Valor por defecto
+                'first_initialization_completed': True,
+                'last_check': datetime.now(),
+                'force_ready': True  # Marca que fue forzado
+            }
+            
+            logger.info(f"🔧 Bot {pair} forzado como listo para operar ({total_active_orders} órdenes activas)")
+            
+        except Exception as e:
+            logger.error(f"❌ Error forzando bot {pair} como listo: {e}")
+
     def get_initialization_status(self) -> Dict[str, Any]:
         """
-        Obtiene el estado actual de inicialización de todos los bots.
+        Obtiene el estado de inicialización de todos los bots.
         
         Returns:
             Dict con el estado de inicialización de cada bot
