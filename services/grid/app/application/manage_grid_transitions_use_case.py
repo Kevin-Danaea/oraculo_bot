@@ -149,13 +149,13 @@ class ManageGridTransitionsUseCase:
             exchange_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             
             # 🔍 DIAGNÓSTICO: Logging detallado para entender por qué no encuentra órdenes
-            logger.info(f"🔍 DIAGNÓSTICO {config.pair}:")
-            logger.info(f"   - Bot is_running: {config.is_running}")
-            logger.info(f"   - Current decision: {current_decision}")
-            logger.info(f"   - Exchange orders found: {len(exchange_orders)}")
+            logger.debug(f"🔍 DIAGNÓSTICO {config.pair}:")
+            logger.debug(f"   - Bot is_running: {config.is_running}")
+            logger.debug(f"   - Current decision: {current_decision}")
+            logger.debug(f"   - Exchange orders found: {len(exchange_orders)}")
             
             if exchange_orders:
-                logger.info(f"   - Exchange order IDs: {[o.get('exchange_order_id', 'N/A') for o in exchange_orders[:5]]}")
+                logger.debug(f"   - Exchange order IDs: {[o.get('exchange_order_id', 'N/A') for o in exchange_orders[:5]]}")
             else:
                 logger.info(f"   - ⚠️ NO SE ENCONTRARON ÓRDENES EN EL EXCHANGE")
                 

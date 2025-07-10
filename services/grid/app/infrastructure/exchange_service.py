@@ -768,16 +768,16 @@ class BinanceExchangeService(ExchangeService):
             if not self.exchange:
                 raise Exception("Exchange no inicializado")
             
-            logger.info(f"🔍 CONSULTANDO órdenes activas en exchange para {pair}")
+            logger.debug(f"🔍 CONSULTANDO órdenes activas en exchange para {pair}")
             
             # Verificar modo de trading
             trading_mode = self.get_trading_mode()
-            logger.info(f"🔧 Modo de trading actual: {trading_mode}")
+            logger.debug(f"🔧 Modo de trading actual: {trading_mode}")
             
             # Obtener órdenes abiertas del exchange
             open_orders = self.exchange.fetch_open_orders(pair)
             
-            logger.info(f"📋 Raw open orders from exchange for {pair}: {len(open_orders)} orders")
+            logger.debug(f"📋 Raw open orders from exchange for {pair}: {len(open_orders)} orders")
             
             # Formatear órdenes para consistencia
             formatted_orders = []
@@ -801,17 +801,18 @@ class BinanceExchangeService(ExchangeService):
                     logger.warning(f"⚠️ Error formateando orden {order.get('id', 'unknown')}: {order_error}")
                     continue
             
-            logger.info(f"📋 Órdenes activas en exchange para {pair}: {len(formatted_orders)} órdenes formateadas")
-            
+            # Solo log INFO si no hay órdenes (caso importante)
             if not formatted_orders:
                 logger.warning(f"⚠️ NO SE ENCONTRARON ÓRDENES ACTIVAS en exchange para {pair}")
                 # Verificar si hay algún error específico
                 try:
                     # Intentar obtener información del mercado para verificar que el par existe
                     market_info = self.exchange.market(pair)
-                    logger.info(f"✅ Mercado {pair} existe y es válido")
+                    logger.debug(f"✅ Mercado {pair} existe y es válido")
                 except Exception as market_error:
                     logger.error(f"❌ Error verificando mercado {pair}: {market_error}")
+            else:
+                logger.debug(f"📋 Órdenes activas en exchange para {pair}: {len(formatted_orders)} órdenes formateadas")
             
             return formatted_orders
             
