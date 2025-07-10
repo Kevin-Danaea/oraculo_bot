@@ -1,32 +1,35 @@
-FROM python:3.11-slim
+# ==============================================================================
+# Dockerfile Estandarizado - Oráculo Bot Trend Service
+# ==============================================================================
 
-# Establecer directorio de trabajo
+FROM python:3.10-slim
+
+# Configuración del entorno
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
 WORKDIR /app
 
 # Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
     gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar y instalar dependencias de Python
-COPY requirements.txt .
+# Copiar requirements e instalar dependencias Python
+COPY services/trend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el código fuente
-COPY . .
+# Copiar código de la aplicación
+COPY services/trend/app/ ./app/
+COPY shared/ ./shared/
 
-# Copiar archivos compartidos
-COPY ../../shared ./shared/
+# Crear directorio para logs
+RUN mkdir -p logs
 
-# Crear directorios necesarios
-RUN mkdir -p logs data
+# Exponer puerto
+EXPOSE 8005
 
-# Variable de entorno para Python
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-
-# Puerto (aunque este servicio no expone HTTP)
-EXPOSE 8000
-
-# Comando por defecto
-CMD ["python", "-m", "services.trend.app.main"] 
+# Comando para ejecutar el servicio
+CMD ["python", "-m", "app.main"] 

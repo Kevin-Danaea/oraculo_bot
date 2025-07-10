@@ -5,9 +5,14 @@ import logging
 import signal
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
+from typing import Dict, Any, Optional
 
 # Agregar el directorio raíz al path
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
+
+from fastapi import FastAPI
+import uvicorn
 
 from shared.services.logging_config import setup_logging
 from .config import get_config
@@ -21,111 +26,150 @@ from .infrastructure.state_manager import TrendBotStateManager
 
 logger = logging.getLogger(__name__)
 
+# Variables globales para el ciclo de vida
+lifecycle_use_case: Optional[ServiceLifecycleUseCase] = None
+service_running = False
 
-class TrendBotService:
-    """Servicio principal del Trend Following Bot."""
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestor del ciclo de vida de la aplicación FastAPI."""
+    global lifecycle_use_case, service_running
     
-    def __init__(self):
-        self.config = get_config()
-        self.lifecycle_use_case = None
-        self.running = False
+    # Startup
+    logger.info("🚀 Iniciando Trend Following Bot con FastAPI...")
+    
+    try:
+        # Configurar logging
+        setup_logging()
         
-    async def initialize(self):
-        """Inicializa todas las dependencias del servicio."""
-        try:
-            logger.info("🚀 Inicializando Trend Following Bot...")
-            
-            # Configurar logging
-            setup_logging()
-            
-            # El sistema ahora maneja múltiples pares automáticamente
-            logger.info("📊 Sistema multi-par configurado - cargará configuraciones desde BD automáticamente")
-            
-            # Inicializar servicios de infraestructura
-            repository = DatabaseTrendBotRepository()
-            brain_repository = DatabaseBrainDirectiveRepository()
-            exchange_service = ExchangeService()
-            notification_service = NotificationService()
-            state_manager = TrendBotStateManager(repository)
-            
-            # Inicializar caso de uso del ciclo de vida multi-par
-            self.lifecycle_use_case = ServiceLifecycleUseCase(
-                repository=repository,
-                brain_repository=brain_repository,
-                exchange_service=exchange_service,
-                notification_service=notification_service,
-                state_manager=state_manager,
-                telegram_chat_id=self.config.telegram_chat_id
-            )
-            
-            logger.info("✅ Trend Following Bot inicializado correctamente")
-            
-        except Exception as e:
-            logger.error(f"❌ Error inicializando servicio: {str(e)}", exc_info=True)
-            raise
-    
-    async def start(self):
-        """Inicia el servicio."""
-        try:
-            if not self.lifecycle_use_case:
-                await self.initialize()
-            
-            logger.info("🚀 Iniciando Trend Following Bot...")
-            self.running = True
-            
-            # Configurar manejadores de señales
-            self._setup_signal_handlers()
-            
-            # Iniciar el ciclo de vida del servicio
-            if self.lifecycle_use_case:
-                await self.lifecycle_use_case.start()
-            
-            # Mantener el servicio corriendo
-            while self.running:
-                await asyncio.sleep(1)
-                
-        except KeyboardInterrupt:
-            logger.info("Interrupción manual detectada")
-        except Exception as e:
-            logger.error(f"Error ejecutando servicio: {str(e)}", exc_info=True)
-        finally:
-            await self.stop()
-    
-    async def stop(self):
-        """Detiene el servicio."""
-        try:
-            logger.info("🛑 Deteniendo Trend Following Bot...")
-            self.running = False
-            
-            if self.lifecycle_use_case:
-                await self.lifecycle_use_case.stop()
-            
-            logger.info("✅ Trend Following Bot detenido correctamente")
-            
-        except Exception as e:
-            logger.error(f"Error deteniendo servicio: {str(e)}", exc_info=True)
-    
-    def _setup_signal_handlers(self):
-        """Configura los manejadores de señales del sistema."""
-        def signal_handler(signum, frame):
-            logger.info(f"Señal {signum} recibida. Deteniendo servicio...")
-            self.running = False
+        # Inicializar servicios de infraestructura
+        repository = DatabaseTrendBotRepository()
+        brain_repository = DatabaseBrainDirectiveRepository()
+        exchange_service = ExchangeService()
+        notification_service = NotificationService()
+        state_manager = TrendBotStateManager(repository)
         
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        # Inicializar caso de uso del ciclo de vida multi-par
+        lifecycle_use_case = ServiceLifecycleUseCase(
+            repository=repository,
+            brain_repository=brain_repository,
+            exchange_service=exchange_service,
+            notification_service=notification_service,
+            state_manager=state_manager,
+            telegram_chat_id=get_config().telegram_chat_id
+        )
+        
+        # Iniciar el servicio
+        await lifecycle_use_case.start()
+        service_running = True
+        
+        logger.info("✅ Trend Following Bot iniciado correctamente")
+        
+    except Exception as e:
+        logger.error(f"❌ Error al iniciar Trend Following Bot: {e}")
+        raise
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Cerrando Trend Following Bot...")
+    
+    try:
+        if lifecycle_use_case:
+            await lifecycle_use_case.stop()
+        service_running = False
+        logger.info("✅ Trend Following Bot cerrado correctamente")
+        
+    except Exception as e:
+        logger.error(f"❌ Error al cerrar Trend Following Bot: {e}")
 
 
-async def main():
-    """Función principal."""
-    service = TrendBotService()
-    await service.start()
+# Crear aplicación FastAPI
+app = FastAPI(
+    title="Oráculo Bot - Trend Following Service",
+    version="2.0.0",
+    description="Servicio de trading de tendencias con análisis de mercado y gestión de posiciones",
+    lifespan=lifespan
+)
 
+
+@app.get("/", tags=["Status"])
+def read_root() -> Dict[str, Any]:
+    """Endpoint básico para verificar que el servicio está activo."""
+    return {
+        "service": "trend-following",
+        "version": "2.0.0",
+        "status": "alive",
+        "description": "Servicio de trading de tendencias - Análisis de mercado y gestión de posiciones"
+    }
+
+
+@app.get("/health", tags=["Health"])
+def health_check() -> Dict[str, Any]:
+    """Health check detallado del servicio."""
+    try:
+        return {
+            "service": "trend-following",
+            "status": "healthy" if service_running else "starting",
+            "running": service_running,
+            "features": [
+                "📊 Análisis de mercado multi-timeframe",
+                "🎯 Gestión de posiciones con trailing stop",
+                "🧠 Integración con Brain para decisiones",
+                "💰 Gestión de riesgo táctico",
+                "🔄 Sistema multi-par automático",
+                "📱 Notificaciones Telegram"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error en health check: {e}")
+        return {
+            "service": "trend-following",
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@app.get("/status", tags=["Status"])
+def get_service_status() -> Dict[str, Any]:
+    """Obtiene el estado detallado del servicio."""
+    try:
+        if not lifecycle_use_case:
+            return {
+                "status": "not_initialized",
+                "message": "Servicio aún no inicializado"
+            }
+        
+        # Obtener estado del multi-par manager
+        status = lifecycle_use_case.get_status()
+        
+        return {
+            "service": "trend-following",
+            "status": "running" if service_running else "stopped",
+            "multi_pair_status": status,
+            "active_pairs": lifecycle_use_case.multi_pair_manager.get_active_pairs() if lifecycle_use_case else []
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del servicio: {e}")
+        return {
+            "service": "trend-following",
+            "status": "error",
+            "error": str(e)
+        }
+
+
+# ============================================================================
+# INICIO DEL SERVIDOR
+# ============================================================================
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n👋 Servicio detenido por el usuario")
-    except Exception as e:
-        print(f"❌ Error crítico: {e}")
-        sys.exit(1) 
+    logger.info("🚀 Iniciando servidor Trend Following Bot...")
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8005,
+        reload=False,
+        log_level="info"
+    ) 
