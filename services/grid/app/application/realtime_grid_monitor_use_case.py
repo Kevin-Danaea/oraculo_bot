@@ -64,10 +64,6 @@ class RealTimeGridMonitorUseCase:
         self._complementary_orders_notifications = []  # Lista de notificaciones acumuladas
         self._last_notification_cleanup = datetime.now()
         
-        # 🎯 NUEVO: Sistema de tracking de trades completos
-        self._pending_buys = {}  # {pair: {order_id: {'price': Decimal, 'amount': Decimal, 'timestamp': datetime}}}
-        self._completed_trades = []  # Lista de trades completos para P&L
-        
         logger.info("✅ RealTimeGridMonitorUseCase inicializado.")
 
     def execute(self) -> Dict[str, Any]:
@@ -205,9 +201,10 @@ class RealTimeGridMonitorUseCase:
             first_init_completed = self._bot_initialization_status.get(pair, {}).get('first_initialization_completed', False)
             
             if first_init_completed:
-                # Si ya completó la primera inicialización, está listo para operar normalmente
+                # 🔧 CORRECCIÓN: Si ya completó la primera inicialización, está listo para operar normalmente
+                # NO importa cuántas órdenes activas tenga actualmente
                 is_ready = True
-                logger.debug(f"✅ Bot {pair} ya completó primera inicialización, operando normalmente")
+                logger.debug(f"✅ Bot {pair} ya completó primera inicialización, operando normalmente ({total_active_orders} órdenes activas)")
             else:
                 # Verificar si está completando la primera inicialización (100% de órdenes iniciales)
                 min_orders_required = config.grid_levels
@@ -251,24 +248,19 @@ class RealTimeGridMonitorUseCase:
         pair = config.pair
         fills_detected = []
         
-        # 1. Verificar y limpiar órdenes excedentes antes de continuar
-        excess_orders_cancelled = self._cleanup_excess_orders(config)
-        if excess_orders_cancelled > 0:
-            logger.warning(f"🚦 Bot {pair}: {excess_orders_cancelled} órdenes excedentes canceladas antes del monitoreo")
-        
-        # 2. Obtener órdenes activas actuales del exchange
+        # 1. Obtener órdenes activas actuales del exchange
         current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
         logger.debug(f"[EXCHANGE] {pair}: {len(current_active_orders)} órdenes activas")
         
-        # 3. Detectar fills usando múltiples métodos
+        # 2. Detectar fills usando múltiples métodos
         fills_detected.extend(self._detect_fills_method_1(pair, current_active_orders))
         fills_detected.extend(self._detect_fills_method_2(pair))
         fills_detected.extend(self._detect_fills_method_3(pair))
         
-        # 4. Actualizar tracking de órdenes para el próximo ciclo
+        # 3. Actualizar tracking de órdenes para el próximo ciclo
         self._previous_active_orders[pair] = current_active_orders
         
-        # 5. Procesar fills detectados
+        # 4. Procesar fills detectados
         new_orders_created = 0
         trades_completed = 0
         
@@ -285,10 +277,6 @@ class RealTimeGridMonitorUseCase:
             fills_detected = list(unique_fills.values())
             logger.info(f"🔄 {len(fills_detected)} fills únicos procesados en {pair}")
             
-            # 🎯 NUEVO: Detectar trades completos
-            completed_trades = self._detect_completed_trades(pair, fills_detected)
-            trades_completed = len(completed_trades)
-            
             for fill in fills_detected:
                 logger.info(f"[FILL] {pair}: Orden {fill['exchange_order_id']} {fill['side']} {fill['filled']} a ${fill['price']} ejecutada")
                 
@@ -303,8 +291,7 @@ class RealTimeGridMonitorUseCase:
         return {
             'fills_detected': len(fills_detected),
             'new_orders_created': new_orders_created,
-            'trades_completed': trades_completed,
-            'excess_orders_cancelled': excess_orders_cancelled
+            'trades_completed': trades_completed
         }
 
     def _detect_fills_method_1(self, pair: str, current_orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -410,85 +397,6 @@ class RealTimeGridMonitorUseCase:
             logger.error(f"❌ Error en método 3 de detección de fills para {pair}: {e}")
             return []
 
-    def _detect_completed_trades(self, pair: str, filled_orders: List[Dict[str, Any]]) -> List[GridTrade]:
-        """
-        Detecta trades completos (compra + venta) y calcula P&L real.
-        
-        Args:
-            pair: Par de trading
-            filled_orders: Lista de órdenes completadas
-            
-        Returns:
-            Lista de trades completos detectados
-        """
-        completed_trades = []
-        
-        try:
-            for filled_order in filled_orders:
-                order_id = filled_order.get('exchange_order_id')
-                side = filled_order.get('side')
-                price = Decimal(str(filled_order.get('price', 0)))
-                amount = Decimal(str(filled_order.get('filled', 0)))
-                timestamp = datetime.now()
-                
-                if side == 'buy':
-                    # Registrar compra pendiente
-                    if pair not in self._pending_buys:
-                        self._pending_buys[pair] = {}
-                    
-                    self._pending_buys[pair][order_id] = {
-                        'price': price,
-                        'amount': amount,
-                        'timestamp': timestamp
-                    }
-                    logger.debug(f"📈 Compra registrada para {pair}: {amount} a ${price}")
-                    
-                elif side == 'sell':
-                    # Buscar compra correspondiente para completar el trade
-                    if pair in self._pending_buys and self._pending_buys[pair]:
-                        # Encontrar la compra más antigua (FIFO)
-                        oldest_buy_id = min(self._pending_buys[pair].keys(), 
-                                          key=lambda k: self._pending_buys[pair][k]['timestamp'])
-                        buy_data = self._pending_buys[pair][oldest_buy_id]
-                        
-                        # Verificar que las cantidades coincidan (aproximadamente)
-                        if abs(buy_data['amount'] - amount) < Decimal('0.000001'):
-                            # Crear trade completo
-                            profit = (price - buy_data['price']) * amount
-                            profit_percent = (profit / (buy_data['price'] * amount) * 100) if buy_data['price'] > 0 else Decimal('0')
-                            
-                            trade = GridTrade(
-                                pair=pair,
-                                buy_order_id=str(oldest_buy_id),
-                                sell_order_id=str(order_id),
-                                buy_price=buy_data['price'],
-                                sell_price=price,
-                                amount=amount,
-                                profit=profit,
-                                profit_percent=profit_percent,
-                                executed_at=timestamp
-                            )
-                            
-                            completed_trades.append(trade)
-                            
-                            # Guardar trade en el repositorio
-                            self.grid_repository.save_trade(trade)
-                            
-                            # Remover la compra pendiente
-                            del self._pending_buys[pair][oldest_buy_id]
-                            
-                            logger.info(f"🎯 Trade completo detectado en {pair}: Compra ${buy_data['price']:.4f} → Venta ${price:.4f} = Profit ${profit:.4f} ({profit_percent:.2f}%)")
-                        else:
-                            logger.warning(f"⚠️ Cantidades no coinciden en {pair}: Compra {buy_data['amount']} vs Venta {amount}")
-                    else:
-                        logger.warning(f"⚠️ Venta sin compra correspondiente en {pair}: {amount} a ${price}")
-            
-            return completed_trades
-            
-        except Exception as e:
-            logger.error(f"❌ Error detectando trades completos para {pair}: {e}")
-            return completed_trades
-
     def _create_complementary_order_from_dict(self, filled_order: Dict[str, Any], config: GridConfig) -> Optional[GridOrder]:
         """
         Crea una orden complementaria basada en una orden completada (dict).
@@ -522,15 +430,6 @@ class RealTimeGridMonitorUseCase:
                         'first_initialization_completed': True
                     }
                     logger.info(f"🎉 Bot {config.pair} completó primera inicialización, ahora puede crear órdenes complementarias")
-            
-            # Verificar límite de órdenes activas ANTES de crear la orden complementaria
-            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
-            total_active_orders = len(active_orders)
-            max_allowed_orders = config.grid_levels
-            
-            if total_active_orders >= max_allowed_orders:
-                logger.warning(f"🚦 Bot {config.pair}: Límite de órdenes alcanzado ({total_active_orders}/{max_allowed_orders}). No se crea nueva orden complementaria.")
-                return None
             
             # Extraer información de la orden completada
             side = filled_order['side']
@@ -811,36 +710,51 @@ class RealTimeGridMonitorUseCase:
 
     def reset_initialization_status(self, pair: Optional[str] = None):
         """
-        Resetea el estado de inicialización para un bot específico o todos los bots.
+        Resetea el estado de inicialización de un bot específico o todos los bots.
+        Útil para bots que se quedaron atascados en el estado de inicialización.
         
         Args:
-            pair: Par específico a resetear, o None para resetear todos
+            pair: Par específico a resetear. Si es None, resetea todos los bots.
         """
         if pair:
             if pair in self._bot_initialization_status:
                 del self._bot_initialization_status[pair]
                 logger.info(f"🔄 Estado de inicialización reseteado para {pair}")
+            else:
+                logger.info(f"ℹ️ No se encontró estado de inicialización para {pair}")
         else:
             self._bot_initialization_status.clear()
             logger.info("🔄 Estado de inicialización reseteado para todos los bots")
 
-    def reset_initialization_status_for_paused_bot(self, pair: str):
+    def force_bot_ready(self, pair: str):
         """
-        Resetea el estado de inicialización específicamente para un bot pausado.
-        Esto asegura que cuando se reactive, pase por el proceso de inicialización completo.
+        Fuerza que un bot específico sea marcado como listo para operar.
+        Útil para bots que ya están operando pero el sistema los considera no listos.
         
         Args:
-            pair: Par del bot pausado
+            pair: Par a marcar como listo
         """
-        if pair in self._bot_initialization_status:
-            del self._bot_initialization_status[pair]
-            logger.info(f"🔄 Estado de inicialización reseteado para bot pausado {pair}")
-        else:
-            logger.debug(f"ℹ️ No había estado de inicialización para resetear en {pair}")
+        try:
+            current_active_orders = self.exchange_service.get_active_orders_from_exchange(pair)
+            total_active_orders = len(current_active_orders)
+            
+            self._bot_initialization_status[pair] = {
+                'initialized': True,
+                'initial_orders_count': total_active_orders,
+                'required_orders': 30,  # Valor por defecto
+                'first_initialization_completed': True,
+                'last_check': datetime.now(),
+                'force_ready': True  # Marca que fue forzado
+            }
+            
+            logger.info(f"🔧 Bot {pair} forzado como listo para operar ({total_active_orders} órdenes activas)")
+            
+        except Exception as e:
+            logger.error(f"❌ Error forzando bot {pair} como listo: {e}")
 
     def get_initialization_status(self) -> Dict[str, Any]:
         """
-        Obtiene el estado actual de inicialización de todos los bots.
+        Obtiene el estado de inicialización de todos los bots.
         
         Returns:
             Dict con el estado de inicialización de cada bot
@@ -1005,66 +919,3 @@ class RealTimeGridMonitorUseCase:
         self.grid_repository.save_grid_steps(config.pair, list(steps_by_level.values()))
 
         return new_orders_created, trades_completed 
-
-    def _cleanup_excess_orders(self, config: GridConfig) -> int:
-        """
-        Limpia órdenes excedentes cuando se supera el límite de grid_levels.
-        
-        Args:
-            config: Configuración del bot
-            
-        Returns:
-            int: Número de órdenes canceladas
-        """
-        try:
-            active_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
-            total_active_orders = len(active_orders)
-            max_allowed_orders = config.grid_levels
-            
-            if total_active_orders <= max_allowed_orders:
-                return 0
-            
-            excess_orders = total_active_orders - max_allowed_orders
-            logger.warning(f"🚦 Bot {config.pair}: Detectadas {excess_orders} órdenes excedentes ({total_active_orders}/{max_allowed_orders})")
-            
-            # Ordenar órdenes por precio para cancelar las más alejadas del precio actual
-            current_price = self.exchange_service.get_current_price(config.pair)
-            
-            # Separar órdenes de compra y venta
-            buy_orders = [o for o in active_orders if o.get('side') == 'buy']
-            sell_orders = [o for o in active_orders if o.get('side') == 'sell']
-            
-            orders_to_cancel = []
-            
-            # Cancelar órdenes de compra más alejadas del precio actual
-            if buy_orders:
-                buy_orders.sort(key=lambda x: abs(Decimal(str(x.get('price', 0))) - current_price), reverse=True)
-                orders_to_cancel.extend(buy_orders[:excess_orders])
-            
-            # Si aún hay exceso, cancelar órdenes de venta más alejadas
-            if len(orders_to_cancel) < excess_orders and sell_orders:
-                remaining_excess = excess_orders - len(orders_to_cancel)
-                sell_orders.sort(key=lambda x: abs(Decimal(str(x.get('price', 0))) - current_price), reverse=True)
-                orders_to_cancel.extend(sell_orders[:remaining_excess])
-            
-            # Cancelar las órdenes seleccionadas
-            cancelled_count = 0
-            for order in orders_to_cancel:
-                try:
-                    order_id = order.get('exchange_order_id')
-                    if order_id:
-                        self.exchange_service.cancel_order(config.pair, order_id)
-                        cancelled_count += 1
-                        logger.info(f"🚫 Orden excedente cancelada: {order.get('side')} {order.get('amount')} a ${order.get('price')}")
-                except Exception as e:
-                    logger.error(f"❌ Error cancelando orden excedente: {e}")
-                    continue
-            
-            if cancelled_count > 0:
-                logger.info(f"✅ Bot {config.pair}: {cancelled_count} órdenes excedentes canceladas")
-            
-            return cancelled_count
-            
-        except Exception as e:
-            logger.error(f"❌ Error limpiando órdenes excedentes para {config.pair}: {e}")
-            return 0 

@@ -3,12 +3,10 @@ Bot de Telegram simplificado para comandos básicos del Grid Trading.
 """
 from typing import Optional
 import threading
-import re
 
 from shared.services.telegram_trading import TelegramTradingService
 from shared.services.logging_config import get_logger
 from app.application.mode_switch_use_case import ModeSwitchUseCase
-from telegram.ext import CommandHandler, MessageHandler, filters
 
 logger = get_logger(__name__)
 
@@ -74,6 +72,7 @@ class GridTelegramBot:
                 return
             
             # Importar CommandHandler aquí para evitar problemas de importación
+            from telegram.ext import CommandHandler
             
             # Comandos básicos - usar wrappers simples
             self.telegram_service._application.add_handler(
@@ -113,14 +112,18 @@ class GridTelegramBot:
                 CommandHandler("summary", self._handle_summary_command)
             )
             
-            # Comandos de trading
+            # 🔧 NUEVOS COMANDOS PARA BOTS ATASCADOS
             self.telegram_service._application.add_handler(
-                CommandHandler("trades", self._handle_trades_command)
+                CommandHandler("force_bot", self._handle_force_bot_command)
             )
-            
-            # Capturar comandos /trades con parámetros
             self.telegram_service._application.add_handler(
-                MessageHandler(filters.Regex(r'^/trades\s+(\S+)$'), self._handle_trades_pair_command)
+                CommandHandler("reset_bot", self._handle_reset_bot_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("bot_status", self._handle_bot_status_command)
+            )
+            self.telegram_service._application.add_handler(
+                CommandHandler("diagnose", self._handle_diagnose_command)
             )
             
             logger.info("✅ Comandos de Telegram registrados correctamente")
@@ -202,15 +205,23 @@ class GridTelegramBot:
             "📊 <b>Información:</b>\n"
             "• /status - Estado del sistema y scheduler\n"
             "• /balance - Capital asignado y balances por bot\n"
-            "• /summary - Forzar envío de resumen periódico\n\n"
+            "• /summary - Forzar envío de resumen periódico\n"
+            "• /bot_status - Estado de inicialización de bots\n\n"
             "🎮 <b>Control:</b>\n"
             "• /start_bot - Iniciar Grid Trading\n"
             "• /stop_bot - Detener Grid Trading\n"
             "• /monitor - Ejecutar monitoreo manual\n\n"
+            "🔧 <b>Mantenimiento:</b>\n"
+            "• /force_bot <par> - Forzar bot como listo (ej: /force_bot BTC/USDT)\n"
+            "• /reset_bot <par> - Resetear estado de bot (ej: /reset_bot BTC/USDT)\n"
+            "• /diagnose - Diagnosticar y corregir bots automáticamente\n\n"
             "⚙️ <b>Configuración:</b>\n"
             "• /sandbox - Cambiar a modo pruebas\n"
-            "• /production - Cambiar a modo real (requiere confirmación)\n\n"
-            "💡 <b>Tip:</b> Los comandos también funcionan sin la barra /"
+            "• /production - Cambiar a modo real\n\n"
+            "💡 <b>Ejemplos:</b>\n"
+            "• <code>/force_bot BTC/USDT</code> - Forzar BTC como listo\n"
+            "• <code>/reset_bot AVAX/USDT</code> - Resetear estado de AVAX\n"
+            "• <code>/bot_status</code> - Ver estado de todos los bots"
         )
         await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
 
@@ -278,12 +289,223 @@ class GridTelegramBot:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
 
     async def _handle_summary_command(self, update, context):
-        """Maneja el comando /summary para forzar envío de resumen."""
+        """Maneja el comando /summary."""
         try:
             result = self._handle_force_summary()
             await context.bot.send_message(chat_id=update.effective_chat.id, text=result, parse_mode='HTML')
         except Exception as e:
             error_msg = f"❌ Error forzando resumen: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
+
+    async def _handle_force_bot_command(self, update, context):
+        """Maneja el comando /force_bot para forzar que un bot sea marcado como listo."""
+        try:
+            # Obtener el par del mensaje
+            message_text = update.message.text.strip()
+            parts = message_text.split()
+            
+            if len(parts) < 2:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="❌ Uso: /force_bot <par>\nEjemplo: /force_bot BTC/USDT", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            pair = parts[1].upper()
+            
+            # Verificar que el monitor en tiempo real esté disponible
+            if not hasattr(self.scheduler, 'realtime_monitor_use_case'):
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="❌ Monitor en tiempo real no disponible", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            # Forzar que el bot sea marcado como listo
+            self.scheduler.realtime_monitor_use_case.force_bot_ready(pair)
+            
+            # Obtener estado actual
+            status = self.scheduler.realtime_monitor_use_case.get_initialization_status()
+            bot_status = status.get(pair, {})
+            
+            message = (
+                f"🔧 <b>Bot {pair} forzado como listo</b>\n\n"
+                f"✅ Estado: {bot_status.get('initialized', 'N/A')}\n"
+                f"📊 Órdenes activas: {bot_status.get('initial_orders_count', 'N/A')}\n"
+                f"🎯 Primera inicialización: {bot_status.get('first_initialization_completed', 'N/A')}\n"
+                f"🔧 Forzado manualmente: {bot_status.get('force_ready', False)}"
+            )
+            
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
+            
+        except Exception as e:
+            error_msg = f"❌ Error forzando bot {pair}: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
+
+    async def _handle_reset_bot_command(self, update, context):
+        """Maneja el comando /reset_bot para resetear el estado de un bot."""
+        try:
+            # Obtener el par del mensaje
+            message_text = update.message.text.strip()
+            parts = message_text.split()
+            
+            if len(parts) < 2:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="❌ Uso: /reset_bot <par>\nEjemplo: /reset_bot BTC/USDT", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            pair = parts[1].upper()
+            
+            # Verificar que el monitor en tiempo real esté disponible
+            if not hasattr(self.scheduler, 'realtime_monitor_use_case'):
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="❌ Monitor en tiempo real no disponible", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            # Resetear estado del bot
+            self.scheduler.realtime_monitor_use_case.reset_initialization_status(pair)
+            
+            message = f"🔄 <b>Estado de inicialización reseteado para {pair}</b>\n\nEl bot será re-evaluado en el próximo ciclo de monitoreo."
+            
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
+            
+        except Exception as e:
+            error_msg = f"❌ Error reseteando bot {pair}: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
+
+    async def _handle_bot_status_command(self, update, context):
+        """Maneja el comando /bot_status para ver el estado de todos los bots."""
+        try:
+            # Verificar que el monitor en tiempo real esté disponible
+            if not hasattr(self.scheduler, 'realtime_monitor_use_case'):
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="❌ Monitor en tiempo real no disponible", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            # Obtener estado de todos los bots
+            status = self.scheduler.realtime_monitor_use_case.get_initialization_status()
+            
+            if not status:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="ℹ️ No hay bots registrados en el monitor", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            message = "🤖 <b>Estado de Inicialización de Bots</b>\n\n"
+            
+            for pair, bot_status in status.items():
+                initialized = "✅" if bot_status.get('initialized', False) else "❌"
+                orders_count = bot_status.get('initial_orders_count', 'N/A')
+                first_init = "✅" if bot_status.get('first_initialization_completed', False) else "❌"
+                force_ready = "🔧" if bot_status.get('force_ready', False) else ""
+                
+                message += (
+                    f"{initialized} <b>{pair}</b>\n"
+                    f"   📊 Órdenes: {orders_count}\n"
+                    f"   🎯 Primera inicialización: {first_init}\n"
+                    f"   {force_ready} Forzado manualmente\n\n"
+                )
+            
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
+            
+        except Exception as e:
+            error_msg = f"❌ Error obteniendo estado de bots: {str(e)}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
+
+    async def _handle_diagnose_command(self, update, context):
+        """Maneja el comando /diagnose para diagnosticar y corregir bots automáticamente."""
+        try:
+            # Verificar que el monitor en tiempo real esté disponible
+            if not hasattr(self.scheduler, 'realtime_monitor_use_case'):
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="❌ Monitor en tiempo real no disponible", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            # Obtener configuraciones activas
+            active_configs = self.scheduler.grid_repository.get_active_configs()
+            if not active_configs:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, 
+                    text="ℹ️ No hay bots activos para diagnosticar", 
+                    parse_mode='HTML'
+                )
+                return
+            
+            # Obtener estado actual de inicialización
+            init_status = self.scheduler.realtime_monitor_use_case.get_initialization_status()
+            
+            bots_fixed = 0
+            bots_checked = 0
+            diagnostics = []
+            
+            for config in active_configs:
+                pair = config.pair
+                bots_checked += 1
+                
+                try:
+                    # Obtener órdenes activas actuales
+                    current_active_orders = self.scheduler.exchange_service.get_active_orders_from_exchange(pair)
+                    total_active_orders = len(current_active_orders)
+                    
+                    # Verificar si el bot está siendo monitoreado
+                    bot_init_status = init_status.get(pair, {})
+                    is_being_monitored = bot_init_status.get('initialized', False)
+                    first_init_completed = bot_init_status.get('first_initialization_completed', False)
+                    
+                    # Detectar problemas
+                    if total_active_orders > 0:  # Bot tiene órdenes activas
+                        if not is_being_monitored:  # Pero no está siendo monitoreado
+                            # 🔧 CORREGIR: Forzar que el bot sea marcado como listo
+                            self.scheduler.realtime_monitor_use_case.force_bot_ready(pair)
+                            bots_fixed += 1
+                            diagnostics.append(f"🔧 {pair}: {total_active_orders} órdenes pero no monitoreado → CORREGIDO")
+                        elif not first_init_completed and total_active_orders >= config.grid_levels:
+                            # Bot tiene suficientes órdenes pero no se marcó como inicializado
+                            self.scheduler.realtime_monitor_use_case.force_bot_ready(pair)
+                            bots_fixed += 1
+                            diagnostics.append(f"🔧 {pair}: {total_active_orders} órdenes pero no inicializado → CORREGIDO")
+                        else:
+                            diagnostics.append(f"✅ {pair}: {total_active_orders} órdenes, monitoreado correctamente")
+                    else:
+                        diagnostics.append(f"⚠️ {pair}: Sin órdenes activas")
+                    
+                except Exception as e:
+                    diagnostics.append(f"❌ {pair}: Error - {str(e)}")
+            
+            # Construir mensaje de respuesta
+            message = f"🔍 <b>Diagnóstico de Bots</b>\n\n"
+            message += f"📊 <b>Resumen:</b>\n"
+            message += f"• Bots verificados: {bots_checked}\n"
+            message += f"• Bots corregidos: {bots_fixed}\n\n"
+            
+            if diagnostics:
+                message += f"📋 <b>Detalles:</b>\n"
+                for diagnostic in diagnostics:
+                    message += f"• {diagnostic}\n"
+            
+            if bots_fixed > 0:
+                message += f"\n🎉 <b>¡{bots_fixed} bot(s) corregido(s)!</b>\nLos bots ahora deberían crear órdenes complementarias normalmente."
+            
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='HTML')
+            
+        except Exception as e:
+            error_msg = f"❌ Error en diagnóstico: {str(e)}"
             await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg, parse_mode='HTML')
 
     # === MANEJADORES EXISTENTES (sin cambios) ===
@@ -350,7 +572,7 @@ class GridTelegramBot:
             result = self.mode_switch_use_case.switch_to_sandbox()
             
             if result.get('exchange_cancelled_orders', 0) > 0 or result.get('db_cancelled_orders', 0) > 0:
-                message = f"🚫 <b>Cambiado a modo SANDBOX</b>\n\n"
+                message = f"🧪 <b>Cambiado a modo SANDBOX</b>\n\n"
                 message += f"🚫 Órdenes canceladas en exchange: {result.get('exchange_cancelled_orders', 0)}\n"
                 message += f"🗄️ Órdenes canceladas en BD: {result.get('db_cancelled_orders', 0)}\n"
                 if result.get('sold_positions'):
@@ -477,91 +699,3 @@ class GridTelegramBot:
                 
         except Exception as e:
             return f"❌ Error forzando resumen: {str(e)}" 
-
-    async def _handle_trades_command(self, update, context):
-        """Maneja el comando /trades para mostrar trades de todos los bots activos."""
-        try:
-            # Obtener configuraciones activas
-            active_configs = self.scheduler.grid_repository.get_active_configs()
-            
-            if not active_configs:
-                self.telegram_service.send_message(
-                    update.effective_chat.id, 
-                    "❌ No hay bots activos para mostrar trades."
-                )
-                return
-            
-            message = "📊 <b>RESUMEN DE TRADES - TODOS LOS BOTS</b>\n\n"
-            
-            for config in active_configs:
-                if config.is_running:
-                    # Obtener resumen de trades para este par
-                    trades_summary = self.scheduler.grid_repository.get_trades_summary_by_pair(config.pair)
-                    
-                    if trades_summary['total_trades'] > 0:
-                        profit_emoji = "🟢" if trades_summary['total_profit'] > 0 else "🔴"
-                        message += f"💱 <b>{config.pair}</b>\n"
-                        message += f"   {profit_emoji} P&L: ${trades_summary['total_profit']:.4f} ({trades_summary['total_profit_percent']:.2f}%)\n"
-                        message += f"   🎯 Trades: {trades_summary['total_trades']} (Win rate: {trades_summary['win_rate']:.1f}%)\n"
-                        message += f"   📈 Ganadores: {trades_summary['winning_trades']} | 📉 Perdedores: {trades_summary['losing_trades']}\n\n"
-                    else:
-                        message += f"💱 <b>{config.pair}</b>\n"
-                        message += f"   ⏳ Sin trades completados aún\n\n"
-            
-            message += "💡 Usa /trades [PAR] para ver detalles específicos (ej: /trades ETH/USDT)"
-            
-            self.telegram_service.send_message(update.effective_chat.id, message)
-            
-        except Exception as e:
-            logger.error(f"❌ Error en comando /trades: {e}")
-            self.telegram_service.send_message(
-                update.effective_chat.id, 
-                f"❌ Error obteniendo resumen de trades: {str(e)}"
-            )
-
-    async def _handle_trades_pair_command(self, update, context):
-        """Maneja el comando /trades [PAR] para mostrar trades de un par específico."""
-        try:
-            # Extraer el par del mensaje usando regex
-            message_text = update.message.text
-            match = re.match(r'^/trades\s+(\S+)$', message_text)
-            if not match:
-                self.telegram_service.send_message(
-                    update.effective_chat.id, 
-                    "❌ Formato incorrecto. Usa: /trades ETH/USDT"
-                )
-                return
-            
-            pair = match.group(1).upper()
-            
-            # Verificar que el par existe
-            config = self.scheduler.grid_repository.get_config_by_pair(pair)
-            if not config:
-                self.telegram_service.send_message(
-                    update.effective_chat.id, 
-                    f"❌ No se encontró configuración para {pair}"
-                )
-                return
-            
-            # Obtener resumen detallado de trades
-            if hasattr(self.scheduler, 'trading_stats_use_case'):
-                trades_summary = self.scheduler.trading_stats_use_case.format_trades_summary(config.pair)
-            else:
-                # Fallback: usar repositorio directamente
-                trades_summary = self.scheduler.grid_repository.get_trades_summary_by_pair(config.pair)
-                if trades_summary['total_trades'] == 0:
-                    trades_summary = f"📊 <b>{config.pair} - RESUMEN DE TRADES</b>\n\n🔄 No hay trades completados aún."
-                else:
-                    trades_summary = f"📊 <b>{config.pair} - RESUMEN DE TRADES</b>\n\n" \
-                                   f"🎯 Total de trades: {trades_summary['total_trades']}\n" \
-                                   f"💰 P&L total: ${trades_summary['total_profit']:.4f}\n" \
-                                   f"🏆 Win rate: {trades_summary['win_rate']:.1f}%"
-            
-            self.telegram_service.send_message(update.effective_chat.id, trades_summary)
-            
-        except Exception as e:
-            logger.error(f"❌ Error en comando /trades {pair}: {e}")
-            self.telegram_service.send_message(
-                update.effective_chat.id, 
-                f"❌ Error obteniendo trades para {pair}: {str(e)}"
-            ) 
