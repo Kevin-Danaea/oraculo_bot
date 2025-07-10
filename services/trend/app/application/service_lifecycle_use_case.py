@@ -35,7 +35,7 @@ class ServiceLifecycleUseCase:
         self.state_manager = state_manager
         self.telegram_chat_id = telegram_chat_id
         
-        # Crear manager multi-par
+        # Crear manager multi-pair
         self.multi_pair_manager = MultiPairManager(
             repository=repository,
             brain_repository=brain_repository,
@@ -56,17 +56,17 @@ class ServiceLifecycleUseCase:
             logger.warning("El servicio ya está en ejecución")
             return
             
-        logger.info("🚀 Iniciando servicio Trend Following Bot Multi-Par...")
+        logger.info("🚀 Iniciando servicio Trend Following Bot Multi-Pair...")
         self.is_running = True
         
         try:
-            # Inicializar bots multi-par
+            # Inicializar bots multi-pair
             await self.multi_pair_manager.initialize_bots()
             
             # Notificar inicio
             active_pairs = self.multi_pair_manager.get_active_pairs()
             await self.notification_service.send_error_notification(
-                f"🚀 Trend Following Bot Multi-Par iniciado con {len(active_pairs)} pares activos",
+                f"🚀 Trend Following Bot Multi-Pair iniciado con {len(active_pairs)} pares activos",
                 {
                     "telegram_chat_id": self.telegram_chat_id,
                     "active_pairs": active_pairs,
@@ -83,7 +83,7 @@ class ServiceLifecycleUseCase:
             # Iniciar tarea de recarga de configuraciones
             self.config_reload_task = asyncio.create_task(self._config_reload_loop())
             
-            logger.info("✅ Servicio Trend Following Bot Multi-Par iniciado correctamente")
+            logger.info("✅ Servicio Trend Following Bot Multi-Pair iniciado correctamente")
             
         except Exception as e:
             logger.error(f"❌ Error iniciando servicio: {str(e)}", exc_info=True)
@@ -125,7 +125,7 @@ class ServiceLifecycleUseCase:
         
         # Notificar detención
         await self.notification_service.send_error_notification(
-            "🛑 Trend Following Bot Multi-Par detenido",
+            "🛑 Trend Following Bot Multi-Pair detenido",
             {"timestamp": datetime.utcnow().isoformat()}
         )
         
@@ -135,7 +135,7 @@ class ServiceLifecycleUseCase:
         """Loop principal del servicio para todos los pares."""
         cycle_interval_hours = 1  # Ciclo cada 1 hora
         
-        logger.info(f"🔄 Iniciando loop principal multi-par con intervalo de {cycle_interval_hours} hora(s)")
+        logger.info(f"🔄 Iniciando loop principal multi-pair con intervalo de {cycle_interval_hours} hora(s)")
         
         while self.is_running:
             try:
@@ -169,7 +169,7 @@ class ServiceLifecycleUseCase:
         """Loop de monitoreo de trailing stop cada 5-10 minutos para todos los pares."""
         monitor_interval_minutes = 5  # Monitoreo cada 5 minutos
         
-        logger.info(f"🔄 Iniciando monitoreo de trailing stop multi-par con intervalo de {monitor_interval_minutes} minutos")
+        logger.info(f"🔄 Iniciando monitoreo de trailing stop multi-pair con intervalo de {monitor_interval_minutes} minutos")
         
         while self.is_running:
             try:
@@ -222,7 +222,7 @@ class ServiceLifecycleUseCase:
                 await asyncio.sleep(reload_interval_minutes * 60)
     
     def get_status(self) -> dict:
-        """Obtiene el estado actual del servicio multi-par."""
+        """Obtiene el estado actual del servicio multi-pair."""
         return {
             "is_running": self.is_running,
             "telegram_chat_id": self.telegram_chat_id,

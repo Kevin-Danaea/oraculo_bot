@@ -28,7 +28,7 @@ class ExchangeService(IExchangeService):
     def _initialize(self):
         """Inicializa la conexión con el exchange."""
         try:
-            sandbox = self.config.binance_testnet
+            sandbox = True #self.config.binance_testnet
             
             # Seleccionar credenciales según modo
             api_key = self.config.paper_trading_api_key if sandbox else self.config.binance_api_key

@@ -86,7 +86,7 @@ class MultiPairManager:
     async def initialize_bots(self) -> None:
         """Inicializa todos los bots para los pares activos."""
         try:
-            logger.info("🚀 Inicializando bots multi-par...")
+            logger.info("🚀 Inicializando bots multi-pair...")
             
             # Cargar configuraciones activas
             active_configs = await self.load_active_configs()

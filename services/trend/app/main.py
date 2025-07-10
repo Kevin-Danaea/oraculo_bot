@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
         notification_service = NotificationService()
         state_manager = TrendBotStateManager(repository)
         
-        # Inicializar caso de uso del ciclo de vida multi-par
+        # Inicializar caso de uso del ciclo de vida multi-pair
         lifecycle_use_case = ServiceLifecycleUseCase(
             repository=repository,
             brain_repository=brain_repository,
@@ -118,7 +118,7 @@ def health_check() -> Dict[str, Any]:
                 "🎯 Gestión de posiciones con trailing stop",
                 "🧠 Integración con Brain para decisiones",
                 "💰 Gestión de riesgo táctico",
-                "🔄 Sistema multi-par automático",
+                "🔄 Sistema multi-pair automático",
                 "📱 Notificaciones Telegram"
             ]
         }
@@ -141,7 +141,7 @@ def get_service_status() -> Dict[str, Any]:
                 "message": "Servicio aún no inicializado"
             }
         
-        # Obtener estado del multi-par manager
+        # Obtener estado del multi-pair manager
         status = lifecycle_use_case.get_status()
         
         return {
