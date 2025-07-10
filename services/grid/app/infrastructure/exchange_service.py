@@ -768,27 +768,51 @@ class BinanceExchangeService(ExchangeService):
             if not self.exchange:
                 raise Exception("Exchange no inicializado")
             
+            logger.info(f"🔍 CONSULTANDO órdenes activas en exchange para {pair}")
+            
+            # Verificar modo de trading
+            trading_mode = self.get_trading_mode()
+            logger.info(f"🔧 Modo de trading actual: {trading_mode}")
+            
             # Obtener órdenes abiertas del exchange
             open_orders = self.exchange.fetch_open_orders(pair)
+            
+            logger.info(f"📋 Raw open orders from exchange for {pair}: {len(open_orders)} orders")
             
             # Formatear órdenes para consistencia
             formatted_orders = []
             for order in open_orders:
-                formatted_order = {
-                    'exchange_order_id': order['id'],
-                    'pair': order['symbol'],
-                    'side': order['side'],
-                    'amount': Decimal(str(order['amount'])),
-                    'price': Decimal(str(order['price'])),
-                    'status': order['status'],
-                    'filled': Decimal(str(order['filled'])),
-                    'remaining': Decimal(str(order['remaining'])),
-                    'timestamp': order['timestamp'],
-                    'type': order['type']
-                }
-                formatted_orders.append(formatted_order)
+                try:
+                    formatted_order = {
+                        'exchange_order_id': order['id'],
+                        'pair': order['symbol'],
+                        'side': order['side'],
+                        'amount': Decimal(str(order['amount'])),
+                        'price': Decimal(str(order['price'])),
+                        'status': order['status'],
+                        'filled': Decimal(str(order['filled'])),
+                        'remaining': Decimal(str(order['remaining'])),
+                        'timestamp': order['timestamp'],
+                        'type': order['type']
+                    }
+                    formatted_orders.append(formatted_order)
+                    logger.debug(f"   - Order {order['id']}: {order['side']} {order['amount']} @ {order['price']}")
+                except Exception as order_error:
+                    logger.warning(f"⚠️ Error formateando orden {order.get('id', 'unknown')}: {order_error}")
+                    continue
             
-            logger.debug(f"📋 Órdenes activas en exchange para {pair}: {len(formatted_orders)} órdenes")
+            logger.info(f"📋 Órdenes activas en exchange para {pair}: {len(formatted_orders)} órdenes formateadas")
+            
+            if not formatted_orders:
+                logger.warning(f"⚠️ NO SE ENCONTRARON ÓRDENES ACTIVAS en exchange para {pair}")
+                # Verificar si hay algún error específico
+                try:
+                    # Intentar obtener información del mercado para verificar que el par existe
+                    market_info = self.exchange.market(pair)
+                    logger.info(f"✅ Mercado {pair} existe y es válido")
+                except Exception as market_error:
+                    logger.error(f"❌ Error verificando mercado {pair}: {market_error}")
+            
             return formatted_orders
             
         except Exception as e:

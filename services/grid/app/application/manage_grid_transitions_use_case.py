@@ -148,17 +148,49 @@ class ManageGridTransitionsUseCase:
             # Consultar órdenes activas directamente en el exchange
             exchange_orders = self.exchange_service.get_active_orders_from_exchange(config.pair)
             
-            # Solo crear órdenes iniciales si:
-            # 1. El bot está marcado como activo (is_running=True)
-            # 2. La decisión actual es OPERAR_GRID
-            # 3. No hay órdenes activas en el exchange
+            # 🔍 DIAGNÓSTICO: Logging detallado para entender por qué no encuentra órdenes
+            logger.info(f"🔍 DIAGNÓSTICO {config.pair}:")
+            logger.info(f"   - Bot is_running: {config.is_running}")
+            logger.info(f"   - Current decision: {current_decision}")
+            logger.info(f"   - Exchange orders found: {len(exchange_orders)}")
+            
+            if exchange_orders:
+                logger.info(f"   - Exchange order IDs: {[o.get('exchange_order_id', 'N/A') for o in exchange_orders[:5]]}")
+            else:
+                logger.info(f"   - ⚠️ NO SE ENCONTRARON ÓRDENES EN EL EXCHANGE")
+                
+                # 🔄 RETRY ROBUSTO: Intentar múltiples consultas con delays crecientes
+                import time
+                max_retries = 3
+                retry_delays = [2, 5, 10]  # segundos
+                
+                for retry_attempt in range(max_retries):
+                    logger.info(f"   - 🔄 Reintentando consulta de órdenes (intento {retry_attempt + 1}/{max_retries}) después de {retry_delays[retry_attempt]}s...")
+                    time.sleep(retry_delays[retry_attempt])
+                    
+                    exchange_orders_retry = self.exchange_service.get_active_orders_from_exchange(config.pair)
+                    logger.info(f"   - Exchange orders after retry {retry_attempt + 1}: {len(exchange_orders_retry)}")
+                    
+                    if exchange_orders_retry:
+                        logger.info(f"   - ✅ RETRY EXITOSO: Encontradas {len(exchange_orders_retry)} órdenes en intento {retry_attempt + 1}")
+                        exchange_orders = exchange_orders_retry
+                        break
+                    else:
+                        logger.warning(f"   - ❌ RETRY {retry_attempt + 1} FALLIDO: Aún no se encuentran órdenes")
+                
+                if not exchange_orders:
+                    logger.warning(f"   - 🚨 TODOS LOS RETRIES FALLARON: No se encontraron órdenes después de {max_retries} intentos")
+            
+            # 🔒 LÓGICA SIMPLIFICADA: Solo considerar exchange como fuente de verdad
+            has_orders_in_exchange = len(exchange_orders) > 0
+            
             if (config.is_running and 
                 current_decision == "OPERAR_GRID" and 
-                not exchange_orders):
-                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en el exchange - creando órdenes iniciales")
+                not has_orders_in_exchange):
+                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en exchange después de {max_retries} intentos - creando órdenes iniciales")
                 transition_type = 'initialize_orders'
             else:
-                logger.debug(f"ℹ️ Sin cambios para {config.pair}")
+                logger.debug(f"ℹ️ Sin cambios para {config.pair} - órdenes encontradas en exchange: {has_orders_in_exchange}")
                 return {
                     'pair': config.pair,
                     'transition_detected': False,
@@ -400,7 +432,7 @@ class ManageGridTransitionsUseCase:
             
             # 6. Resetear estado de inicialización para el bot pausado
             if self.realtime_monitor:
-                self.realtime_monitor.reset_initialization_status_for_paused_bot(config.pair)
+                self.realtime_monitor.reset_initialization_status(config.pair)
                 logger.info(f"🔄 Estado de inicialización reseteado para bot pausado {config.pair}")
             
             logger.info(f"✅ Bot {config.pair} pausado exitosamente (órdenes canceladas)")
