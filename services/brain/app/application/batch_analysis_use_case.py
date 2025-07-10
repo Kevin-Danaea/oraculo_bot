@@ -456,7 +456,6 @@ class BatchAnalysisUseCase:
             # Crear decisión
             decision = TrendDecision(
                 pair=pair,
-                current_state=current_state,
                 decision=decision_type,
                 reason=reason,
                 indicators=indicators,
@@ -480,7 +479,6 @@ class BatchAnalysisUseCase:
             from app.domain.entities import TrendDecision, TrendPositionState
             return TrendDecision(
                 pair=pair,
-                current_state=current_state,
                 decision=DecisionType.ERROR,
                 reason=f"Error en análisis: {str(e)}",
                 indicators=indicators,

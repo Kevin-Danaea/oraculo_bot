@@ -81,7 +81,6 @@ class TradingThresholds:
 class TrendDecision:
     """Decisión específica para estrategia TREND."""
     pair: str
-    current_state: TrendPositionState
     decision: DecisionType
     reason: str
     indicators: MarketIndicators
@@ -100,7 +99,6 @@ class TrendDecision:
         """Convierte la decisión a diccionario para persistencia."""
         return {
             'pair': self.pair,
-            'current_state': self.current_state.value,
             'decision': self.decision.value,
             'reason': self.reason,
             'indicators': {

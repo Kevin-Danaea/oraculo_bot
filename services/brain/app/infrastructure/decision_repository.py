@@ -46,8 +46,16 @@ class DatabaseDecisionRepository(DecisionRepository):
                 # Determinar el tipo de estrategia basado en el tipo de decisión
                 if isinstance(decision, TrendDecision):
                     estrategia = "TREND"
+                    # Campos específicos para TREND
+                    trend_fields = {
+                        'golden_cross': decision.golden_cross,
+                        'death_cross': decision.death_cross,
+                        'trend_strength_ok': decision.trend_strength_ok,
+                        'sentiment_ok': decision.sentiment_ok
+                    }
                 else:
                     estrategia = decision.bot_type.value
+                    trend_fields = {}
                 
                 # Buscar decisión existente para el par y estrategia
                 existing_decision = db.query(EstrategiaStatus).filter(
@@ -66,10 +74,16 @@ class DatabaseDecisionRepository(DecisionRepository):
                         'adx_actual': decision.indicators.adx,
                         'volatilidad_actual': decision.indicators.volatility,
                         'sentiment_promedio': decision.indicators.sentiment,
+                        'sma30_actual': decision.indicators.sma30,
+                        'sma150_actual': decision.indicators.sma150,
+                        'sentiment_7d_avg': decision.indicators.sentiment_7d_avg,
                         'umbral_adx': decision.thresholds.adx_threshold,
                         'umbral_volatilidad': decision.thresholds.volatility_threshold,
                         'umbral_sentimiento': decision.thresholds.sentiment_threshold,
-                        'timestamp': decision.timestamp
+                        'umbral_adx_trend': decision.thresholds.adx_trend_threshold,
+                        'umbral_sentiment_trend': decision.thresholds.sentiment_trend_threshold,
+                        'timestamp': decision.timestamp,
+                        **trend_fields
                     })
                     
                     db.commit()
@@ -84,10 +98,16 @@ class DatabaseDecisionRepository(DecisionRepository):
                         adx_actual=decision.indicators.adx,
                         volatilidad_actual=decision.indicators.volatility,
                         sentiment_promedio=decision.indicators.sentiment,
+                        sma30_actual=decision.indicators.sma30,
+                        sma150_actual=decision.indicators.sma150,
+                        sentiment_7d_avg=decision.indicators.sentiment_7d_avg,
                         umbral_adx=decision.thresholds.adx_threshold,
                         umbral_volatilidad=decision.thresholds.volatility_threshold,
                         umbral_sentimiento=decision.thresholds.sentiment_threshold,
-                        timestamp=decision.timestamp
+                        umbral_adx_trend=decision.thresholds.adx_trend_threshold,
+                        umbral_sentiment_trend=decision.thresholds.sentiment_trend_threshold,
+                        timestamp=decision.timestamp,
+                        **trend_fields
                     )
                     
                     db.add(db_decision)
