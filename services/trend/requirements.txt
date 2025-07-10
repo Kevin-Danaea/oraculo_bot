@@ -11,6 +11,7 @@ uvicorn[standard]==0.27.0
 sqlalchemy==2.0.23
 alembic==1.13.1
 asyncpg==0.29.0
+psycopg2-binary==2.9.9
 
 # Exchange/Trading
 ccxt==4.1.76
@@ -20,11 +21,17 @@ python-telegram-bot==20.7
 
 # Logging and monitoring
 python-multipart==0.0.6
+loguru==0.7.2
 
 # HTTP client
 httpx==0.25.2
 aiohttp==3.9.1
+requests==2.31.0
 
 # Utilities
 python-dateutil==2.8.2
-pytz==2023.3 
+pytz==2023.3
+python-dotenv==1.0.0
+
+# Scheduler
+schedule==1.2.0 
