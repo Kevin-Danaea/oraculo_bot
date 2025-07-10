@@ -159,27 +159,35 @@ class ManageGridTransitionsUseCase:
             else:
                 logger.info(f"   - ⚠️ NO SE ENCONTRARON ÓRDENES EN EL EXCHANGE")
                 
-                # 🔄 RETRY ROBUSTO: Intentar múltiples consultas con delays crecientes
-                import time
-                max_retries = 3
-                retry_delays = [2, 5, 10]  # segundos
+                # 🔍 DETECTAR SI ES PRIMERA INICIALIZACIÓN
+                is_first_initialization = not config.last_decision or config.last_decision == "PAUSAR_GRID"
                 
-                for retry_attempt in range(max_retries):
-                    logger.info(f"   - 🔄 Reintentando consulta de órdenes (intento {retry_attempt + 1}/{max_retries}) después de {retry_delays[retry_attempt]}s...")
-                    time.sleep(retry_delays[retry_attempt])
+                if is_first_initialization:
+                    logger.info(f"   - 🟢 Primera inicialización detectada para {config.pair}, no se ejecuta retry.")
+                else:
+                    logger.info(f"   - 🔄 Bot ya estuvo activo antes, ejecutando retry robusto...")
                     
-                    exchange_orders_retry = self.exchange_service.get_active_orders_from_exchange(config.pair)
-                    logger.info(f"   - Exchange orders after retry {retry_attempt + 1}: {len(exchange_orders_retry)}")
+                    # 🔄 RETRY ROBUSTO: Solo para bots que ya estuvieron activos
+                    import time
+                    max_retries = 3
+                    retry_delays = [2, 5, 10]  # segundos
                     
-                    if exchange_orders_retry:
-                        logger.info(f"   - ✅ RETRY EXITOSO: Encontradas {len(exchange_orders_retry)} órdenes en intento {retry_attempt + 1}")
-                        exchange_orders = exchange_orders_retry
-                        break
-                    else:
-                        logger.warning(f"   - ❌ RETRY {retry_attempt + 1} FALLIDO: Aún no se encuentran órdenes")
-                
-                if not exchange_orders:
-                    logger.warning(f"   - 🚨 TODOS LOS RETRIES FALLARON: No se encontraron órdenes después de {max_retries} intentos")
+                    for retry_attempt in range(max_retries):
+                        logger.info(f"   - 🔄 Reintentando consulta de órdenes (intento {retry_attempt + 1}/{max_retries}) después de {retry_delays[retry_attempt]}s...")
+                        time.sleep(retry_delays[retry_attempt])
+                        
+                        exchange_orders_retry = self.exchange_service.get_active_orders_from_exchange(config.pair)
+                        logger.info(f"   - Exchange orders after retry {retry_attempt + 1}: {len(exchange_orders_retry)}")
+                        
+                        if exchange_orders_retry:
+                            logger.info(f"   - ✅ RETRY EXITOSO: Encontradas {len(exchange_orders_retry)} órdenes en intento {retry_attempt + 1}")
+                            exchange_orders = exchange_orders_retry
+                            break
+                        else:
+                            logger.warning(f"   - ❌ RETRY {retry_attempt + 1} FALLIDO: Aún no se encuentran órdenes")
+                    
+                    if not exchange_orders:
+                        logger.warning(f"   - 🚨 TODOS LOS RETRIES FALLARON: No se encontraron órdenes después de {max_retries} intentos")
             
             # 🔒 LÓGICA SIMPLIFICADA: Solo considerar exchange como fuente de verdad
             has_orders_in_exchange = len(exchange_orders) > 0
@@ -187,7 +195,12 @@ class ManageGridTransitionsUseCase:
             if (config.is_running and 
                 current_decision == "OPERAR_GRID" and 
                 not has_orders_in_exchange):
-                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en exchange después de {max_retries} intentos - creando órdenes iniciales")
+                
+                # Determinar el tipo de inicialización para el logging
+                is_first_initialization = not config.last_decision or config.last_decision == "PAUSAR_GRID"
+                init_type = "primera inicialización" if is_first_initialization else "reinicialización después de retry"
+                
+                logger.info(f"🔧 Bot {config.pair} está activo pero sin órdenes en exchange - {init_type}")
                 transition_type = 'initialize_orders'
             else:
                 logger.debug(f"ℹ️ Sin cambios para {config.pair} - órdenes encontradas en exchange: {has_orders_in_exchange}")
