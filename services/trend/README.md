@@ -1,46 +1,19 @@
 # Trend Following Bot
 
-Bot de trading automático que sigue tendencias alcistas en el mercado de criptomonedas.
+Bot de trading automático que sigue tendencias a largo plazo para un único par de criptomonedas.
 
 ## Descripción
 
-El Trend Following Bot es un servicio autónomo que:
+El Trend Following Bot es un servicio autónomo y especializado cuya única misión es ejecutar una estrategia de seguimiento de tendencias a largo plazo. A diferencia del Grid Bot que se beneficia de la volatilidad en rangos, este bot está diseñado para capturar grandes movimientos direccionales del mercado, permaneciendo en una posición durante semanas o meses.
 
-- 🔍 **Analiza tendencias** del mercado usando indicadores técnicos
-- 📈 **Detecta señales alcistas** con alta probabilidad de éxito
-- 💰 **Ejecuta trades automáticos** siguiendo la tendencia
-- 🛡️ **Gestiona riesgo** con stop loss y take profit
-- 📊 **Monitorea posiciones** en tiempo real
-- 📱 **Notifica en Telegram** sobre todas las operaciones
+### Características Principales
 
-## Diferencias con Grid Bot
-
-A diferencia del Grid Bot que mantiene múltiples órdenes:
-
-- **Una sola posición por símbolo**: Se enfoca en seguir una tendencia específica
-- **Dirección alcista**: Solo opera en tendencias bullish
-- **Hold hasta objetivo**: Mantiene la posición hasta alcanzar take profit o stop loss
-- **Trailing stop**: Puede mover el stop loss para maximizar ganancias
-
-## Características Principales
-
-### 🎯 Estrategia de Trading
-- **Trend Following**: Sigue tendencias alcistas confirmadas
-- **Análisis técnico**: Usa EMA, RSI, volumen y otros indicadores
-- **Gestión de riesgo**: Stop loss y take profit automáticos
-- **Trailing stop**: Optimiza las ganancias siguiendo el precio
-
-### 🔧 Configuración Flexible
-- **Múltiples timeframes**: Análisis en 4h con confirmación en 1h
-- **Filtros de calidad**: Solo señales con alta confianza
-- **Tamaño de posición**: Calculado automáticamente según el capital
-- **Personalizable**: Parámetros ajustables por símbolo
-
-### 📊 Monitoreo y Métricas
-- **Tiempo real**: Actualización constante de posiciones
-- **Métricas completas**: Win rate, profit factor, drawdown
-- **Notificaciones**: Alertas en Telegram para todos los eventos
-- **Logging detallado**: Registro completo de operaciones
+- 🧠 **Sin lógica de decisión**: Actúa como "brazo ejecutor" táctico basado en directivas del cerebro
+- 📊 **Seguimiento de tendencias**: Captura movimientos direccionales a largo plazo
+- 🛑 **Trailing Stop**: Protección automática de ganancias
+- 💰 **Una posición por símbolo**: Enfoque en una sola tendencia
+- 🔄 **Ciclo de 1 hora**: Frecuencia apropiada para estrategia a largo plazo
+- 📱 **Notificaciones Telegram**: Alertas en tiempo real de todas las operaciones
 
 ## Arquitectura
 
@@ -48,28 +21,71 @@ A diferencia del Grid Bot que mantiene múltiples órdenes:
 services/trend/
 ├── app/
 │   ├── domain/          # Entidades y reglas de negocio
-│   │   ├── entities.py  # TrendSignal, TrendPosition, etc.
+│   │   ├── entities.py  # TrendPosition, TrendBotStatus, etc.
 │   │   └── interfaces.py # Contratos del dominio
 │   ├── application/     # Casos de uso
-│   │   ├── analyze_market_use_case.py
-│   │   ├── execute_trades_use_case.py
-│   │   ├── manage_positions_use_case.py
+│   │   ├── trend_bot_cycle_use_case.py
 │   │   └── service_lifecycle_use_case.py
 │   ├── infrastructure/  # Adaptadores externos
-│   │   ├── exchange_service.py       # CCXT para Binance
-│   │   ├── notification_service.py   # Telegram
-│   │   ├── trend_analyzer.py         # Análisis técnico
-│   │   ├── position_manager.py       # Gestión de posiciones
-│   │   ├── risk_manager.py          # Gestión de riesgo
-│   │   └── database_repository.py   # Persistencia
+│   │   ├── brain_directive_repository.py  # Directivas del cerebro
+│   │   ├── exchange_service.py           # CCXT para Binance
+│   │   ├── notification_service.py       # Telegram
+│   │   ├── trend_bot_repository.py       # Persistencia JSON
+│   │   └── state_manager.py              # Gestión de estado
 │   ├── config.py        # Configuración
 │   └── main.py         # Punto de entrada
-├── tests/              # Pruebas unitarias
+├── data/               # Archivos de persistencia
 ├── logs/              # Archivos de log
 ├── Dockerfile         # Contenedor Docker
 ├── requirements.txt   # Dependencias Python
 └── README.md         # Esta documentación
 ```
+
+## Estados del Bot
+
+### FUERA_DEL_MERCADO
+- Espera directiva `INICIAR_COMPRA_TENDENCIA` del cerebro
+- No tiene posiciones abiertas
+- Listo para entrar al mercado
+
+### EN_POSICION_LARGA
+- Tiene una posición abierta
+- Monitorea precio para trailing stop
+- Espera directiva `CERRAR_POSICION` del cerebro
+- Actualiza `highest_price_since_entry`
+
+## Lógica de Operación
+
+### 1. Ciclo Principal (cada 1 hora)
+1. **Consultar estado**: Obtener estado actual del bot
+2. **Leer directiva**: Obtener última directiva del cerebro desde `estrategia_status`
+3. **Obtener precio**: Consultar precio actual del símbolo
+4. **Ejecutar lógica**: Según estado y directiva
+5. **Actualizar estado**: Guardar estado actualizado
+
+### 2. Lógica de Entrada
+- **Estado**: FUERA_DEL_MERCADO
+- **Directiva**: INICIAR_COMPRA_TENDENCIA
+- **Acción**: Ejecutar orden de compra a mercado con 100% del capital
+- **Resultado**: Cambiar a EN_POSICION_LARGA
+
+### 3. Lógica de Mantenimiento
+- **Estado**: EN_POSICION_LARGA
+- **Directiva**: MANTENER_POSICION
+- **Acción**: Solo actualizar `highest_price_since_entry`
+- **Resultado**: Mantener posición
+
+### 4. Lógica de Salida Táctica (Trailing Stop)
+- **Estado**: EN_POSICION_LARGA
+- **Condición**: Precio actual ≤ Trailing Stop
+- **Acción**: Ejecutar orden de venta a mercado
+- **Resultado**: Cambiar a FUERA_DEL_MERCADO
+
+### 5. Lógica de Salida Estratégica
+- **Estado**: EN_POSICION_LARGA
+- **Directiva**: CERRAR_POSICION
+- **Acción**: Ejecutar orden de venta a mercado
+- **Resultado**: Cambiar a FUERA_DEL_MERCADO
 
 ## Configuración
 
@@ -77,45 +93,34 @@ services/trend/
 
 ```bash
 # Configuración del bot
-TREND_ANALYSIS_TIMEFRAME=4h
-TREND_CONFIRMATION_TIMEFRAME=1h
-TREND_MIN_SIGNAL_CONFIDENCE=0.7
-TREND_MAX_POSITIONS_PER_SYMBOL=1
+TREND_SYMBOL=BTCUSDT                    # Par a operar
+TREND_CAPITAL_ALLOCATION=1000           # Capital en USDT
+TREND_TRAILING_STOP_PERCENT=5.0         # % de trailing stop
 
-# Gestión de riesgo
-TREND_DEFAULT_STOP_LOSS_PERCENT=3.0
-TREND_DEFAULT_TAKE_PROFIT_PERCENT=9.0
-TREND_DEFAULT_TRAILING_STOP_PERCENT=2.0
-TREND_MAX_POSITION_SIZE_PERCENT=10.0
-
-# Intervalos de ejecución (minutos)
-TREND_MARKET_ANALYSIS_INTERVAL=15
-TREND_TRADE_EXECUTION_INTERVAL=5
-TREND_POSITION_MANAGEMENT_INTERVAL=2
+# Intervalo de ciclo
+TREND_CYCLE_INTERVAL_HOURS=1            # Horas entre ciclos
 
 # Logging
 TREND_LOG_LEVEL=INFO
 TREND_LOG_FILE=logs/trend_bot.log
+
+# Heredadas de settings.py
+BINANCE_API_KEY=your_api_key
+BINANCE_API_SECRET=your_api_secret
+BINANCE_TESTNET=true
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+DATABASE_URL=your_database_url
 ```
 
-### Configuración de Estrategias
-
-Las estrategias se configuran en la base de datos para cada símbolo:
+### Ejemplo de Configuración
 
 ```python
-strategy = TrendStrategy(
-    name="BTC-Trend",
-    symbol="BTCUSDT", 
-    enabled=True,
-    capital_allocation=Decimal("1000"),  # $1000 por estrategia
-    max_position_size=Decimal("500"),    # Máximo $500 por posición
-    min_position_size=Decimal("50"),     # Mínimo $50
-    stop_loss_percentage=3.0,            # 3% stop loss
-    take_profit_percentage=9.0,          # 9% take profit
-    trailing_stop_percentage=2.0,        # 2% trailing stop
-    max_positions=1,                     # Una posición a la vez
-    min_signal_strength=SignalStrength.MODERATE,
-    min_confidence=0.7                   # 70% confianza mínima
+bot_config = TrendBotConfig(
+    symbol="BTCUSDT",
+    capital_allocation=Decimal("1000"),  # $1000
+    trailing_stop_percent=5.0,           # 5%
+    sandbox_mode=True                    # Testnet
 )
 ```
 
@@ -128,8 +133,9 @@ strategy = TrendStrategy(
 pip install -r requirements.txt
 
 # Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
+export TREND_SYMBOL=BTCUSDT
+export TREND_CAPITAL_ALLOCATION=1000
+export TREND_TRAILING_STOP_PERCENT=5.0
 
 # Ejecutar el servicio
 python -m services.trend.app.main
@@ -146,6 +152,7 @@ docker run -d \
   --name trend-bot \
   --env-file .env \
   -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/data:/app/data \
   trend-bot
 ```
 
@@ -159,6 +166,89 @@ docker-compose up trend
 docker-compose logs -f trend
 ```
 
+## Persistencia de Estado
+
+El bot mantiene su estado en archivos JSON:
+
+- `data/trend_bot_status.json`: Estado actual del bot
+- `data/trend_positions.json`: Historial de posiciones
+- `data/trend_metrics.json`: Métricas de rendimiento
+
+### Ejemplo de Estado
+
+```json
+{
+  "trend_bot_BTCUSDT_abc123": {
+    "bot_id": "trend_bot_BTCUSDT_abc123",
+    "symbol": "BTCUSDT",
+    "state": "EN_POSICION_LARGA",
+    "current_position": {
+      "id": "pos_123",
+      "entry_price": "45000.00",
+      "entry_quantity": "0.02222222",
+      "highest_price_since_entry": "47000.00"
+    },
+    "last_decision": "MANTENER_POSICION",
+    "last_update": "2024-01-15T14:30:00"
+  }
+}
+```
+
+## Notificaciones
+
+El bot envía notificaciones detalladas por Telegram:
+
+### Posición Abierta
+```
+🚀 POSICIÓN ABIERTA - TREND BOT 🚀
+
+🪙 Par: BTCUSDT
+💰 Precio Entrada: $45,000.00
+📦 Cantidad: 0.022222
+💵 Valor: $1,000.00
+🛑 Trailing Stop: 5.0%
+💸 Comisiones: $1.00
+
+⏰ Tiempo: 2024-01-15 14:30 UTC
+
+📊 Configuración:
+• Capital: $1,000.00
+• Modo: Testnet
+```
+
+### Salida por Trailing Stop
+```
+🛑 SALIDA POR TRAILING STOP 🛑
+
+🪙 Par: BTCUSDT
+💰 Precio Entrada: $45,000.00
+📈 Precio Máximo: $47,000.00
+📉 Precio Actual: $44,650.00
+🛑 Trailing Stop: $44,650.00
+🏁 Precio Salida: $44,650.00
+📦 Cantidad: 0.022222
+✅ PnL: -$7.78 (-0.78%)
+💸 Comisiones: $2.00
+
+⏰ Tiempo: 2024-01-15 16:30 UTC
+```
+
+## Integración con el Cerebro
+
+El bot lee las directivas del cerebro desde la tabla `estrategia_status`:
+
+```sql
+SELECT * FROM estrategia_status 
+WHERE par = 'BTCUSDT' AND estrategia = 'TREND' 
+ORDER BY timestamp DESC LIMIT 1;
+```
+
+### Decisiones Soportadas
+
+- `INICIAR_COMPRA_TENDENCIA`: Abrir posición
+- `MANTENER_POSICION`: Mantener posición actual
+- `CERRAR_POSICION`: Cerrar posición por señal del cerebro
+
 ## Monitoreo
 
 ### Logs
@@ -168,100 +258,44 @@ Los logs se almacenan en:
 - **Consola**: Salida estándar
 - **Niveles**: DEBUG, INFO, WARNING, ERROR
 
-### Métricas en Telegram
+### Métricas
 
-El bot envía actualizaciones periódicas:
+El bot calcula y almacena métricas de rendimiento:
 
-- 🔥 **Nuevas señales** detectadas
-- 🚀 **Posiciones abiertas** con detalles
-- ✅ **Posiciones cerradas** con PnL
-- 📊 **Resumen diario** de rendimiento
-- ⚠️ **Alertas de error** si hay problemas
+- Total de trades
+- Win rate
+- PnL total
+- Mejor/peor trade
+- Tiempo promedio de retención
+- Profit factor
 
-### Ejemplo de Notificación
+### Health Check
 
-```
-🔥 NUEVA SEÑAL TREND 🔥
+El bot incluye verificaciones de salud:
 
-🪙 Par: BTCUSDT
-📈 Dirección: BULLISH
-💪 Fuerza: STRONG
-💰 Precio Entrada: $45,230.50
-🛑 Stop Loss: $43,873.59
-🎯 Take Profit: $49,301.25
-🎲 Confianza: 85.2%
-⚖️ R/R Ratio: 3.00
-
-⏰ Tiempo: 2024-01-15 14:30 UTC
-```
-
-## Algoritmo de Trading
-
-### 1. Análisis de Mercado (cada 15 min)
-- Obtiene datos de precio históricos
-- Calcula indicadores técnicos (EMA, RSI, volumen)
-- Detecta patrones de tendencia alcista
-- Genera señales con score de confianza
-
-### 2. Validación de Señales (cada 5 min)
-- Verifica calidad de la señal
-- Comprueba gestión de riesgo
-- Calcula tamaño óptimo de posición
-- Ejecuta orden si pasa todos los filtros
-
-### 3. Gestión de Posiciones (cada 2 min)
-- Monitorea precio actual vs stop/take profit
-- Actualiza trailing stop si está configurado
-- Cierra posición si se alcanzan los objetivos
-- Actualiza métricas de rendimiento
-
-### 4. Indicadores Utilizados
-
-- **EMA 20/50**: Tendencia principal
-- **RSI**: Momentum y sobrecompra/sobreventa
-- **Volumen**: Confirmación de movimientos
-- **ATR**: Volatilidad para stop loss
-- **Soportes/Resistencias**: Niveles clave
-
-## Gestión de Riesgo
-
-### Tamaño de Posición
-```python
-position_size = min(
-    capital_allocation * position_percent / 100,
-    max_position_size,
-    available_balance * max_exposure / 100
-)
-```
-
-### Stop Loss Dinámico
-- **Fijo**: Porcentaje desde precio de entrada
-- **ATR**: Basado en volatilidad reciente
-- **Trailing**: Se mueve con el precio favorable
-
-### Limits de Exposición
-- **Por símbolo**: Una posición máxima
-- **Total**: No más del 50% del capital
-- **Por operación**: Máximo 10% del capital
+- Conexión con Binance
+- Acceso a base de datos
+- Estado de archivos de persistencia
+- Validación de configuración
 
 ## Troubleshooting
 
 ### Problemas Comunes
 
-1. **No se generan señales**
-   - Verificar configuración de timeframes
-   - Revisar filtros de confianza
-   - Comprobar datos de mercado
+1. **No recibe directivas del cerebro**
+   - Verificar tabla `estrategia_status`
+   - Comprobar que `estrategia = 'TREND'`
+   - Revisar logs del cerebro
 
-2. **Órdenes fallan**
+2. **Errores de trading**
    - Verificar credenciales de Binance
    - Comprobar balance disponible
-   - Revisar símbolos configurados
+   - Revisar símbolo configurado
 
-3. **Notificaciones no llegan**
-   - Verificar token de Telegram
-   - Comprobar chat ID
-   - Revisar logs de errores
+3. **Estado inconsistente**
+   - Verificar archivos en `data/`
+   - Revisar logs de persistencia
+   - Reiniciar servicio si es necesario
 
 ### Logs Útiles
 

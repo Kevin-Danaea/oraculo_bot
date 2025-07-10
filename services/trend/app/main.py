@@ -11,9 +11,13 @@ sys.path.append(str(Path(__file__).parent.parent.parent.parent))
 
 from shared.services.logging_config import setup_logging
 from .config import get_config
+from .domain.entities import TrendBotConfig
 from .application.service_lifecycle_use_case import ServiceLifecycleUseCase
+from .infrastructure.brain_directive_repository import DatabaseBrainDirectiveRepository
 from .infrastructure.exchange_service import ExchangeService
 from .infrastructure.notification_service import NotificationService
+from .infrastructure.trend_bot_repository import JsonTrendBotRepository
+from .infrastructure.state_manager import TrendBotStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,33 +33,34 @@ class TrendBotService:
     async def initialize(self):
         """Inicializa todas las dependencias del servicio."""
         try:
-            logger.info("Inicializando Trend Following Bot...")
+            logger.info("🚀 Inicializando Trend Following Bot...")
             
             # Configurar logging
             setup_logging()
             
+            # Crear configuración del bot
+            bot_config = TrendBotConfig(
+                symbol=self.config.symbol,
+                capital_allocation=self.config.capital_allocation,
+                trailing_stop_percent=self.config.trailing_stop_percent,
+                sandbox_mode=self.config.binance_testnet
+            )
+            
             # Inicializar servicios de infraestructura
+            repository = JsonTrendBotRepository()
+            brain_repository = DatabaseBrainDirectiveRepository()
             exchange_service = ExchangeService()
             notification_service = NotificationService()
+            state_manager = TrendBotStateManager(repository)
             
-            # TODO: Inicializar otros adaptadores cuando estén listos
-            # trend_analyzer = TrendAnalyzer()
-            # position_manager = PositionManager()
-            # repository = TrendRepository()
-            # risk_manager = RiskManager()
-            
-            # TODO: Inicializar casos de uso
-            # analyze_market_use_case = AnalyzeMarketUseCase(...)
-            # execute_trades_use_case = ExecuteTradesUseCase(...)
-            # manage_positions_use_case = ManagePositionsUseCase(...)
-            
-            # Por ahora solo configuramos el lifecycle
+            # Inicializar caso de uso del ciclo de vida
             self.lifecycle_use_case = ServiceLifecycleUseCase(
-                analyze_market_use_case=None,  # TODO: implementar
-                execute_trades_use_case=None,  # TODO: implementar
-                manage_positions_use_case=None,  # TODO: implementar
+                repository=repository,
+                brain_repository=brain_repository,
+                exchange_service=exchange_service,
                 notification_service=notification_service,
-                repository=None  # TODO: implementar
+                state_manager=state_manager,
+                config=bot_config
             )
             
             logger.info("✅ Trend Following Bot inicializado correctamente")

@@ -18,8 +18,8 @@ COPY . .
 # Copiar archivos compartidos
 COPY ../../shared ./shared/
 
-# Crear directorio para logs
-RUN mkdir -p logs
+# Crear directorios necesarios
+RUN mkdir -p logs data
 
 # Variable de entorno para Python
 ENV PYTHONPATH=/app

@@ -10,9 +10,6 @@ asyncpg==0.29.0
 
 # Exchange/Trading
 ccxt==4.1.76
-numpy==1.24.3
-pandas==2.0.3
-ta==0.10.2  # Technical Analysis Library
 
 # Telegram
 python-telegram-bot==20.7
